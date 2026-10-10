@@ -1,7 +1,7 @@
 # 0002. Persistent key state
 
 **Date**: 2026-10-10
-**Status**: Proposed
+**Status**: Accepted
 
 ## Summary
 

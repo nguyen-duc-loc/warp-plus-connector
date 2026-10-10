@@ -25,7 +25,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 |---|---------|-------|--------|
 | 1 | Stack and architecture | Foundation | done |
 | 2 | Coding standards and tooling | Foundation | done |
-| 3 | Persistent key state | Foundation | in-progress |
+| 3 | Persistent key state | Foundation | done |
 | 4 | One source crawl and validation loop | Slice 1 | planned |
 | 5 | Configurable source coverage | Slice 2 | planned |
 | 6 | Concurrent checks and bounded retries | Slice 3 | planned |
@@ -66,7 +66,7 @@ Capture conventions from the real scaffold so later work follows consistent buil
 
 Six automated formatting cases cover clean and empty source trees, formatting failures in both source directories, nested paths with spaces, multiple affected files, syntax errors, and preservation of source bytes. All 22 cases across the module passed, including race tests. Formatting, vet, lint, and both configuration validators passed on macOS arm64. Installed hook behavior remains covered by the tooling verification checklist rather than the Go suite.
 
-### 3. Persistent key state · in-progress
+### 3. Persistent key state · done
 
 Keep candidate identity, source provenance, validation evidence, and run history across restarts. Keep source visibility separate from entitlement.
 
@@ -75,13 +75,17 @@ Keep candidate identity, source provenance, validation evidence, and run history
 **Spec:** [0002. Persistent key state](../specs/0002-persistent-key-state/index.md), confirmed on 2026-10-10 after independent review. This slice builds the store interface; CLI commands and real validation remain in later features.
 
 - [x] Design it (spec): `/architect persistent key state`
-- [ ] Build it: `/develop persistent key state`
-  - [ ] Prove private initialization, atomic discovery, and summary and provenance reads across a process restart (AC-1, AC-2, AC-3, AC-6, AC-7, AC-10, AC-11).
-  - [ ] Complete repeatable provenance writes, request identities, and bounded traversal of all 338 controlled candidates (AC-2, AC-9, AC-12).
-  - [ ] Retain validation attempts and derive definitive evidence and freshness using controlled fixtures (AC-3, AC-4, AC-5, AC-12).
-  - [ ] Verify recovery, migration rollback, permissions, and concurrent access on both arm64 platforms (AC-6, AC-7, AC-8, AC-10, AC-11, AC-12).
-- [ ] Verify it: `/check verify persistent key state`
-- [ ] Test it: `/test persistent key state`
+- [x] Build it: `/develop persistent key state`
+  - [x] Prove private initialization, atomic discovery, and summary and provenance reads across a process restart (AC-1, AC-2, AC-3, AC-6, AC-7, AC-10, AC-11).
+  - [x] Complete repeatable provenance writes, request identities, and bounded traversal of all 338 controlled candidates (AC-2, AC-9, AC-12).
+  - [x] Retain validation attempts and derive definitive evidence and freshness using controlled fixtures (AC-3, AC-4, AC-5, AC-12).
+  - [x] Verify recovery, migration rollback, permissions, and concurrent access on both arm64 platforms (AC-6, AC-7, AC-8, AC-10, AC-11, AC-12).
+- [x] Verify it: `/check verify persistent key state`
+- [x] Test it: `/test persistent key state`
+
+**Code:** Domain records in `internal/state/`; persistence and build checks in `internal/store/`. The migration and runtime checks passed on macOS and Linux arm64 with SQLite driver `v1.60.1`. The repository gate passed. Suggested verification is in [verify.md](../specs/0002-persistent-key-state/verify.md).
+
+The test pass added eight test functions covering 42 cases for evidence rejection, normalized retries, terminal results, immutable provenance, cursor validation, and writer ownership. It also extended handle lifecycle assertions and linked the retained store tests to AC-1 through AC-12. The full Go suite, formatting, vet, race tests, and lint passed on macOS arm64. Vet needed access to the Go build cache outside the sandbox. You confirmed feature completion on 2026-10-10.
 
 ## Slice 1: Prove the whole loop
 
