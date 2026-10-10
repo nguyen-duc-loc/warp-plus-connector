@@ -37,6 +37,8 @@ Formatting passes when `gofmt -l` prints nothing. To format changed Go files, us
 6. Real validation remains unsupported until its separate Linux feasibility gate proves entitlement, isolated registration, and cleanup. Never use the host WARP registration as a fallback. Store writes require one lock owner; keep SQL behind the store boundary and transactions outside network requests.
 7. `internal/state` holds domain records; `internal/store` owns SQLite persistence, migrations, recovery, and bounded history reads. Store callers supply an absolute state directory, recovery clock, and explicit freshness evaluation. The CLI does not open the store yet.
 
+8. `internal/config` resolves private JSON before state or external work; only explicitly changed flags override it. `internal/app` owns coordination: persist crawl intent before fetching, save parsed coverage before messages, and preserve earlier message commits on failure. Listing fixes one freshness evaluation across every store page. CLI diagnostics use stable codes; keys appear only with `list --show-keys`.
+
 ## Tooling
 The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. CI remains pending provider selection; its planned checks include the same gate and builds for macOS and Linux arm64.
 The formatting gate uses `scripts/check-format.sh` to reject unformatted Go files under `cmd` and `internal` without changing them. Go tests under `scripts` also need the broader formatting command above. `.golangci.yml` enables `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`. Repeatable hook checks are in [tooling verification](docs/reviews/tooling/verify.md).
@@ -64,6 +66,7 @@ Architecture: [0001 stack and architecture](docs/specs/0001-stack-architecture/i
 Declined: additional community skills and MCP servers for this stack. Do not offer discovery again without a new request.
 
 ## Context files
+- [internal/source/AGENTS.md](internal/source/AGENTS.md): Bounded public retrieval, exact candidate extraction, and source provenance.
 - [internal/store/AGENTS.md](internal/store/AGENTS.md): Store ownership, persistence contracts, cancellation, and verification.
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
