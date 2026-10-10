@@ -45,7 +45,7 @@ Observed tools: `golangci-lint 2.14.0`, `pre-commit 4.6.2`. Formatting, vet, rac
 - integration: on
 - branch prefix: feat/
 - commit: per-milestone
-Offer milestone commits for approval. Confirm pushes and PRs. No remote is configured.
+Offer milestone commits for approval. Confirm pushes and PRs. Public repository and `origin`: `https://github.com/nguyen-duc-loc/warp-plus-connector`. Go module: `github.com/nguyen-duc-loc/warp-plus-connector`.
 
 ## Specs
 Architecture: [0001 stack and architecture](docs/specs/0001-stack-architecture/index.md). Feature records live under `docs/specs/NNNN-name/`; scope lives in [docs/scope/scope.md](docs/scope/scope.md).

@@ -1,0 +1,9 @@
+{
+  "tool": "go testing + testify",
+  "gate": null,
+  "additionalTools": ["github.com/stretchr/testify"],
+  "e2eTool": "none",
+  "testDir": "same package as source",
+  "filePattern": "*_test.go",
+  "packageManager": "go"
+}

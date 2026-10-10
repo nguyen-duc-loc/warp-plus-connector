@@ -1,0 +1,32 @@
+fail_fast: true
+repos:
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: Go formatting
+        entry: sh scripts/check-format.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: go-vet
+        name: Go vet
+        entry: go vet ./...
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: go-race
+        name: Go race tests
+        entry: go test -race ./...
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: golangci-lint
+        name: Go lint
+        entry: golangci-lint run ./...
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]

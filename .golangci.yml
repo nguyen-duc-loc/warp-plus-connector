@@ -1,0 +1,11 @@
+version: "2"
+
+# Keep the previously validated default checks explicit.
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
