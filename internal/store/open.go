@@ -85,7 +85,7 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	if err = h.writeDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return nil, safeError(ctx, "read schema", err)
 	}
-	if version > 1 {
+	if version > schemaVersion {
 		return nil, ErrSchemaTooNew
 	}
 	var mode string
@@ -95,7 +95,7 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	if mode != "wal" {
 		return nil, ErrStateAccess
 	}
-	if err = migrate(ctx, h.writeDB, []string{initialSchema}); err != nil {
+	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema}); err != nil {
 		return nil, safeError(ctx, "migrate state", err)
 	}
 	recovery, err := normalizeTime(clock())
@@ -155,10 +155,10 @@ func openReader(ctx context.Context, stateDir string) (*Reader, error) {
 	if err = h.readDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return nil, safeError(ctx, "read schema", err)
 	}
-	if version > 1 {
+	if version > schemaVersion {
 		return nil, ErrSchemaTooNew
 	}
-	if version < 1 {
+	if version < schemaVersion {
 		return nil, ErrMigrationRequired
 	}
 	if err = checkFiles(dir); err != nil {

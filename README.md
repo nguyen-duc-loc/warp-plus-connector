@@ -1,8 +1,8 @@
 # WPC (Warp Plus Connector)
 
-A personal CLI for publicly shared WARP Plus key candidates. The current scaffold provides help and version output. Real validation remains unsupported until the separate Linux feasibility gate passes.
+A personal CLI for publicly shared WARP Plus key candidates. You can crawl the latest public `warpplus` preview, inspect saved coverage, list all saved candidates, and check a selected authorized key in an isolated Linux container.
 
-The first version targets macOS and Linux on arm64. Support for amd64 is deferred. You can build and run it with Go. This scaffold was built with `go1.27.2` and exercised on macOS and Linux arm64. Exact dependency versions are recorded in `go.mod` and `go.sum`.
+The first version targets macOS and Linux on arm64. Support for amd64 is deferred. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
 
 ```sh
 go build -o bin/wpc ./cmd/wpc
@@ -24,7 +24,67 @@ The values above are examples. You can use your actual release version and commi
 
 The executable entry point lives in `cmd/wpc`. Command definitions live in `internal/cli`. Cobra `v1.10.2` handles command parsing and help, as selected by the architecture. The scaffold was initialized with Go tooling and Cobra CLI `v1.3.0`, then adapted to this layout. Cobra CLI is only a generator, not an application dependency. See the [official Cobra guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md) for the command framework.
 
-The [architecture](docs/specs/0001-stack-architecture/index.md) defines the later configuration, persistence, and validator boundaries. The [scope](docs/scope/scope.md) tracks their implementation. The scaffold uses Cobra at runtime and Go testing with Testify for tests.
+The [architecture](docs/specs/0001-stack-architecture/index.md) defines the configuration, persistence, and validator boundaries. The [scope](docs/scope/scope.md) tracks their implementation. The public preview parser uses goquery `v1.13.0` for scoped HTML traversal, with cascadia `v1.3.4` and `golang.org/x/net v0.58.0`. These versions were exercised with live markup and synthetic fixtures on macOS and Linux arm64.
+
+## Crawl and inspect
+
+```sh
+./bin/wpc crawl
+./bin/wpc crawl show 1
+./bin/wpc list
+./bin/wpc check 1
+./bin/wpc list --show-keys
+```
+
+You can replace the example IDs with a saved run ID or candidate ID. Crawling fetches only one latest preview page, with a 20 second deadline and a 2 MiB decoded body limit. It retains exact candidate identity, source message provenance, and observed coverage. It does not fetch channel history or retry requests. Repeated crawls merge identities while retaining observations.
+
+`crawl show` and `list` use saved state without contacting Telegram or a validator. Listing follows every bounded store page, with no total limit. Keys stay hidden unless you supply `--show-keys`. Missing state is an error; an initialized empty collection reports `No candidates saved.`
+
+The default validator is `unsupported`. It saves an inconclusive attempt with reason `validation_unsupported` and exits 1 without registration work. The optional Docker backend uses the official WARP client, confirms only matching Unlimited evidence, and deletes its temporary registration before returning a confirmation. Source claims and matching key formats do not establish entitlement.
+
+## Isolated validation
+
+You need a local Docker engine running Linux arm64 containers. You can build the tested image once, then select its immutable ID:
+
+```sh
+validator_image_id=$(rtk proxy sh scripts/build-validator-image.sh)
+rtk proxy ./bin/wpc check 1 --validator docker --validator-image "$validator_image_id"
+rtk proxy ./bin/wpc list
+```
+
+Replace `1` with a saved candidate ID you are authorized to activate. The build downloads the signed official WARP package; a check uses only the prepared local image. The backend does not change your host registration or connect a host tunnel. Remote Docker endpoints, privileged containers, host networking, and host mounts are unsupported.
+
+A confirmed result includes `account_type=Unlimited`, its observation time, and the tested backend version. Matching Free accounts remain inconclusive with `not_unlimited`. Full accounts report `device_limit`. Throttling reports `rate_limited` when the tested client provides sufficient evidence. Results are observations, not reserved device slots.
+
+The backend keeps one shared recovery record across profiles. A new check first reconciles interrupted work. You can also request cleanup alone:
+
+```sh
+rtk proxy ./bin/wpc validator recover --validator docker --validator-image "$validator_image_id"
+```
+
+Unknown remote outcomes retain the container and block further attachments with `validation_cleanup_pending`. Deleting that container or its journal does not prove remote cleanup. The [validator notes](internal/validator/README.md) describe the retained state and recovery boundary.
+
+## Private configuration
+
+Runtime commands accept `--config`, `--state-dir`, and `--recheck-interval`. `check` and `validator recover` also accept `--validator`, `--validator-image`, and `--validator-socket`. Explicit flags override JSON settings. Validator choices are `unsupported` and `docker`.
+
+The optional default file is `os.UserConfigDir()/warp-plus-connector/config.json`. An explicit missing file fails. Existing configuration must be a regular file owned by your account, without group or other access or a symlink. For example, you can save this JSON with mode `0600`:
+
+```json
+{
+  "state_dir": "/absolute/private/path/wpc",
+  "recheck_interval": "6h",
+  "validator": "unsupported"
+}
+```
+
+Relative state paths resolve from your invocation directory. Shell expansions such as `~` are not performed. State defaults to your `Library/Application Support/warp-plus-connector` on macOS. Linux uses an absolute `XDG_STATE_HOME`, or your `.local/state`, followed by `warp-plus-connector`. State is private to your account. Opening a writer applies schema migrations and recovers interrupted local work; reading does neither.
+
+To select Docker in JSON, set `validator` to `docker` and add `validator_image` with the complete `sha256:` ID printed by the build script. Optional `validator_socket` is an absolute local Unix socket path. Otherwise the backend inspects your selected local Docker context. The recovery directory is `validator` beneath the platform default state directory, independent of a profile's `state_dir` override.
+
+The interval controls freshness evaluation only. Scheduling is not implemented. Configuration rejects unknown or duplicate fields, nulls, invalid values, extra JSON documents, and files larger than 64 KiB. Root invocation, help, and version bypass configuration and state.
+
+Results use stdout; fixed diagnostic reasons and structured run logs use stderr. Ordinary failures and unsupported checks exit 1. SIGINT and SIGTERM request cancellation and exit 130 and 143, with a bounded attempt to persist terminal state. A later writer recovers any unresolved local work.
 
 ## Development checks
 

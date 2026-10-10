@@ -1,0 +1,262 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
+	"github.com/spf13/cobra"
+)
+
+var errArguments = errors.New("invalid arguments, see command help")
+
+func addRuntimeCommands(root *cobra.Command, version string) {
+	crawl := &cobra.Command{Use: "crawl", Short: "Collect the latest public warpplus preview page", Args: noArguments}
+	commonFlags(crawl)
+	crawl.RunE = func(cmd *cobra.Command, _ []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		report, err := a.Crawl(cmd.Context())
+		if report.Run.ID != 0 {
+			err = errors.Join(err, renderCrawl(cmd.OutOrStdout(), report))
+		}
+		return err
+	}
+	show := &cobra.Command{Use: "show <run-id>", Short: "Read saved crawl coverage and progress", Args: oneID}
+	commonFlags(show)
+	show.RunE = func(cmd *cobra.Command, args []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		id, _ := strconv.ParseInt(args[0], 10, 64)
+		report, err := a.ShowCrawl(cmd.Context(), id)
+		if err != nil {
+			return err
+		}
+		return renderCrawl(cmd.OutOrStdout(), report)
+	}
+	crawl.AddCommand(show)
+	check := &cobra.Command{Use: "check <candidate-id>", Short: "Check a saved candidate with the selected validator", Args: oneID}
+	commonFlags(check)
+	validatorFlags(check)
+	check.RunE = func(cmd *cobra.Command, args []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		id, _ := strconv.ParseInt(args[0], 10, 64)
+		attempt, err := a.Check(cmd.Context(), id)
+		if attempt.ID != 0 {
+			err = errors.Join(err, renderAttempt(cmd.OutOrStdout(), attempt))
+		}
+		return err
+	}
+	list := &cobra.Command{Use: "list", Short: "List every saved candidate, hiding keys by default", Args: noArguments}
+	commonFlags(list)
+	list.Flags().Bool("show-keys", false, "Include complete saved keys in output")
+	list.RunE = func(cmd *cobra.Command, _ []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		showKeys, err := cmd.Flags().GetBool("show-keys")
+		if err != nil {
+			return err
+		}
+		count := 0
+		err = a.List(cmd.Context(), func(c state.Candidate) error {
+			if count == 0 {
+				header := "ID\tLATEST\tREASON\tLAST_DEFINITIVE\tEVIDENCE_AT\tFRESHNESS\tCLOCK_ANOMALY"
+				if showKeys {
+					header += "\tKEY"
+				}
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), header); err != nil {
+					return err
+				}
+			}
+			count++
+			return renderCandidate(cmd.OutOrStdout(), c, showKeys)
+		})
+		if err == nil && count == 0 {
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "No candidates saved.")
+		}
+		return err
+	}
+	validation := &cobra.Command{Use: "validator", Short: "Manage isolated validation recovery"}
+	recoverCommand := &cobra.Command{Use: "recover", Short: "Reconcile an earlier validation without a new registration", Args: noArguments}
+	commonFlags(recoverCommand)
+	validatorFlags(recoverCommand)
+	recoverCommand.RunE = func(cmd *cobra.Command, _ []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		backend, ok := a.Validator.(interface{ Recover(context.Context) error })
+		if !ok {
+			return &validator.Error{Code: "validation_unsupported"}
+		}
+		if err := backend.Recover(cmd.Context()); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "cleanup=complete")
+		return err
+	}
+	validation.AddCommand(recoverCommand)
+	root.AddCommand(crawl, check, list, validation)
+}
+
+func validatorFlags(cmd *cobra.Command) {
+	cmd.Flags().String("validator", "unsupported", "Validator backend: unsupported or docker")
+	cmd.Flags().String("validator-image", "", "Immutable local Docker image ID from the validator build script")
+	cmd.Flags().String("validator-socket", "", "Absolute local Docker socket path (defaults to selected local context)")
+}
+
+func noArguments(_ *cobra.Command, args []string) error {
+	if len(args) != 0 {
+		return errArguments
+	}
+	return nil
+}
+
+func oneID(_ *cobra.Command, args []string) error {
+	if len(args) != 1 || args[0] == "" {
+		return errArguments
+	}
+	for _, c := range args[0] {
+		if c < '0' || c > '9' {
+			return errArguments
+		}
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || id <= 0 {
+		return errArguments
+	}
+	return nil
+}
+
+func commonFlags(cmd *cobra.Command) {
+	cmd.Flags().String("config", "", "Private JSON configuration file")
+	cmd.Flags().String("state-dir", "", "State directory for this profile")
+	cmd.Flags().String("recheck-interval", "6h", "Positive duration used to evaluate evidence freshness")
+}
+
+func application(cmd *cobra.Command, version string) (*app.App, error) {
+	flag := func(name string) *string {
+		if !cmd.Flags().Changed(name) {
+			return nil
+		}
+		value, _ := cmd.Flags().GetString(name)
+		return &value
+	}
+	settings, err := config.Resolve(config.Overrides{ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"), Validator: flag("validator"), ValidatorImage: flag("validator-image"), ValidatorSocket: flag("validator-socket")})
+	if err != nil {
+		return nil, err
+	}
+	var backend validator.Backend = validator.Unsupported{Version: version}
+	if settings.Validator == "docker" {
+		backend = &validator.Docker{Options: validator.DockerOptions{Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir}}
+	}
+	return &app.App{Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend, Clock: time.Now,
+		Logger: slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))}, nil
+}
+
+func textValue(v *string) string {
+	if v == nil {
+		return "none"
+	}
+	return *v
+}
+func timeValue(v *time.Time) string {
+	if v == nil {
+		return "none"
+	}
+	return v.UTC().Format(time.RFC3339Nano)
+}
+func idValue(v *int64) string {
+	if v == nil {
+		return "none"
+	}
+	return strconv.FormatInt(*v, 10)
+}
+
+func renderCrawl(w io.Writer, r state.CrawlReport) error {
+	b := strings.Builder{}
+	fmt.Fprintf(&b, "run_id=%d status=%s reason=%s counts_current=%t\n", r.Run.ID, r.Run.Status, textValue(r.Run.ReasonCode), r.Run.Status == state.Running)
+	if c := r.Coverage; c != nil {
+		count := "none"
+		if c.ParsedPostCount != nil {
+			count = strconv.Itoa(*c.ParsedPostCount)
+		}
+		fmt.Fprintf(&b, "source=%s url=%s coverage=%s page_limit=%d history_complete=false\nfetched_at=%s parsed_posts=%s min_message_id=%s max_message_id=%s\n", c.SourceID, c.RequestedURL, c.CoverageMode, c.PageLimit, timeValue(c.FetchedAt), count, idValue(c.MinMessageID), idValue(c.MaxMessageID))
+	} else {
+		b.WriteString("coverage unavailable\n")
+	}
+	fmt.Fprintf(&b, "saved_candidates=%d saved_sightings=%d\n", r.SavedCandidates, r.SavedSightings)
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+func renderAttempt(w io.Writer, a state.Attempt) error {
+	evidence := "none"
+	if e := a.Evidence; e != nil {
+		evidence = fmt.Sprintf("kind=%s observed_at=%s account_type=%s rejection_code=%s", e.Kind, timeValue(&e.ObservedAt), e.AccountType, e.RejectionCode)
+	}
+	_, err := fmt.Fprintf(w, "candidate_id=%d run_id=%d attempt_id=%d outcome=%s reason=%s backend=%s version=%s evidence=%s\n", a.CandidateID, a.RunID, a.ID, a.Outcome, textValue(a.ReasonCode), a.BackendID, a.BackendVersion, evidence)
+	return err
+}
+
+func renderCandidate(w io.Writer, c state.Candidate, showKeys bool) error {
+	reason, definitive, evidenceAt := "none", "none", "none"
+	if c.LatestAttempt != nil {
+		reason = textValue(c.LatestAttempt.ReasonCode)
+	}
+	if a := c.LastDefinitiveAttempt; a != nil {
+		definitive = string(a.Outcome)
+		if a.Evidence != nil {
+			evidenceAt = timeValue(&a.Evidence.ObservedAt)
+		}
+	}
+	line := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%t", c.ID, c.LatestOutcome, reason, definitive, evidenceAt, c.Freshness, c.ClockAnomaly)
+	if showKeys {
+		line += "\t" + strconv.Quote(c.Key)
+	}
+	_, err := fmt.Fprintln(w, line)
+	return err
+}
+
+// Diagnostic sanitizes parser and output errors before they reach stderr.
+func Diagnostic(err error) string {
+	var validation *validator.Error
+	if errors.As(err, &validation) {
+		return validation.Code
+	}
+	var runtime *app.Error
+	if errors.As(err, &runtime) {
+		return runtime.Code
+	}
+	for _, known := range []error{config.ErrInvalid, config.ErrAccess, errArguments} {
+		if errors.Is(err, known) {
+			return known.Error()
+		}
+	}
+	// Cobra includes supplied values in these errors. Preserve the category only.
+	for _, prefix := range []string{"unknown command", "unknown flag", "unknown shorthand flag", "invalid argument", "flag needs an argument"} {
+		if strings.HasPrefix(err.Error(), prefix) {
+			return prefix + ", see command help"
+		}
+	}
+	return "command or output failed"
+}

@@ -2,15 +2,17 @@
 
 ## Summary
 
-You will test real validation in a separate Linux arm64 container managed by local Docker from macOS. A disposable container is useful only when its remote registration can also be cleaned up. The experiment is currently blocked, and no real validation command or backend is enabled by this spec.
+Real validation uses a separate Linux arm64 container managed by local Docker. A disposable container is useful only when its remote registration can also be cleaned up. This file retains the experiment protocol; measured results and the implementation contract are now recorded in [the backend child](0003-docker-validator.md).
 
-## Current prerequisites
+## Original prerequisites
 
 You reported no prepared Linux environment and no controlled subscription with device slot visibility. Docker CLI `29.9.0`, build `f415da838b`, was observed locally on 2026-10-10. That observation establishes only the client binary. No Docker daemon, image, WARP container, registration, entitlement, or cleanup procedure was tested during this design.
 
 Before any attachment, you need a functioning local Docker endpoint capable of Linux arm64 execution, an isolated image containing a supported WARP daemon and CLI, and a subscription you control with independently visible device membership. Record how you observe device membership before and after the experiment. Without that visibility, the cleanup part cannot pass. A publicly posted key cannot replace this control account for proving slot reclamation.
 
 The application remains native on macOS. Docker Desktop normally runs containers inside its own Linux VM; the disposable unit here is the container, not a newly created VM per check. Another local Docker runtime may be tested, but its actual identity and versions must be recorded. A remote Docker endpoint is outside this decision and cannot be selected silently. (basis: your macOS and Docker choice, [Docker platform documentation](https://docs.docker.com/faqs/platform/))
+
+The later authorized experiment supplied local Colima, a pinned official Linux client, matching Unlimited evidence, and independent membership inspection through a separate authorized registration. The user confirmed owner permission to activate the shared candidates. Process and container interruption checks subsequently exercised retained recovery and deliberate blocking on a lost deletion acknowledgement. The working host registration was not used as a validator and was not changed by the implementation. A fresh positive check through the final CLI remains pending by the user's choice on 2026-10-11.
 
 ## Experimental boundary
 

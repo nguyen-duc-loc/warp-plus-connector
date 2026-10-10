@@ -10,6 +10,11 @@ import (
 //go:embed migrations/001_initial.sql
 var initialSchema string
 
+//go:embed migrations/002_crawl_coverage.sql
+var coverageSchema string
+
+const schemaVersion = 2
+
 // A private argument lets package tests exercise rollback without exposing a
 // migration override to application callers.
 func migrate(ctx context.Context, db *sql.DB, migrations []string) error {

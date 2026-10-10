@@ -3,12 +3,15 @@ module github.com/nguyen-duc-loc/warp-plus-connector
 go 1.27.2
 
 require (
+	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/net v0.58.0
 	modernc.org/sqlite v1.60.1
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect

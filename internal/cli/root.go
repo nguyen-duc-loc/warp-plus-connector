@@ -15,7 +15,7 @@ func NewRootCommand(version, commit string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "wpc",
 		Short:         "A personal CLI for publicly shared WARP Plus key candidates",
-		Long:          "A personal CLI for publicly shared WARP Plus key candidates.\n\nThis scaffold provides help and version output. Real validation is unsupported.",
+		Long:          "Collect and inspect publicly shared WARP Plus key candidates.\n\nReal validation is unsupported until isolation and cleanup are proven.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -41,5 +41,6 @@ func NewRootCommand(version, commit string) *cobra.Command {
 		},
 	})
 
+	addRuntimeCommands(root, version)
 	return root
 }

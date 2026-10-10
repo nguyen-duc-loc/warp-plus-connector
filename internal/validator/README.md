@@ -1,0 +1,23 @@
+# Validator status
+
+The default adapter is `unsupported`. It records an inconclusive attempt without network access, subprocesses, Docker access, or registration changes. The optional `docker` adapter checks one authorized candidate using the official WARP client in an isolated Linux arm64 container. Earlier definitive evidence stays intact after any inconclusive attempt.
+
+The assessment on 2026-10-10 found a local Colima endpoint under the account's `.colima/default/docker.sock`. Docker client `29.9.0` and server `29.5.2` reported macOS arm64 and Linux arm64 respectively. This establishes a working local container runtime. It does not establish WARP compatibility, isolation, entitlement, or cleanup. A separate Debian container ran application and store probes without external networking or WARP registration.
+
+Later experiments on 2026-10-10 established matching Unlimited evidence with official WARP `2026.8.2100.0`. All twenty temporary registrations received successful remote deletion acknowledgements. An independent authorized host registration subsequently confirmed that the successful experiment device was absent from the same subscription. The host served only as a read only observer. The [backend contract](../../docs/specs/0003-source-crawl-validation/0003-docker-validator.md) records the resulting implementation and recovery requirements.
+
+The installed `warp-cli registration` help describes `show` as inspecting the current registration and `license` as attaching that registration to a different account. Plan evidence therefore needs attribution to the submitted candidate in an isolated registration. The application must never use your host registration as a fallback.
+
+The controlled experiment established normal slot cleanup through independent device membership inspection. The backend uses the tested remote deletion acknowledgement and durable receipt, and retains uncertainty rather than treating container removal as remote cleanup. Runtime interruption checks separately exercise recovery and blocking of further attachments.
+
+## Runtime ownership
+
+Build the image with `rtk proxy sh scripts/build-validator-image.sh` and pass its immutable ID through `--validator-image` or private JSON configuration. The image contains a Go worker and the tested official package. Checks never install software or pull images. Only local Unix Docker endpoints and Linux arm64 images are accepted.
+
+The shared host journal lives under the platform default state directory at `validator/session.json`, with `owner.lock` retaining one owner across profile overrides. It records the Docker endpoint, daemon identity, image, exact container, and originating attempt. Candidate keys stay out of host process arguments and this manifest.
+
+The worker receives its key through standard input and retains a private journal at `/var/lib/wpc/session.json` inside its container. The vendor license argument exists only inside that isolated runtime. Vendor logs and a registration backup remain private there. The worker initializes its journal before a separate start operation can create any remote state.
+
+The host accepts a confirmation only after matching input attribution, explicit deletion acknowledgement, and a durable cleaned receipt. A failed, timed out, or interrupted check retains its session. `validator recover` and the next Docker check reconcile that exact session before any new attachment. Neither recovery path creates a registration or reapplies a license.
+
+Missing local registration without a receipt is uncertain. A narrowly measured exception handles an explicit HTTP 429 rejection of the sole creation request, provided the retained log has exactly the matching failure and terminal events and local registration is absent. It reports `rate_limited` and performs no automatic retry. Unknown cases stay blocked; there is no command that discards uncertainty merely to continue.

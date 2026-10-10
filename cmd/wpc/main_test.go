@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,4 +156,94 @@ func snapshot(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+// covers: spec 0003 AC-2, AC-3, AC-4, AC-6. Fresh processes read every saved
+// candidate and return an explicit failing exit for unsupported validation.
+func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
+	binary := buildCLI(t, "")
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{}`), 0600))
+	stateDir := filepath.Join(dir, "state")
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	w, err := store.OpenWriter(t.Context(), stateDir, func() time.Time { return at })
+	require.NoError(t, err)
+	report, err := w.StartCrawl(t.Context(), state.CrawlInput{RequestID: "fixture", StartedAt: at, SourceID: "telegram:warpplus", RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1})
+	require.NoError(t, err)
+	minID := int64(7)
+	_, err = w.RecordCrawlPage(t.Context(), state.CrawlPage{RunID: report.Run.ID, FetchedAt: at, ParsedPostCount: 1, MinMessageID: &minID, MaxMessageID: &minID})
+	require.NoError(t, err)
+	keys := make([]string, 338)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("%08d-12345678-AbCdEf01", i)
+	}
+	_, err = w.RecordMessage(t.Context(), state.MessageInput{RunID: report.Run.ID, SourceID: "telegram:warpplus", MessageID: "7", ObservedAt: at, Keys: keys})
+	require.NoError(t, err)
+	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: report.Run.ID, Status: state.Completed, FinishedAt: at})
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	invoke := func(args ...string) (string, string, int) {
+		return runCLI(t, binary, append(args, "--config", configPath, "--state-dir", stateDir)...)
+	}
+	out, diagnostic, code := invoke("list")
+	require.Zero(t, code, diagnostic)
+	require.Empty(t, diagnostic)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	require.Len(t, lines, 339)
+	seen := map[string]bool{}
+	for _, line := range lines[1:] {
+		fields := strings.Split(line, "\t")
+		require.Len(t, fields, 7)
+		require.False(t, seen[fields[0]])
+		seen[fields[0]] = true
+		require.Equal(t, "unchecked", fields[1])
+	}
+	for i := 1; i <= 338; i++ {
+		require.True(t, seen[fmt.Sprint(i)])
+	}
+	require.NotContains(t, out, "AbCdEf01")
+	require.NotContains(t, out, "12345678")
+	out, diagnostic, code = invoke("list", "--show-keys")
+	require.Zero(t, code, diagnostic)
+	for _, key := range keys {
+		require.Contains(t, out, key)
+	}
+	out, diagnostic, code = invoke("crawl", "show", fmt.Sprint(report.Run.ID))
+	require.Zero(t, code, diagnostic)
+	for _, value := range []string{"status=completed", "history_complete=false", "coverage=latest_preview", "parsed_posts=1", "min_message_id=7", "saved_candidates=338", "saved_sightings=338"} {
+		require.Contains(t, out, value)
+	}
+	out, diagnostic, code = invoke("check", "1")
+	require.Equal(t, 1, code)
+	require.Contains(t, out, "outcome=inconclusive reason=validation_unsupported")
+	require.Contains(t, diagnostic, "Error: validation_unsupported")
+	require.NotContains(t, out+diagnostic, keys[0])
+	out, diagnostic, code = invoke("list")
+	require.Zero(t, code, diagnostic)
+	require.Contains(t, out, "1\tinconclusive\tvalidation_unsupported\tnone\tnone\tnot_applicable")
+	out, diagnostic, code = invoke("check", "999")
+	require.Equal(t, 1, code)
+	require.Empty(t, out)
+	require.Contains(t, diagnostic, "state_record_not_found")
+}
+
+// covers: spec 0003 AC-5, AC-6. Runtime help ignores invalid configuration,
+// and argument errors never echo supplied secrets or create state.
+func TestCLI_RuntimeHelpAndErrorsHaveNoSideEffects(t *testing.T) {
+	binary := buildCLI(t, "")
+	for _, args := range [][]string{{"crawl", "--help"}, {"crawl", "show", "--help"}, {"list", "--help"}, {"check", "--help"}, {"validator", "recover", "--help"}} {
+		out, diagnostic, code := runCLI(t, binary, args...)
+		require.Zero(t, code, diagnostic)
+		require.Contains(t, out, "Usage:")
+		require.Empty(t, diagnostic)
+	}
+	for _, args := range [][]string{{"check", "ABCDEFGH-12345678-AbCdEf01"}, {"check", "0"}, {"check", "9223372036854775808"}, {"list", "secret"}, {"crawl", "show"}, {"crawl", "--config", "/missing/private-secret.json"}} {
+		out, diagnostic, code := runCLI(t, binary, args...)
+		require.Equal(t, 1, code)
+		require.Empty(t, out)
+		require.NotContains(t, diagnostic, "secret")
+		require.NotContains(t, diagnostic, "ABCDEFGH")
+		require.NotContains(t, diagnostic, "Usage:")
+	}
 }

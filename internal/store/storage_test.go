@@ -19,11 +19,11 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 	require.NoError(t, err)
 	r, err := w.StartRun(ctx, state.RunInput{RequestID: "original", Kind: state.Crawl, StartedAt: time.Now()})
 	require.NoError(t, err)
-	err = migrate(ctx, w.h.writeDB, []string{initialSchema, "CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);"})
+	err = migrate(ctx, w.h.writeDB, []string{initialSchema, coverageSchema, "CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);"})
 	require.Error(t, err)
 	var version, count int
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version))
-	require.Equal(t, 1, version)
+	require.Equal(t, schemaVersion, version)
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name='rollback_probe'").Scan(&count))
 	require.Zero(t, count)
 	runs, err := w.ListRuns(ctx, "", state.PageRequest{})
@@ -31,7 +31,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 	require.Equal(t, r.ID, runs.Items[0].ID)
 	// Introspection verifies that the embedded migration actually ran.
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&count))
-	require.Equal(t, 5, count)
+	require.Equal(t, 6, count)
 	require.NoError(t, w.Close())
 }
 
@@ -148,4 +148,65 @@ func TestMessageRollback(t *testing.T) {
 	require.Equal(t, 1, count)
 	require.NoError(t, w.h.writeDB.QueryRowContext(t.Context(), "SELECT count(*) FROM crawl_observations").Scan(&count))
 	require.Equal(t, 1, count)
+}
+
+// covers: spec 0003 AC-9. Migrating schema 1 preserves evidence and provenance,
+// requires a writer, and leaves old coverage explicitly unavailable.
+func TestCoverageMigrationPreservesLegacyHistory(t *testing.T) {
+	ctx := t.Context()
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	dir := filepath.Join(t.TempDir(), "state")
+	w, err := OpenWriter(ctx, dir, func() time.Time { return at })
+	require.NoError(t, err)
+	crawl, err := w.StartRun(ctx, state.RunInput{RequestID: "legacy", Kind: state.Crawl, StartedAt: at})
+	require.NoError(t, err)
+	url := "https://t.me/warpplus/1"
+	discovery, err := w.RecordMessage(ctx, state.MessageInput{RunID: crawl.ID, SourceID: "telegram:warpplus", MessageID: "1", MessageURL: &url, PublishedAt: &at, ObservedAt: at, Keys: []string{"synthetic"}})
+	require.NoError(t, err)
+	id := discovery.Discoveries[0].CandidateID
+	validation, err := w.StartRun(ctx, state.RunInput{RequestID: "confirmed", Kind: state.Validation, StartedAt: at})
+	require.NoError(t, err)
+	attempt, err := w.BeginAttempt(ctx, state.AttemptInput{RequestID: "attempt", RunID: validation.ID, CandidateID: id, StartedAt: at, BackendID: "fixture", BackendVersion: "1"})
+	require.NoError(t, err)
+	_, err = w.CompleteAttempt(ctx, state.AttemptCompletion{AttemptID: attempt.ID, FinishedAt: at, Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: at, AccountType: "Unlimited"}})
+	require.NoError(t, err)
+	_, err = w.FinishRun(ctx, state.RunCompletion{RunID: validation.ID, Status: state.Completed, FinishedAt: at})
+	require.NoError(t, err)
+	evaluation := state.Evaluation{AsOf: at, MaxAge: time.Hour}
+	before, err := w.GetCandidate(ctx, id, evaluation)
+	require.NoError(t, err)
+	sightings, err := w.ListSightings(ctx, id, state.PageRequest{})
+	require.NoError(t, err)
+	// Remove only the schema 2 addition to reconstruct a populated schema 1 file.
+	_, err = w.h.writeDB.ExecContext(ctx, "DROP TABLE crawl_coverage; PRAGMA user_version=1")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	r, err := OpenReader(ctx, dir)
+	require.ErrorIs(t, err, ErrMigrationRequired)
+	require.Nil(t, r)
+	w, err = OpenWriter(ctx, dir, func() time.Time { return at.Add(time.Minute) })
+	require.NoError(t, err)
+	defer func() { require.NoError(t, w.Close()) }()
+	after, err := w.GetCandidate(ctx, id, evaluation)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	afterSightings, err := w.ListSightings(ctx, id, state.PageRequest{})
+	require.NoError(t, err)
+	require.Equal(t, sightings, afterSightings)
+	report, err := w.GetCrawlReport(ctx, crawl.ID)
+	require.NoError(t, err)
+	require.Nil(t, report.Coverage)
+	require.Equal(t, state.Interrupted, report.Run.Status)
+	require.Equal(t, int64(1), report.SavedCandidates)
+	require.Equal(t, int64(1), report.SavedSightings)
+	observations, err := w.ListObservations(ctx, crawl.ID, state.PageRequest{})
+	require.NoError(t, err)
+	require.Len(t, observations.Items, 1)
+	require.Equal(t, at, observations.Items[0].ObservedAt)
+	second, err := OpenWriter(ctx, dir, func() time.Time { return at })
+	require.ErrorIs(t, err, ErrBusy)
+	require.Nil(t, second)
+	r, err = OpenReader(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
 }

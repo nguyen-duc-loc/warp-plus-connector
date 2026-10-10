@@ -5,8 +5,8 @@ Prefix shell commands with `rtk`; use `rtk proxy` when raw output is needed.
 
 ## Stack
 Go, one module, Cobra CLI, macOS and Linux arm64 for the first version; amd64 is deferred. Tested toolchain: `go1.27.2`. Go modules manage dependencies.
-Current dependencies: Cobra `v1.10.2`, Go testing and Testify `v1.11.1`, and SQLite via `database/sql` and `modernc.org/sqlite v1.60.1`. The store uses explicit SQL and `encoding/json` for evidence; the driver supplies SQLite without a C toolchain. The CLI still exposes help and version only.
-Accepted later stack: JSON configuration via `encoding/json`, HTTP source adapters, `log/slog`, persisted scheduling, and user `launchd` or `systemd` supervision. These application features are not implemented yet.
+Current dependencies: Cobra `v1.10.2`, Go testing and Testify `v1.11.1`, SQLite via `database/sql` and `modernc.org/sqlite v1.60.1`, and goquery `v1.13.0` with `golang.org/x/net v0.58.0`. The store uses explicit SQL and `encoding/json` for evidence; the driver supplies SQLite without a C toolchain. The CLI exposes crawl, saved reports, complete listing, selected checks, and validator recovery.
+Implemented runtime pieces include private JSON configuration, the public Telegram HTTP adapter, `log/slog`, and an optional local Docker validator using official WARP `2026.8.2100.0`. Persisted scheduling and user `launchd` or `systemd` supervision remain later work.
 
 ## Build approach
 Tracer Bullet (prove one real crawl, check, save, and list path, then expand it).
@@ -16,6 +16,7 @@ Workflow: Beta, verify behavior after development, then add meaningful tests. Sc
 ```sh
 rtk proxy go mod download
 rtk proxy go build -o bin/wpc ./cmd/wpc
+rtk proxy sh scripts/build-validator-image.sh
 rtk proxy go run ./cmd/wpc --help
 rtk proxy go test ./...
 rtk proxy gofmt -l cmd internal scripts
@@ -34,9 +35,8 @@ Formatting passes when `gofmt -l` prints nothing. To format changed Go files, us
 3. Document exported APIs, use idiomatic Go naming and concrete types, wrap errors with context using `%w`, and inspect errors with `errors.Is` or `errors.As`. Propagate cancellation through application work and external calls.
 4. Keep results on stdout and diagnostics on stderr. Help and version must not load configuration, create state, open a database, or contact the network. Test behavior through public interfaces; use subprocess tests for exit codes and linker metadata.
 5. Use a maintained library when it removes meaningful complexity; record its reason and tested version. Avoid speculative packages or new configuration layers. Later settings follow defaults, JSON, then explicitly supplied flags.
-6. Real validation remains unsupported until its separate Linux feasibility gate proves entitlement, isolated registration, and cleanup. Never use the host WARP registration as a fallback. Store writes require one lock owner; keep SQL behind the store boundary and transactions outside network requests.
-7. `internal/state` holds domain records; `internal/store` owns SQLite persistence, migrations, recovery, and bounded history reads. Store callers supply an absolute state directory, recovery clock, and explicit freshness evaluation. The CLI does not open the store yet.
-
+6. Docker validation requires the tested immutable Linux arm64 image, a local Unix Docker endpoint, and shared private recovery ownership. Never use the host WARP registration as a fallback. Unknown remote cleanup blocks further attachments. Store writes require one lock owner; keep SQL behind the store boundary and transactions outside network requests.
+7. `internal/state` holds domain records; `internal/store` owns SQLite persistence, migrations, recovery, and bounded history reads. Store callers supply an absolute state directory, recovery clock, and explicit freshness evaluation. Runtime CLI commands use the store; help and version remain free of state and configuration access.
 8. `internal/config` resolves private JSON before state or external work; only explicitly changed flags override it. `internal/app` owns coordination: persist crawl intent before fetching, save parsed coverage before messages, and preserve earlier message commits on failure. Listing fixes one freshness evaluation across every store page. CLI diagnostics use stable codes; keys appear only with `list --show-keys`.
 
 ## Tooling
@@ -68,5 +68,6 @@ Declined: additional community skills and MCP servers for this stack. Do not off
 ## Context files
 - [internal/source/AGENTS.md](internal/source/AGENTS.md): Bounded public retrieval, exact candidate extraction, and source provenance.
 - [internal/store/AGENTS.md](internal/store/AGENTS.md): Store ownership, persistence contracts, cancellation, and verification.
+- [internal/validator/AGENTS.md](internal/validator/AGENTS.md): Isolated Docker validation, durable remote recovery, and image preparation.
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

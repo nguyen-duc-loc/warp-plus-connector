@@ -1,16 +1,17 @@
 # 0003. One source crawl and validation loop
 
 **Date**: 2026-10-10
-**Status**: Proposed
+**Status**: Accepted
 
 ## Summary
 
-You can crawl the latest public page from `warpplus`, retain its candidates and coverage, and inspect saved results after restarting the CLI. Checking a selected candidate records an explicit unsupported result until a separate Docker experiment proves real entitlement and reliable cleanup. The CLI runs on macOS first, with Linux arm64 containers used for the experiment. Collection alone does not complete this feature.
+You can crawl the latest public page from `warpplus`, retain its candidates and coverage, and inspect saved results after restarting the CLI. Selected checks use the default unsupported adapter or the explicitly selected isolated Docker backend. The native CLI targets macOS and Linux arm64; the real validator uses Linux arm64 containers and durable cleanup recovery.
 
 ## Structure
 
 1. [Source crawl](0001-source-crawl.md) defines retrieval, parsing, provenance, and the coverage extension to the existing store.
 2. [Validator feasibility gate](0002-validator-gate.md) defines the Docker experiment, prerequisites, evidence, and the boundary before a real backend can be built.
+3. [Docker validator backend](0003-docker-validator.md) records the final build milestone, the measured runtime, private recovery, and application integration.
 
 ## Requirements
 
@@ -32,9 +33,9 @@ You can crawl the latest public page from `warpplus`, retain its candidates and 
 
 **Chosen option**: Keep one native Go CLI with separate crawl, check, and read actions. Use the existing SQLite store, add one crawl coverage table, and use goquery for public preview parsing. Treat the local Docker experiment as the first feasibility gate, with no real backend enabled by configuration alone. (basis: [scope item 4](../../scope/scope.md), [architecture](../0001-stack-architecture/index.md), [persistent state](../0002-persistent-key-state/index.md), your confirmed choices)
 
-This is a feature spec for scope item 4. You confirmed its content on 2026-10-10 after an independent review found no substantive gaps. Its lifecycle remains `Proposed` until development begins. AC-7 and AC-8 are currently blocked by the missing experiment environment and controlled subscription. You selected Docker for provisioning, but no suitable container or subscription has been established. The initial collection and unsupported check path is specified for implementation independently of those prerequisites.
+This is a feature spec for scope item 4. You confirmed its initial content on 2026-10-10 after independent review. The Docker experiment subsequently established attributable Unlimited evidence and independently observed normal cleanup. The final build added the concrete backend and exercised real interruption handling. On 2026-10-11 you chose to leave a fresh positive check through the final CLI pending rather than release your working registration's device slot. The feature remains In Progress for verification and retained test coverage.
 
-**Implementation boundary**: This draft does not authorize inventing a real backend from unverified commands. The gate child owns an experimental protocol, not an implemented validator. After successful measurements, `/architect` records the exact backend contract as another child of this directory before real backend implementation. That contract must close the listed evidence, recovery, version, and cleanup questions. This is an explicit pending design gate for the complete feature, not a task left to `/develop` to guess.
+**Implementation boundary**: The [Docker backend child](0003-docker-validator.md) now owns the tested commands, image, evidence, and recovery contract. Its explicit Docker settings and recovery command extend the initial configuration and CLI tables below. The default unsupported behavior remains supported. No host registration fallback, unverified vendor version, or discard of cleanup uncertainty is authorized.
 
 Small implementation recommendations are settled here. Use concrete application coordination, small source and validator interfaces, the standard HTTP client, a single fetch attempt, and sequential store writes. The alternatives are a generic workflow framework, a separate worker service, or early retry and concurrency machinery; none helps prove this one page path. No additional skill or MCP discovery is requested. (basis: root project conventions, your previous decline, Tracer Bullet delivery)
 
@@ -42,7 +43,7 @@ Small implementation recommendations are settled here. Use concrete application 
 
 ### Boundaries and flow
 
-`cmd/wpc` owns process signals, stdout, stderr, and exit codes. `internal/cli` parses and renders. Introduce `internal/config`, `internal/app`, `internal/source/telegram`, and `internal/validator` when the first working command requires them. `internal/state` contains transport independent inputs and records. `internal/store` owns the new SQL and all transactions. No empty scheduler or Docker production package is needed for the initial phase.
+`cmd/wpc` owns process signals, stdout, stderr, and exit codes. `internal/cli` parses and renders. `internal/config`, `internal/app`, `internal/source/telegram`, and `internal/validator` implement the runtime path. `internal/state` contains transport independent inputs and records. `internal/store` owns SQL and transactions. `cmd/wpc-worker` runs only inside the isolated validator image. Scheduling remains outside this feature.
 
 `wpc crawl` resolves configuration, acquires the writer, creates the run and coverage atomically, retrieves and fully parses the bounded page, records parsed coverage, saves messages in increasing numeric message ID order, and finishes the run. Network work never occurs inside a database transaction. Persist each message through the existing atomic `RecordMessage` contract. Render the saved report after finishing.
 
@@ -145,7 +146,7 @@ Tracer Bullet delivery begins with the feasibility gate and then proves one thin
 
 You get a useful collection path and a durable record of what each crawl observed. Explicit unsupported attempts preserve intent without inventing entitlement. The single page and strict grammar keep coverage finite and inspectable.
 
-Public preview markup can change, and this slice intentionally misses older posts and future key formats. One schema migration is required. Docker adds operational requirements and may prove unsuitable for WARP isolation. The complete feature remains blocked until a controlled subscription, remote cleanup evidence, and the concrete backend contract exist.
+Public preview markup can change, and this slice intentionally misses older posts and future key formats. Docker requires a prepared local image and private recovery state. Public account capacity and entitlement can change between checks. The remaining fresh positive verification needs an available authorized Unlimited slot; unknown remote state deliberately blocks further attachments.
 
 ## Follow-up
 

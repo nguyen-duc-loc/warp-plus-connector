@@ -26,7 +26,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 1 | Stack and architecture | Foundation | done |
 | 2 | Coding standards and tooling | Foundation | done |
 | 3 | Persistent key state | Foundation | done |
-| 4 | One source crawl and validation loop | Slice 1 | in-progress |
+| 4 | One source crawl and validation loop | Slice 1 | done |
 | 5 | Configurable source coverage | Slice 2 | planned |
 | 6 | Concurrent checks and bounded retries | Slice 3 | planned |
 | 7 | Complete results and export | Slice 4 | planned |
@@ -89,24 +89,28 @@ The test pass added eight test functions covering 42 cases for evidence rejectio
 
 ## Slice 1: Prove the whole loop
 
-### 4. One source crawl and validation loop · in-progress
+### 4. One source crawl and validation loop · done
 
 Run a manual crawl of one public source, check a candidate through the verified validator, save the outcome, and read it back through the CLI.
 
 **Done when:** a real source produces a candidate that is checked, persisted, and listed after restart; Plus confirmation has attributable evidence; source errors, validator errors, empty results, and unsupported validation are explicit; the selected isolation boundary is preserved.
 
-**Spec:** [0003. One source crawl and validation loop](../specs/0003-source-crawl-validation/index.md), confirmed on 2026-10-10 after independent review. The initial path uses the latest `warpplus` preview page, saved coverage, text listing, and deliberate checks by candidate ID that record unsupported validation explicitly.
+**Spec:** [0003. One source crawl and validation loop](../specs/0003-source-crawl-validation/index.md), confirmed on 2026-10-10 after independent review. The [Docker backend child](../specs/0003-source-crawl-validation/0003-docker-validator.md) records the completed runtime and recovery design. You selected automatic cleanup reconciliation before a new check.
 
-**Remaining gate:** Real validation requires the local Docker Linux arm64 experiment, a controlled subscription with device slot visibility, proven cleanup, and a concrete backend design recorded after the experiment. The native macOS collection and unsupported check path can be built while those prerequisites remain unavailable. The full feature stays incomplete until AC-7 and AC-8 pass.
+**Verification:** Passed on 2026-10-11. A real sourced candidate returned attributable Unlimited evidence through the final CLI and remained confirmed after restart. Live interruption and lost acknowledgement checks preserved recovery ownership and private evidence. Controlled provider responses, both arm64 persistence paths, and host isolation passed. Your working registration remained unchanged. The evidence record is in the feature verification checklist.
 
 - [x] Design it (spec): `/architect one source crawl and validation loop`
-- [ ] Build it: `/develop one source crawl and validation loop`
-  - [ ] Assess and provision the controlled Docker experiment, recording unavailable prerequisites without enabling real validation (AC-7).
-  - [ ] Prove the one page crawl, coverage migration, persistence, complete text listing, and read after restart, including failure and privacy behavior (AC-1, AC-2, AC-3, AC-5, AC-6, AC-9).
-  - [ ] Add selected candidate checks through the unsupported adapter and retain truthful attempt history (AC-3, AC-4, AC-5, AC-6).
-  - [ ] Pass the experiment, complete the backend design through `/architect`, and prove the real source, check, save, and restart path (AC-7, AC-8).
-- [ ] Verify it: `/check verify one source crawl and validation loop`
-- [ ] Test it: `/test one source crawl and validation loop`
+- [x] Build it: `/develop one source crawl and validation loop`
+  - [x] Assess and provision the controlled Docker experiment, recording unavailable prerequisites without enabling real validation (AC-7).
+  - [x] Prove the one page crawl, coverage migration, persistence, complete text listing, and read after restart, including failure and privacy behavior (AC-1, AC-2, AC-3, AC-5, AC-6, AC-9).
+  - [x] Add selected candidate checks through the unsupported adapter and retain truthful attempt history (AC-3, AC-4, AC-5, AC-6).
+  - [x] Pass the experiment, complete the backend design through `/architect`, and prove the real source, check, save, and restart path (AC-7, AC-8).
+- [x] Verify it: `/check verify one source crawl and validation loop`
+- [x] Test it: `/test one source crawl and validation loop`
+
+The test pass on 2026-10-11 added 28 test functions across 15 files. Coverage includes source parsing and request limits, private configuration, durable crawl intent, partial failure, schema migration, complete CLI listing, unsupported checks, validator identity and cleanup, provider process responses, and image build failures. All 273 tests and subtests passed with the race detector on macOS arm64. Formatting, vet, and lint passed. All eight internal package suites also passed on Linux arm64, with 246 tests and subtests, in a container with networking disabled. Live entitlement and host isolation remain covered by the separate verification record. You confirmed feature completion on 2026-10-11.
+
+**Code:** `cmd/wpc`, `cmd/wpc-worker`, `internal/cli`, `internal/config`, `internal/app`, `internal/source/telegram`, `internal/validator`, `internal/state`, and `internal/store`. The [validator notes](../../internal/validator/README.md) describe setup and recovery. The [verification checklist](../specs/0003-source-crawl-validation/verify.md) retains the separate acceptance pass. Real Free, capacity, provider error, and creation throttling paths were exercised; controlled responses cover confirmation persistence.
 
 ## Slice 2: Expand source coverage
 
