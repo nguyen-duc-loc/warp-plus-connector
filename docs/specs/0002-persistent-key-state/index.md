@@ -30,7 +30,7 @@ Your store retains every distinct candidate, its source messages, each validatio
 
 **Chosen option**: A relational history store with normalized records and derived summaries. Reuse SQLite through `database/sql` and `modernc.org/sqlite`, explicit SQL, WAL mode (a journal that permits concurrent readers), and the single writer contract in spec 0001.
 
-This is a feature spec for scope item 3. You confirmed the complete design on 2026-10-10 after independent review and its approved fixes. Its lifecycle remains `Proposed` until implementation begins.
+This is a feature spec for scope item 3. You confirmed the complete design on 2026-10-10 after independent review and its approved fixes. The feature is implemented, verified, and tested; its lifecycle is `Accepted`, matching scope item 3 marked `done`.
 
 Internal implementation recommendations are explicit here. Use one embedded, ordered SQL migration sequence with `PRAGMA user_version`, rather than a migration framework for one initial schema. Use the operating system advisory file lock through Go's `syscall.Flock` on the two accepted platforms, rather than adding a locking dependency for this narrow platform set. Record the exact tested SQLite driver version in `go.mod` during implementation; this design does not claim a version has been tested.
 
