@@ -132,7 +132,7 @@ func (o *dockerOwner) save(sessions []manifest) error {
 		return &Error{Code: "validator_state_error"}
 	}
 	next := registry{Version: 2, Sessions: append([]manifest{}, sessions...)}
-	if privatefs.Write(o.docker.path(), next) != nil {
+	if o.docker.replaceJournal(next) != nil {
 		o.poisoned = true
 		return &Error{Code: "validator_state_error"}
 	}

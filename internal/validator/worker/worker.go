@@ -189,13 +189,15 @@ func (e *Engine) Register(parent context.Context, in protocol.Operation) (protoc
 		return s.Receipt, err
 	}
 	defer cancel()
+	if !e.cancelled(ctx) {
+		if err = e.save(&s, "registration_pending"); err != nil {
+			return s.Receipt, err
+		}
+	}
 	if e.cancelled(ctx) {
 		s.Result.ReasonCode = "cancelled"
 		s.Result.FailureClass = state.Terminal
 		err = e.save(&s, "cleaned")
-		return s.Receipt, err
-	}
-	if err = e.save(&s, "registration_pending"); err != nil {
 		return s.Receipt, err
 	}
 	if reply := e.Runner.Run(ctx, "registration", "new"); reply.Code != "" {
@@ -256,6 +258,11 @@ func (e *Engine) Attach(parent context.Context, in protocol.Operation) (protocol
 }
 
 func (e *Engine) attach(ctx context.Context, s *protocol.Session) error {
+	if !e.cancelled(ctx) {
+		if err := e.save(s, "attachment_pending"); err != nil {
+			return err
+		}
+	}
 	if e.cancelled(ctx) {
 		s.Result.ReasonCode = "cancelled"
 		s.Result.FailureClass = state.Terminal
@@ -263,9 +270,6 @@ func (e *Engine) attach(ctx context.Context, s *protocol.Session) error {
 		operation := s.Result
 		s.OperationResult = &operation
 		return e.save(s, "observed")
-	}
-	if err := e.save(s, "attachment_pending"); err != nil {
-		return err
 	}
 	reply := e.Runner.Run(ctx, "registration", "license", s.Key)
 	s.AttachmentFinished = true

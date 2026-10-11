@@ -1,6 +1,6 @@
 # Concurrent checks and bounded retries verification
 
-**State**: Partial verification on 2026-10-11. The single session build proof passed. Full acceptance verification remains pending, including live overlap with two distinct authorized keys.
+**State**: Verification passed on 2026-10-11. All twelve acceptance criteria have runtime evidence and retained fault coverage. The separate `/test` workflow remains pending.
 
 Use private scratch profiles and synthetic keys for controlled scenarios. Real checks require the keys you explicitly authorize when verification begins. Preserve the host registration and record only redacted identities, fixed reasons, timings, and counts in this file. Suggested commands below follow the repository RTK convention.
 
@@ -68,6 +68,35 @@ The full Go suite passed before the added regression. After the regression and s
 
 Private evidence remains in `/private/tmp/wpc-live-0005-x_vahyfc`: `check.stdout`, `check.stderr`, `saved-report.txt`, `events.json`, `journal-snapshots.jsonl`, and `result.json`. The scratch database and host snapshot also contain private data and are not repository artifacts. The standalone key input file was removed.
 
-### Remaining acceptance work
+### Acceptance closure, 2026-10-11
 
-The checklist above remains the verification plan. One candidate cannot demonstrate concurrent checks of independent keys. Live overlap requires a second distinct authorized key and must still establish the worker ceiling and global mutation spacing across sessions. Finite retries, cancellation races, uncertain acknowledgements, complete report paging, fault recovery, and both platform fixture runs still need the full acceptance pass. No full AC-12 result or feature completion is claimed here.
+The initial verification found that a closed output pipe terminated the host through SIGPIPE before finalization. The host now lets failed writes reach the coordinator. A later fault probe found that cancellation during an intent write could still start registration or attachment. The worker now checks cancellation again immediately after saving that intent. Both failures have retained regressions that failed before their fixes.
+
+The final immutable worker image is `sha256:d44d3fba025706c17a9171a40dc6ec194171490c088ddfa3691892143ff3a779`. It still uses protocol 2 and WARP `2026.8.2100.0`. A network disabled image check reached `prepared`, then cancellation reached `cleaned` without registration. Existing profiles that pin an older image need this new ID to use the worker fix.
+
+You explicitly authorized two real keys. The final CLI selected candidates 339 and 1 with two workers. Two sessions overlapped for 9.628 seconds. Registration and attachment gaps after previous completion measured 1.001, 1.005, and 1.009 seconds. Your supplied key confirmed Unlimited; the crawled key returned `not_unlimited` without retry. The command correctly exited 1 for that inconclusive result. Both cleanup receipts were captured, the registry and container list were empty afterward, and host registration was unchanged. A separate `check show 5` process exited 0. Container arguments, environment, labels, reports, logs, and the host journal contained no candidate keys.
+
+The final live command was `wpc check 339 1 --state-dir <private-profile> --validator docker --validator-image sha256:d44d3fba025706c17a9171a40dc6ec194171490c088ddfa3691892143ff3a779 --workers 2`. Its private evidence is in `/private/tmp/wpc-debug-boundaries-s2vk_o4n`: `live-result.json`, `observations.json`, `live.stdout`, `live.stderr`, `saved.txt`, `journal.json`, and `image-smoke.json`.
+
+Earlier actual CLI and public API probes remain in `/private/tmp/wpc-reverify-0005-jm1tjkme`. They include 36 CLI invocations, complete reports for 338 candidates, overlap at two and four workers, bounded retry sequences, migration and recovery cases, real cleanup after output failure, ordinary cleanup lasting 60 seconds, shared shutdown lasting 60.008 seconds, and store cancellation after five seconds while close retained ownership for another two seconds. These observations supplement the retained tests below.
+
+| Criterion | Verdict and evidence |
+| --- | --- |
+| AC-1 | Met. `cli-ledger.jsonl` proves malformed and unknown selection created no batch, deduplication preserved order, and all 338 selected items were saved. `TestBatchSelectionAndCompleteSavedHistory` retains the boundary. |
+| AC-2 | Met. `probe.jsonl` proves ceilings of two and four. Final live evidence proves two isolated sessions. The earlier authorized live `ownership.json` proves competing profiles and recovery return `validator_busy`. |
+| AC-3 | Met. Final live timing and controlled mutation timing prove serialization after completion. Worker probes measure polling and cleanup bounds. `TestStagedDockerCommandFailuresRecoverWithoutNewMutations` and `TestLateCommandsCannotReplayAfterRecovery` cover delayed and uncertain operations. |
+| AC-4 | Met. `remaining.jsonl` proves one, default three, and five attempt limits, temporary success, fair capacity reuse, and saved expiration. `TestBatchCandidateDeadlineWhileAwaitingMutation` uses an actual context deadline after controlled preparation time. `TestBatchCancellationDuringSavedRetryWait` preserves the committed plan without another attempt. |
+| AC-5 | Met. Controlled capable backend probes respect a shared server delay and reject a delay beyond the budget without shortening it. `TestStagedDockerThrottleReachesGateBeforeCleanup` proves the Docker marker reaches admission before cleanup. `TestBatchThrottleCompletionStopsCompetingAdmission` blocks the other worker while allowing cleanup. |
+| AC-6 | Met. Worker and coordinator probes cover every defined classification, definitive rejection, exhausted retries, and early versus late evidence. Previous live confirmation retained its evidence time after an unsupported check. `TestBatchLostCommitAcknowledgements/confirmed_completion` proves recovery preserves committed confirmation after acknowledgement loss. |
+| AC-7 | Met. Process pipe and signal probes, every saved worker phase, active command cancellation, observation cancellation, delayed command replay, retry wait cancellation, and shared shutdown were exercised. Entered SQLite finalization returned cancellation at five seconds but retained ownership until native work ended. |
+| AC-8 | Met. `TestBatchLostCommitAcknowledgements` commits real SQLite transactions and then returns a driver error at batch creation, attempt creation, retry completion, definitive completion, and finalization. It proves no subsequent store write, independent remote cleanup, preserved commits, and recovery without resuming retries. |
+| AC-9 | Met. Actual reports include all 338 items and attempts, active and legacy runs, and the saved policy after config changes. Completion callbacks read committed rows. `TestCLI_ClosedPipePreservesBatchFinalization` and the real Docker pipe experiment prove failure propagation and cleanup. |
+| AC-10 | Met. CLI bounds, precedence, private config, help, version, and key redaction passed. `TestDockerCommandPrivateInputAndExplicitEndpoint` drives the actual subprocess boundary and checks arguments and environment. Final live container metadata and output were scanned for both selected keys. |
+| AC-11 | Met. Actual migration and rollback probes preserve old history. Multiple retained session recovery, legacy conversion, incompatible images, and an independently compiled old validator were exercised. `TestDirectorySyncFailureLeavesRenamedPayload`, `TestJournalLostAcknowledgementPoisonsOwnerAndRecoversVisiblePayload`, and `TestLegacyJournalLostAcknowledgementRecoversActualVersion` prove recovery after rename acknowledgement loss. |
+| AC-12 | Met. The authorized live runs prove overlap, spacing, cleanup, restart reads, and unchanged host registration. All packages pass race tests on macOS and Linux arm64, including the retained persistence, cancellation, privacy, and eighteen staged subprocess failure cases. |
+
+The macOS gate is `rtk proxy pre-commit run --all-files`, covering formatting, vet, race tests, and lint. Linux runs the same source with `go test -p 1 -race ./...`, Go `1.27.2`, GCC `14.2.0`, `CGO_ENABLED=1`, and editorconfig checker `4.0.2`. The isolated Linux container runs without network access; reduced compiler parallelism fits the local VM memory. Its official Go image digest is `sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c`.
+
+Linux evidence and the repeat command are in `/private/tmp/wpc-linux-race-20261011`: `final.log`, `final-exit-code.txt`, `final-source-sha256.json`, `environment.json`, and `run.py`. The final source comparison found no drift. You can repeat that environment with `rtk proxy python3 /private/tmp/wpc-linux-race-20261011/run.py` while the scratch container and files remain available.
+
+No acceptance blocker remains. The scope verification box is complete. The feature status and separate `/test` workflow are unchanged.

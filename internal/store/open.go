@@ -21,6 +21,9 @@ type Reader struct{ h *handle }
 // Writer owns the advisory lock. Read methods use a separate connection.
 type Writer struct{ Reader }
 
+// Keep database construction replaceable in package tests that inject driver failures.
+var openDatabase = sql.Open
+
 type handle struct {
 	mu      sync.RWMutex
 	closed  bool
@@ -185,7 +188,7 @@ func openDB(ctx context.Context, dir string, readOnly bool) (*sql.DB, error) {
 		q.Set("_txlock", "immediate")
 	}
 	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := openDatabase("sqlite", u.String())
 	if err != nil {
 		return nil, err
 	}

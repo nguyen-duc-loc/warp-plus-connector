@@ -33,8 +33,9 @@ type DockerOptions struct {
 
 // Docker checks one candidate at a time with a retained isolated container.
 type Docker struct {
-	Options DockerOptions
-	run     func(context.Context, []byte, ...string) ([]byte, error)
+	Options      DockerOptions
+	run          func(context.Context, []byte, ...string) ([]byte, error)
+	writeJournal func(string, any) error
 }
 
 type manifest struct {
@@ -227,7 +228,15 @@ func (d *Docker) lock() (*os.File, error) {
 }
 
 func (d *Docker) save(m *manifest) error {
-	if privatefs.Write(d.path(), m) != nil {
+	return d.replaceJournal(m)
+}
+
+func (d *Docker) replaceJournal(value any) error {
+	write := d.writeJournal
+	if write == nil {
+		write = privatefs.Write
+	}
+	if write(d.path(), value) != nil {
 		return &Error{Code: "validator_state_error"}
 	}
 	return nil

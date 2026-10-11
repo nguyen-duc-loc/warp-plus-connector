@@ -99,6 +99,10 @@ func Write(path string, value any) error {
 
 // WriteBytes durably replaces a private file without following a destination link.
 func WriteBytes(path string, data []byte) error {
+	return writeBytes(path, data, SyncDirectory)
+}
+
+func writeBytes(path string, data []byte, syncDirectory func(string) error) error {
 	if info, err := os.Lstat(path); err == nil {
 		if !private(info, false) {
 			return ErrAccess
@@ -121,7 +125,7 @@ func WriteBytes(path string, data []byte) error {
 	if err := os.Rename(name, path); err != nil {
 		return ErrAccess
 	}
-	return SyncDirectory(dir)
+	return syncDirectory(dir)
 }
 
 // Remove durably removes a journal only after its caller has proved cleanup.

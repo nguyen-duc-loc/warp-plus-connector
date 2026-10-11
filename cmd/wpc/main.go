@@ -22,6 +22,8 @@ func main() {
 }
 
 func run() int {
+	// Let broken output writes return errors so batch cleanup and finalization can run.
+	signal.Ignore(syscall.SIGPIPE)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	signals := make(chan os.Signal, 1)
