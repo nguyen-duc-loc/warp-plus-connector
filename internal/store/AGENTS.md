@@ -14,6 +14,8 @@ Schema version 3 adds [003_crawl_plan.sql](migrations/003_crawl_plan.sql), prese
 
 Schema version 4 adds [004_validation_batches.sql](migrations/004_validation_batches.sql) for [spec 0005](../../docs/specs/0005-concurrent-checks-bounded-retries/index.md), preserving earlier history. `validation_batches`, `validation_items`, and `validation_attempt_details` retain immutable selection, a typed policy snapshot, and separate scheduling facts for every attempt.
 
+Schema version 5 adds [005_schedules.sql](migrations/005_schedules.sql) for [spec 0007](../../docs/specs/0007-scheduled-crawl-revalidation/index.md). `scheduler_state` retains coverage, the clock checkpoint, validation waits, and recovery obligations. `candidate_schedule` retains due times and their bases. Runs record manual or scheduled origin, and completion records retain immutable scheduling policy for replay.
+
 ## Saved records and retries
 
 [discovery.go](discovery.go) saves one message atomically. Identity trims surrounding key whitespace and preserves the remaining bytes. Sightings retain their first known publication time and URL; each run and sighting pair retains its first observation time. Discovery times are derived from saved observations.
@@ -32,6 +34,8 @@ Times normalize to UTC microseconds. Recovery marks unfinished runs interrupted 
 
 Plan recovery marks active pages and sources `interrupted`, skips pending sources with `interrupted_before_start`, and preserves terminal children. Recovered records have `recovered_at` and no invented `finished_at`. Request intent does not prove that an HTTP request reached Telegram; later crawls create new plans rather than resuming cursors.
 
+[schedule.go](schedule.go) updates eligibility in the same transaction as discovery, terminal completion, or recovery. `OpenWriterWithPolicy` supplies recovery intervals; `PrepareSchedule` recomputes deadlines from saved bases without rewriting evidence or postponing work on restart. Manual crawls advance only matching ordered coverage. Pending items without attempts retain eligibility; started interrupted work uses recovery time and the failure interval. Due times round upward to UTC microseconds, and clock checkpoints never decrease.
+
 ## Reads and evidence
 
 [reads.go](reads.go) separates the latest completed attempt, last definitive result, and unresolved attempt. Attempt ID determines recency. Freshness uses the last definitive confirmation, explicit `AsOf`, and positive `MaxAge`; inconclusive retries do not refresh evidence.
@@ -45,6 +49,8 @@ Pages default to 100 rows and allow up to 1000 per call, with no total cap. The 
 [batch_reads.go](batch_reads.go) derives report totals from saved rows and pages through items in selection order and attempts in attempt number order. Cursors bind the batch and candidate. Legacy runs have a nil policy; they retain their original history without invented selection metadata. An active report header is a point in time, while later pages may reflect newer commits.
 
 [values.go](values.go) validates typed evidence and normalized reason codes. [errors.go](errors.go) preserves stable errors and cancellation for `errors.Is`, while excluding raw driver text from both messages and unwrap chains. The store emits no routine logs and never accepts message bodies or raw validator output.
+
+[schedule_reads.go](schedule_reads.go) establishes its SQLite snapshot before sampling the supplied clock. `GetSchedule` derives counts and references from that snapshot without applying current settings. `DueCandidates` excludes active items and unresolved attempts, orders by due time and candidate ID, and accepts a selection limit from one through eight.
 
 ## Cancellation
 

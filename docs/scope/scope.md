@@ -30,7 +30,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 5 | Configurable source coverage | Slice 2 | done |
 | 6 | Concurrent checks and bounded retries | Slice 3 | done |
 | 7 | Complete results and export | Slice 4 | done |
-| 8 | Scheduled crawl and revalidation | Slice 5 | in-progress |
+| 8 | Scheduled crawl and revalidation | Slice 5 | done |
 | 9 | Background operation and diagnostics | Slice 6 | planned |
 
 ## Foundations
@@ -178,7 +178,7 @@ The test pass on 2026-10-11 added 13 test functions and extended subprocess cove
 
 ## Slice 5: Keep results fresh
 
-### 8. Scheduled crawl and revalidation · in-progress
+### 8. Scheduled crawl and revalidation · done
 
 Give crawling and validation separate configurable intervals. New candidates and previously checked keys both receive appropriate future checks.
 
@@ -196,7 +196,7 @@ Give crawling and validation separate configurable intervals. New candidates and
 - [x] Verify it: `/check verify scheduled crawl and revalidation` (AC-1 through AC-15 passed on macOS and Linux arm64, 2026-10-11; evidence in the feature verification checklist).
 - [x] Test it: `/test scheduled crawl and revalidation`
 
-The test pass on 2026-10-11 added 21 test functions across eight files and extended the existing history migration test. Coverage includes configuration bounds and explicit false overrides, due time rounding and ordering, recovery of started and pending work, restart waits, manual coverage matching, terminal outcome intervals, clock repair, probe selection, private inspection, output failure, shared cleanup allowances, provider cooldowns, and the shared acquisition budget. Acceptance references live beside the tests. The full Go suite and the macOS arm64 formatting, vet, race test, and lint gate passed. All six affected internal package suites also passed as ordinary Linux arm64 test binaries in a disposable container with networking disabled. Provider responses remained controlled; real provider behavior and process crash experiments remain in the separate verification record. Feature completion awaits your confirmation.
+The test pass on 2026-10-11 added 21 test functions across eight files and extended the existing history migration test. Coverage includes configuration bounds and explicit false overrides, due time rounding and ordering, recovery of started and pending work, restart waits, manual coverage matching, terminal outcome intervals, clock repair, probe selection, private inspection, output failure, shared cleanup allowances, provider cooldowns, and the shared acquisition budget. Acceptance references live beside the tests. The full Go suite and the macOS arm64 formatting, vet, race test, and lint gate passed. All six affected internal package suites also passed as ordinary Linux arm64 test binaries in a disposable container with networking disabled. Provider responses remained controlled; real provider behavior and process crash experiments remain in the separate verification record. The separate test workflow is complete; `/sync` reconciled the feature status to done from implementation, verification, and test evidence.
 
 ## Slice 6: Operate in the background
 

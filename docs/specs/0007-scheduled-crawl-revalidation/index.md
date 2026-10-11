@@ -1,7 +1,7 @@
 # 0007. Scheduled crawl and revalidation
 
 **Date**: 2026-10-11
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

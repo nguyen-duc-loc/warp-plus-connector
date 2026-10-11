@@ -4,15 +4,19 @@ The governing contracts are [the Docker backend child](../../docs/specs/0003-sou
 
 ## Ownership
 
-[docker.go](docker.go) owns host subprocesses and container identity checks; [batch.go](batch.go) owns shared recovery and staged sessions. The journal is under the platform default state directory, independent of profile overrides. One owner lock covers reconciliation and the whole batch, including retry waits. Its version 2 registry retains up to four sessions. Reconcile every retained session and reject untracked labeled containers before new work, even when a known session has a cleanup receipt.
+[docker.go](docker.go) owns host subprocesses and container identity checks; [batch.go](batch.go) owns shared recovery and staged sessions. The journal is under the platform default state directory, independent of profile overrides. One owner lock covers reconciliation and the whole batch, including retry waits. Its version 3 registry retains up to four sessions, the clock checkpoint, and the shared admission gate. Reconcile every retained session and reject untracked labeled containers before new work, even when a known session has a cleanup receipt.
 
 [privatefs](privatefs/) owns private JSON replacement, synchronization, and advisory locking. Invalid or permissive files and symlinks fail closed. Record intent before external mutations. No SQL belongs here; candidate history remains in `internal/store`.
 
-Registry changes pass through coordinator hooks. A failed journal replacement blocks every later journal write in that invocation, including when rename succeeded before directory synchronization failed. Legacy conversion waits for proven cleanup and retains an empty version 2 registry so old binaries reject it; incompatible images cannot start a new batch.
+Registry changes pass through coordinator hooks. A failed journal replacement blocks every later journal write in that invocation, including when rename succeeded before directory synchronization failed. Conversion from registry versions 1 and 2 waits for proven cleanup and retains version 3 so old binaries reject it; incompatible images cannot start a new batch. Session updates preserve all gate metadata, including during `validator recover`.
 
 [worker](worker/) runs inside the isolated container through [cmd/wpc-worker](../../cmd/wpc-worker/). Initialization persists input without external work. Registration, attachment, and recovery share a worker lock and durable phase checks; delayed commands cannot act after recovery. The host admits registration and attachment separately. The worker never connects a tunnel and never uses host registration state.
 
 The durable attachment completion marker releases mutation serialization only after its normalized classification reaches the coordinator. Status polling can observe it before cleanup ends. The pinned Docker adapter supplies no trusted server delay, so throttling stops new batch mutations while cleanup remains allowed. Cancellation and remote cleanup use the coordinator's shared shutdown allowance.
+
+[gate.go](gate.go) implements [spec 0007's cooldown contract](../../docs/specs/0007-scheduled-crawl-revalidation/0002-validator-cooldown.md). Persist admission intent before remote mutations. Throttling retains a deadline shared across profiles and manual checks; expiry permits only one candidate probe with one worker and attempt. Opening after a probe requires a healthy provider response, proven cleanup, container removal, and acknowledged terminal SQLite persistence. Abandoned active or probe phases become cooldowns after recovery; recovery never opens the gate or finalizes another profile's database.
+
+Acquisition and recovery share one five minute budget. Typed results distinguish retryable backend or cleanup waits, contention, cooldown, clock regression, and fatal identity or journal errors. `CleanupInspected` records actual cleanup inspection independently of admission. Backward UTC blocks mutations but permits cleanup without lowering the saved checkpoint.
 
 ## Evidence and cleanup
 
