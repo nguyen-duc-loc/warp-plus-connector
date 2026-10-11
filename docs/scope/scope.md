@@ -141,12 +141,12 @@ Use Go concurrency to validate independent candidates with configurable worker a
 
 **Done when:** multiple checks can run with isolated state and a measurable concurrency ceiling; each key has at most one active check; timeouts and cancellation bound work; transient failures retry within a finite budget and respect server delays; exhausted retries remain inconclusive; definitive rejection does not enter an immediate retry loop.
 
-**Spec:** [0005. Concurrent checks and bounded retries](../specs/0005-concurrent-checks-bounded-retries/index.md), confirmed on 2026-10-11 after independent review. Explicit candidate batches use two workers and three attempts by default, with shared command pacing and recovery ownership. Saved reports retain selection, effective limits, and retry history. Code in `internal/app/batch.go`, `internal/store/batch.go`, `internal/validator/batch.go`, and `internal/validator/worker/worker.go`. The real session proof and live verification remain pending.
+**Spec:** [0005. Concurrent checks and bounded retries](../specs/0005-concurrent-checks-bounded-retries/index.md), confirmed on 2026-10-11 after independent review. Explicit candidate batches use two workers and three attempts by default, with shared command pacing and recovery ownership. Saved reports retain selection, effective limits, and retry history. Code in `internal/app/batch.go`, `internal/store/batch.go`, `internal/validator/batch.go`, and `internal/validator/worker/worker.go`. One authorized live protocol 2 session confirmed Unlimited on 2026-10-11, with a 1.005 second mutation gap, a durable cleanup receipt, an empty registry, no retained containers, a matching report after restart, and unchanged host registration. Controlled legacy conversion checks pass in `internal/validator/docker_test.go`. Private run evidence is in `/private/tmp/wpc-live-0005-x_vahyfc`. Live overlap still requires a second distinct authorized key; full verification and the test pass remain pending.
 
 - [x] Design it (spec): `/architect concurrent checks and bounded retries`
-- [ ] Build it: `/develop concurrent checks and bounded retries`
+- [x] Build it: `/develop concurrent checks and bounded retries`
   - [x] Prove one saved batch item through configuration, migration, an unsupported check, and a report after restart, preserving old history (AC-1, AC-6, AC-9, AC-10, AC-11).
-  - [ ] Prove staged Docker commands, the new recovery registry, and safe legacy conversion through one isolated session (AC-3, AC-7, AC-10, AC-11).
+  - [x] Prove staged Docker commands, the new recovery registry, and safe legacy conversion through one isolated session (AC-3, AC-7, AC-10, AC-11).
   - [x] Add bounded concurrent workers, shared mutation pacing, fair dispatch, and complete result reporting (AC-1, AC-2, AC-3, AC-9).
   - [x] Add classified retries, saved wait plans, finite budgets, and throttling behavior without changing definitive evidence (AC-4, AC-5, AC-6).
   - [x] Complete cancellation, uncertain acknowledgements, recovery across sessions, privacy, and output failures (AC-2, AC-7, AC-8, AC-9, AC-10, AC-11).

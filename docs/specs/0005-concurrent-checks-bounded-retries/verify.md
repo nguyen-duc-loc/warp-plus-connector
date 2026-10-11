@@ -1,6 +1,6 @@
 # Concurrent checks and bounded retries verification
 
-**State**: Not run. This is the acceptance checklist for the proposed build.
+**State**: Partial verification on 2026-10-11. The single session build proof passed. Full acceptance verification remains pending, including live overlap with two distinct authorized keys.
 
 Use private scratch profiles and synthetic keys for controlled scenarios. Real checks require the keys you explicitly authorize when verification begins. Preserve the host registration and record only redacted identities, fixed reasons, timings, and counts in this file. Suggested commands below follow the repository RTK convention.
 
@@ -45,4 +45,29 @@ Use private scratch profiles and synthetic keys for controlled scenarios. Real c
 
 ## Results
 
-No implementation, runtime verification, regression test pass, or live acceptance has been performed for this spec yet.
+### Build milestone proof, 2026-10-11
+
+You authorized one real key for an isolated Docker check. The key and account identities are omitted from this record. The run used a private scratch profile, the shared validator owner and registry, and the actual CLI. No host registration mutation was performed.
+
+The immutable Linux arm64 image was `sha256:4133e87d97078e9d4500f79a42c61c1d40116b8e4a5eb0bbb45e059dea062213`, advertising worker protocol 2 and WARP `2026.8.2100.0`. The invocation selected one candidate, one worker, the default three attempt limit, a one second mutation interval, and the default 15 minute candidate budget.
+
+| Observation | Result | Coverage |
+| --- | --- | --- |
+| Separate registration and attachment admission | Registration completed at `06:21:33.785Z`; attachment was admitted at `06:21:34.790Z`, a 1.005 second gap | AC-3, one session only |
+| Entitlement | Run 2, candidate 1, attempt 1 confirmed Unlimited; command exited 0 and no retry was needed | AC-6, successful result path |
+| Private completion and cleanup | Captured receipt had protocol 2, `attachment_finished=true`, phase `cleaned`, and a confirmed result | AC-7, AC-11, normal cleanup path |
+| Resource retirement | Version 2 registry retained zero sessions; Docker retained zero labeled validator containers | AC-7, AC-11 |
+| Saved report after restart | A separate `check show 2` process exited 0 and returned the same policy, attempt, evidence, and totals | AC-9 |
+| Host comparison | Registration, device, account, and license identities matched before and after the run | AC-10, partial AC-12 |
+
+The network disabled container smoke check used synthetic input. Initialization and status reported `prepared`; cancellation and recovery produced `cleaned`; the obsolete `check` command and a later registration attempt were rejected. Session and cancellation files had mode `0600`.
+
+`TestLegacyRecoveryConvertsOnlyAfterCleanup` passed for clean and unresolved legacy journals. The controlled Docker fixture proved that failed cleanup preserves the original journal and container, successful recovery converts to an empty version 2 registry without creation or attachment, the legacy manifest reader rejects the converted journal, and repeated recovery does not remove the container twice. This is controlled conversion evidence, not a live legacy registration experiment or an independently executed old binary.
+
+The full Go suite passed before the added regression. After the regression and scope update, `rtk proxy pre-commit run --all-files` passed formatting, vet, race tests, and lint with toolchain cache access. macOS arm64 and Linux arm64 CLI builds passed. Linux fixture execution and the separate `/test` pass remain pending.
+
+Private evidence remains in `/private/tmp/wpc-live-0005-x_vahyfc`: `check.stdout`, `check.stderr`, `saved-report.txt`, `events.json`, `journal-snapshots.jsonl`, and `result.json`. The scratch database and host snapshot also contain private data and are not repository artifacts. The standalone key input file was removed.
+
+### Remaining acceptance work
+
+The checklist above remains the verification plan. One candidate cannot demonstrate concurrent checks of independent keys. Live overlap requires a second distinct authorized key and must still establish the worker ceiling and global mutation spacing across sessions. Finite retries, cancellation races, uncertain acknowledgements, complete report paging, fault recovery, and both platform fixture runs still need the full acceptance pass. No full AC-12 result or feature completion is claimed here.

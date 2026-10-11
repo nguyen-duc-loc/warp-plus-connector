@@ -219,6 +219,43 @@ func TestRecoveryBlocksNewAttachmentWhenUncertain(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// covers: spec 0005 AC-11. Conversion waits for legacy cleanup and keeps an
+// empty version 2 registry that the legacy manifest reader rejects.
+func TestLegacyRecoveryConvertsOnlyAfterCleanup(t *testing.T) {
+	for _, cleaned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unresolved", true: "cleaned"}[cleaned], func(t *testing.T) {
+			d, f := dockerFixture(t)
+			savedManifest(t, d, f, cleaned)
+			f.ids = []string{testContainer}
+			if !cleaned {
+				before, err := os.ReadFile(d.path())
+				require.NoError(t, err)
+				f.recoveryError = &Error{Code: "validation_cleanup_pending"}
+				require.Error(t, d.Recover(t.Context()))
+				after, err := os.ReadFile(d.path())
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+				require.Zero(t, f.removals)
+				f.recoveryError = nil
+			}
+			require.NoError(t, d.Recover(t.Context()))
+			require.Equal(t, 1, f.removals)
+			require.Empty(t, f.ids)
+			require.Zero(t, f.creates)
+			require.Zero(t, f.checks)
+			var converted registry
+			require.NoError(t, privatefs.Read(d.path(), &converted))
+			require.Equal(t, 2, converted.Version)
+			require.NotNil(t, converted.Sessions)
+			require.Empty(t, converted.Sessions)
+			_, err := d.read()
+			require.Error(t, err)
+			require.NoError(t, d.Recover(t.Context()))
+			require.Equal(t, 1, f.removals)
+		})
+	}
+}
+
 func TestCancelledHostRetainsSessionForRecovery(t *testing.T) {
 	d, f := dockerFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
