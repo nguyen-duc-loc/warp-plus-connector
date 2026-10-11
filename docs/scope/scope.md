@@ -30,7 +30,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 5 | Configurable source coverage | Slice 2 | done |
 | 6 | Concurrent checks and bounded retries | Slice 3 | done |
 | 7 | Complete results and export | Slice 4 | done |
-| 8 | Scheduled crawl and revalidation | Slice 5 | planned |
+| 8 | Scheduled crawl and revalidation | Slice 5 | in-progress |
 | 9 | Background operation and diagnostics | Slice 6 | planned |
 
 ## Foundations
@@ -178,13 +178,23 @@ The test pass on 2026-10-11 added 13 test functions and extended subprocess cove
 
 ## Slice 5: Keep results fresh
 
-### 8. Scheduled crawl and revalidation · planned · needs a decision
+### 8. Scheduled crawl and revalidation · in-progress
 
 Give crawling and validation separate configurable intervals. New candidates and previously checked keys both receive appropriate future checks.
 
 **Done when:** both schedules run independently; slow jobs do not create overlapping checks or an unbounded backlog; startup and missed interval behavior are defined; failed work gets a future attempt; restarts preserve freshness information and pending eligibility; manual runs respect the same coordination rules.
 
-- [ ] Design it (spec): `/architect scheduled crawl and revalidation`
+**Spec:** [0007. Scheduled crawl and revalidation](../specs/0007-scheduled-crawl-revalidation/index.md), confirmed on 2026-10-11 after independent review. Foreground `run` uses separate crawl and validation schedules, saved eligibility, small bounded batches, and shared validator cooldown recovery. The design is confirmed; implementation has not started. Service management remains in feature 9.
+
+- [x] Design it (spec): `/architect scheduled crawl and revalidation`
+- [ ] Build it: `/develop scheduled crawl and revalidation`
+  - [ ] Prove a scheduled crawl through configuration, schema version 5, the shared writer, saved inspection, and output after restart (AC-1, AC-6, AC-10, AC-11, AC-12, AC-13).
+  - [ ] Add automatic candidate selection, routine and failure eligibility, history initialization, and matching manual work (AC-3, AC-4, AC-5, AC-6, AC-13).
+  - [ ] Prove registry version 3 conversion, shared cooldowns, single candidate probes, and recovery across profiles (AC-8, AC-9, AC-10, AC-13, AC-14).
+  - [ ] Allow crawl and validation overlap with bounded selection, independent controls, and persisted recovery waits (AC-1, AC-2, AC-3, AC-7, AC-8, AC-10).
+  - [ ] Complete clock handling, inspection consistency, fault recovery, signals, and shared shutdown deadlines on both arm64 platforms (AC-5, AC-7, AC-9, AC-11, AC-12, AC-13, AC-14, AC-15).
+- [ ] Verify it: `/check verify scheduled crawl and revalidation`
+- [ ] Test it: `/test scheduled crawl and revalidation`
 
 ## Slice 6: Operate in the background
 
@@ -201,6 +211,8 @@ Run unattended on the selected platforms and let you inspect progress, stop clea
 Billing, a hosted service, and product analytics are unnecessary for the selected personal CLI. Automatic key application and rotation, private Telegram access, unlimited historical backfill, a public API or dashboard, notifications, and public release automation are outside this initial slice. They can be enrolled later if you need them.
 
 From spec 0006: provenance exports, complete history archives, CSV, saved export jobs, source and date filters, overwrite flags, and resumable public cursors remain deferred. None blocks complete candidate summaries and export.
+
+From spec 0007: history retention controls, calendar schedules, live configuration reload, user queue controls, and adaptive intervals remain deferred. None blocks the confirmed interval scheduler.
 
 ## Legend
 
