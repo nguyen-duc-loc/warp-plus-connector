@@ -29,7 +29,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 4 | One source crawl and validation loop | Slice 1 | done |
 | 5 | Configurable source coverage | Slice 2 | done |
 | 6 | Concurrent checks and bounded retries | Slice 3 | done |
-| 7 | Complete results and export | Slice 4 | planned |
+| 7 | Complete results and export | Slice 4 | in-progress |
 | 8 | Scheduled crawl and revalidation | Slice 5 | planned |
 | 9 | Background operation and diagnostics | Slice 6 | planned |
 
@@ -155,13 +155,22 @@ Use Go concurrency to validate independent candidates with configurable worker a
 
 ## Slice 4: Reach every result
 
-### 7. Complete results and export · planned · needs a decision
+### 7. Complete results and export · in-progress
 
 Inspect outcomes and freshness, and export the full matching collection for your own use. Terminal presentation and export must make any user selected limits explicit.
 
 **Done when:** all 338 records in a controlled dataset are reachable and exportable without duplicates or silent truncation; status and freshness filters behave consistently; text and structured output remain usable in scripts; diagnostics stay separate from exported data; empty results have clear semantics.
 
-- [ ] Design it (spec): `/architect complete results and export`
+**Spec:** [0006. Complete results and export](../specs/0006-complete-results-export/index.md), confirmed on 2026-10-11 after independent review. Listing and export share fixed snapshot filters and explicit limits. Export provides JSON or complete key lines to stdout or a private named file that never replaces an existing path. Output is prepared before delivery; no database migration is needed.
+
+- [x] Design it (spec): `/architect complete results and export`
+- [ ] Build it: `/develop complete results and export`
+  - [ ] Prove one saved candidate through snapshot traversal, JSON preparation, and stdout delivery after restart (AC-3, AC-5, AC-8, AC-11).
+  - [ ] Add complete summaries, shared filters and limits, empty results, and snapshot text listing across all 338 controlled candidates (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7).
+  - [ ] Add key disclosure and exact key lines, private named output, and atomic refusal to replace existing destinations (AC-5, AC-6, AC-9).
+  - [ ] Complete cancellation, failure diagnostics, publication uncertainty, cleanup, and concurrent writer and destination checks (AC-3, AC-6, AC-8, AC-9, AC-10, AC-11).
+- [ ] Verify it: `/check verify complete results and export` (AC-1 through AC-12 on macOS and Linux arm64).
+- [ ] Test it: `/test complete results and export`
 
 ## Slice 5: Keep results fresh
 
@@ -186,6 +195,8 @@ Run unattended on the selected platforms and let you inspect progress, stop clea
 ## Deferred
 
 Billing, a hosted service, and product analytics are unnecessary for the selected personal CLI. Automatic key application and rotation, private Telegram access, unlimited historical backfill, a public API or dashboard, notifications, and public release automation are outside this initial slice. They can be enrolled later if you need them.
+
+From spec 0006: provenance exports, complete history archives, CSV, saved export jobs, source and date filters, overwrite flags, and resumable public cursors remain deferred. None blocks complete candidate summaries and export.
 
 ## Legend
 
