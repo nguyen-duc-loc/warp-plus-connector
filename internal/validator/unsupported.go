@@ -10,13 +10,14 @@ import (
 
 // Result contains normalized entitlement facts, never raw provider output.
 type Result struct {
-	Outcome       state.Outcome
-	ReasonCode    string
-	Evidence      *state.Evidence
-	FailureClass  state.FailureClass
-	ServerDelay   time.Duration
-	CleanupProven bool
-	Removed       bool
+	ProviderResponsive bool
+	Outcome            state.Outcome
+	ReasonCode         string
+	Evidence           *state.Evidence
+	FailureClass       state.FailureClass
+	ServerDelay        time.Duration
+	CleanupProven      bool
+	Removed            bool
 }
 
 // BatchBackend acquires shared recovery ownership before any run is saved.

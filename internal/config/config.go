@@ -19,8 +19,9 @@ import (
 
 // Stable configuration errors never include supplied values or file contents.
 var (
-	ErrInvalid = errors.New("invalid configuration")
-	ErrAccess  = errors.New(
+	ErrInvalid          = errors.New("invalid configuration")
+	ErrScheduleDisabled = errors.New("schedule_disabled")
+	ErrAccess           = errors.New(
 		"configuration requires a readable regular file owned by your " +
 			"account with private permissions and no symlink",
 	)
@@ -28,19 +29,23 @@ var (
 
 // Settings are fully validated runtime inputs.
 type Settings struct {
-	CheckPolicy       state.CheckPolicy
-	Sources           []Source
-	CrawlPageLimit    int
-	StateDir          string
-	RecheckInterval   time.Duration
-	Validator         string
-	ValidatorImage    string
-	ValidatorSocket   string
-	ValidatorStateDir string
+	CrawlEnabled, ValidationEnabled bool
+	CrawlInterval, FailureInterval  time.Duration
+	CheckPolicy                     state.CheckPolicy
+	Sources                         []Source
+	CrawlPageLimit                  int
+	StateDir                        string
+	RecheckInterval                 time.Duration
+	Validator                       string
+	ValidatorImage                  string
+	ValidatorSocket                 string
+	ValidatorStateDir               string
 }
 
 // Overrides distinguishes explicitly supplied flags from absent flags.
 type Overrides struct {
+	CrawlEnabled, ValidationEnabled                                              *bool
+	CrawlInterval, FailureInterval                                               *string
 	CheckWorkers, CheckMaxAttempts, CheckMutationInterval, CheckCandidateTimeout *string
 	ConfigPath                                                                   *string
 	StateDir                                                                     *string
@@ -68,8 +73,9 @@ func Resolve(in Overrides) (Settings, error) {
 		stateDir = filepath.Join(xdg, "warp-plus-connector")
 	}
 	out := Settings{
-		CheckPolicy: state.DefaultCheckPolicy(),
-		Sources:     defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
+		CheckPolicy:  state.DefaultCheckPolicy(),
+		CrawlEnabled: true, ValidationEnabled: true, CrawlInterval: time.Hour, FailureInterval: time.Hour,
+		Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
 		Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator"),
 	}
 	path := filepath.Join(base, "warp-plus-connector", "config.json")
@@ -101,6 +107,7 @@ func Resolve(in Overrides) (Settings, error) {
 	}{
 		{"check_workers", in.CheckWorkers}, {"check_max_attempts", in.CheckMaxAttempts},
 		{"check_mutation_interval", in.CheckMutationInterval}, {"check_candidate_timeout", in.CheckCandidateTimeout},
+		{"crawl_interval", in.CrawlInterval}, {"failure_interval", in.FailureInterval},
 		{"state_dir", in.StateDir}, {"recheck_interval", in.RecheckInterval}, {"validator", in.Validator},
 		{"validator_image", in.ValidatorImage}, {"validator_socket", in.ValidatorSocket},
 	} {
@@ -109,6 +116,12 @@ func Resolve(in Overrides) (Settings, error) {
 				return zero, err
 			}
 		}
+	}
+	if in.CrawlEnabled != nil {
+		out.CrawlEnabled = *in.CrawlEnabled
+	}
+	if in.ValidationEnabled != nil {
+		out.ValidationEnabled = *in.ValidationEnabled
 	}
 	out.StateDir, err = filepath.Abs(out.StateDir)
 	if err != nil {
@@ -241,6 +254,16 @@ func applyJSON(out *Settings, values map[string]json.RawMessage) error {
 	}
 	for k, raw := range values {
 		switch k {
+		case "crawl_enabled", "validation_enabled":
+			var enabled bool
+			if string(raw) == "null" || json.Unmarshal(raw, &enabled) != nil {
+				return ErrInvalid
+			}
+			if k == "crawl_enabled" {
+				out.CrawlEnabled = enabled
+			} else {
+				out.ValidationEnabled = enabled
+			}
 		case "check_workers", "check_max_attempts":
 			var n int
 			if string(raw) == "null" || json.Unmarshal(raw, &n) != nil {
@@ -380,12 +403,19 @@ func apply(out *Settings, name, value string) error {
 			return ErrInvalid
 		}
 		out.StateDir = value
-	case "recheck_interval":
+	case "recheck_interval", "crawl_interval", "failure_interval":
 		d, err := time.ParseDuration(value)
 		if err != nil || d <= 0 {
 			return ErrInvalid
 		}
-		out.RecheckInterval = d
+		switch name {
+		case "recheck_interval":
+			out.RecheckInterval = d
+		case "crawl_interval":
+			out.CrawlInterval = d
+		case "failure_interval":
+			out.FailureInterval = d
+		}
 	case "validator":
 		if value != "unsupported" && value != "docker" {
 			return ErrInvalid
@@ -402,6 +432,45 @@ func apply(out *Settings, name, value string) error {
 		}
 		out.ValidatorSocket = filepath.Clean(value)
 	default:
+		return ErrInvalid
+	}
+	return nil
+}
+
+// SchedulePolicy supplies effective durations, including defaults for embedded callers.
+func (s Settings) SchedulePolicy() state.SchedulePolicy {
+	p := state.DefaultSchedulePolicy()
+	if s.CrawlInterval != 0 {
+		p.Crawl = s.CrawlInterval
+	}
+	if s.RecheckInterval != 0 {
+		p.Routine = s.RecheckInterval
+	}
+	if s.FailureInterval != 0 {
+		p.Failure = s.FailureInterval
+	}
+	return p
+}
+
+// ValidateRun rejects unusable scheduling settings before ownership or external work.
+func (s Settings) ValidateRun() error {
+	if !s.CrawlEnabled && !s.ValidationEnabled {
+		return ErrScheduleDisabled
+	}
+	for _, d := range []time.Duration{s.CrawlInterval, s.RecheckInterval, s.FailureInterval} {
+		if d < time.Minute || d > 720*time.Hour {
+			return ErrInvalid
+		}
+	}
+	if s.CrawlEnabled {
+		if _, err := s.SelectSources(nil, nil); err != nil {
+			return err
+		}
+	}
+	if s.ValidationEnabled && s.Validator != "docker" {
+		return &validator.Error{Code: "validation_unsupported"}
+	}
+	if s.ValidationEnabled && !validator.ValidImage(s.ValidatorImage) {
 		return ErrInvalid
 	}
 	return nil

@@ -30,15 +30,18 @@ func (e *Error) Unwrap() error { return e.cause }
 
 // App uses a concrete store and small interfaces at external boundaries.
 type App struct {
-	SourceNames []string
-	PageLimit   *int
-	Settings    config.Settings
-	Source      Source
-	Validator   validator.Backend
-	Clock       func() time.Time
-	Monotonic   func() time.Time
-	RetryDraw   func(time.Duration, time.Duration) time.Duration
-	Logger      *slog.Logger
+	shutdown *shutdownWindow
+	// Only the single active scheduled batch accesses this monotonic deadline.
+	nextMutation time.Time
+	SourceNames  []string
+	PageLimit    *int
+	Settings     config.Settings
+	Source       Source
+	Validator    validator.Backend
+	Clock        func() time.Time
+	Monotonic    func() time.Time
+	RetryDraw    func(time.Duration, time.Duration) time.Duration
+	Logger       *slog.Logger
 }
 
 func (a *App) evaluation() state.Evaluation {
@@ -59,6 +62,9 @@ func classified(err error) error {
 	}
 	var validation *validator.Error
 	if errors.As(err, &validation) {
+		if validator.AdmissionWait(err) != nil {
+			return &Error{Code: validation.Code, cause: err}
+		}
 		return &Error{Code: validation.Code, cause: validation}
 	}
 	for _, c := range []struct {

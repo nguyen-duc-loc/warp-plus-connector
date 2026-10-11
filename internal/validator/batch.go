@@ -17,22 +17,36 @@ import (
 )
 
 type registry struct {
-	Version  int        `json:"version"`
-	Sessions []manifest `json:"sessions"`
+	LastObservedAt time.Time  `json:"last_observed_at"`
+	Gate           *Gate      `json:"gate"`
+	Version        int        `json:"version"`
+	Sessions       []manifest `json:"sessions"`
 }
 
 type dockerOwner struct {
-	docker           *Docker
-	lock             *os.File
-	endpoint, daemon string
-	registry         registry
-	poisoned         bool
+	clock                       func() time.Time
+	interval                    time.Duration
+	inspected, probe, throttled bool
+	docker                      *Docker
+	lock                        *os.File
+	endpoint, daemon            string
+	registry                    registry
+	poisoned                    bool
 }
 
 // Acquire reconciles every retained session while holding shared ownership.
-func (d *Docker) Acquire(ctx context.Context) (BatchOwner, error) { return d.acquire(ctx, true) }
+func (d *Docker) Acquire(ctx context.Context) (BatchOwner, error) {
+	result, err := d.AcquireScheduled(ctx, time.Now, time.Hour)
+	return result.Owner, err
+}
 
-func (d *Docker) acquire(parent context.Context, checkImage bool) (owner *dockerOwner, err error) {
+func (d *Docker) acquire(parent context.Context, checkImage bool) (*dockerOwner, error) {
+	return d.acquireAt(parent, checkImage, time.Now, time.Hour)
+}
+func (d *Docker) acquireAt(
+	parent context.Context, checkImage bool, clock func() time.Time,
+	interval time.Duration,
+) (owner *dockerOwner, err error) {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
 	lock, err := d.lock()
@@ -46,16 +60,32 @@ func (d *Docker) acquire(parent context.Context, checkImage bool) (owner *docker
 	}()
 	endpoint, err := d.endpoint(ctx)
 	if err != nil {
-		return nil, err
+		return nil, acquisitionFailure(err)
 	}
 	daemon, err := d.runtime(ctx, endpoint)
 	if err != nil {
-		return nil, err
+		return nil, acquisitionFailure(err)
 	}
 	owner = &dockerOwner{
 		docker: d, lock: lock, endpoint: endpoint, daemon: daemon,
-		registry: registry{Version: 2, Sessions: []manifest{}},
+		registry: registry{
+			Version: 3, Sessions: []manifest{}, LastObservedAt: clock().UTC().Truncate(time.Microsecond),
+		},
+		clock: clock, interval: interval,
 	}
+	created := owner
+	defer func() {
+		if err != nil {
+			owner = created
+			if errors.Is(err, context.DeadlineExceeded) {
+				code := "validator_backend_unavailable"
+				if len(created.registry.Sessions) > 0 {
+					code = "validation_cleanup_pending"
+				}
+				err = &Error{Code: code}
+			}
+		}
+	}()
 	var raw map[string]json.RawMessage
 	err = privatefs.Read(d.path(), &raw)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -71,7 +101,12 @@ func (d *Docker) acquire(parent context.Context, checkImage bool) (owner *docker
 			if err = d.reconcile(ctx, endpoint, daemon); err != nil {
 				return nil, err
 			}
-		case 2:
+		case 2, 3:
+			if version == 3 {
+				if _, ok := raw["gate"]; !ok {
+					return nil, &Error{Code: "validator_state_error"}
+				}
+			}
 			if err = privatefs.Read(d.path(), &owner.registry); err != nil {
 				return nil, &Error{Code: "validator_state_error"}
 			}
@@ -85,13 +120,19 @@ func (d *Docker) acquire(parent context.Context, checkImage bool) (owner *docker
 	if err = owner.reconcile(ctx); err != nil {
 		return nil, err
 	}
+	owner.inspected = true
+	owner.registry.Version = 3
+	owner.observeTime(clock())
+	if err = owner.recoverGate(clock()); err != nil {
+		return owner, err
+	}
 	// Keep an empty registry so older executables reject the new contract.
 	if err = owner.save(owner.registry.Sessions); err != nil {
 		return nil, err
 	}
 	if checkImage {
 		if err = d.image(ctx, endpoint); err != nil {
-			return nil, err
+			return owner, err
 		}
 	}
 	return owner, nil
@@ -100,7 +141,10 @@ func (d *Docker) acquire(parent context.Context, checkImage bool) (owner *docker
 func (o *dockerOwner) Close() error { return o.lock.Close() }
 
 func (o *dockerOwner) validate() error {
-	if o.registry.Version != 2 || o.registry.Sessions == nil || len(o.registry.Sessions) > 4 {
+	if (o.registry.Version != 2 && o.registry.Version != 3) || o.registry.Sessions == nil || len(o.registry.Sessions) > 4 {
+		return &Error{Code: "validator_state_error"}
+	}
+	if o.registry.Version == 3 && (o.registry.LastObservedAt.IsZero() || !o.registry.Gate.valid()) {
 		return &Error{Code: "validator_state_error"}
 	}
 	seen := map[string]bool{}
@@ -131,7 +175,8 @@ func (o *dockerOwner) save(sessions []manifest) error {
 	if o.poisoned {
 		return &Error{Code: "validator_state_error"}
 	}
-	next := registry{Version: 2, Sessions: append([]manifest{}, sessions...)}
+	next := o.registry
+	next.Sessions = append([]manifest{}, sessions...)
 	if o.docker.replaceJournal(next) != nil {
 		o.poisoned = true
 		return &Error{Code: "validator_state_error"}
@@ -257,6 +302,14 @@ func (o *dockerOwner) reconcile(ctx context.Context) error {
 				return err
 			}
 		}
+		if o.registry.Version == 3 && m.Receipt != nil {
+			r, e := receiptResult(*m.Receipt)
+			if e == nil && r.FailureClass == state.Throttled {
+				if e = o.Throttle(o.clock(), 0); e != nil {
+					return e
+				}
+			}
+		}
 		if err = o.remove(ctx, &m); err != nil {
 			failures = append(failures, err)
 			continue
@@ -268,6 +321,18 @@ func (o *dockerOwner) reconcile(ctx context.Context) error {
 	for _, id := range ids {
 		if !tracked[id] {
 			failures = append(failures, &Error{Code: "validator_orphaned_session"})
+		}
+	}
+	// A pending session must not conceal a fatal identity or journal failure from another session.
+	for _, failure := range failures {
+		var code *Error
+		if errors.As(failure, &code) {
+			switch code.Code {
+			case "validator_orphaned_session", "validator_daemon_mismatch", "validator_identity_mismatch",
+				"validator_state_error", "validator_version_mismatch", "validator_permission_error",
+				"validator_protocol_error", "validator_output_error":
+				return failure
+			}
 		}
 	}
 	return errors.Join(failures...)
@@ -330,6 +395,9 @@ func receiptResult(r protocol.Receipt) (Result, error) {
 	default:
 		return Result{}, &Error{Code: "validator_protocol_error"}
 	}
+	result.ProviderResponsive = result.Outcome == state.Confirmed ||
+		(result.ReasonCode == "not_unlimited" && r.RegistrationID != "" && r.DeviceID != "" &&
+			result.FailureClass == state.Terminal)
 	return result, nil
 }
 
@@ -395,6 +463,12 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 			return
 		}
 		result = normalized
+		if result.FailureClass == state.Throttled && o.registry.Version == 3 {
+			if e := h.Commit(func() error { return o.Throttle(o.clock(), result.ServerDelay) }); e != nil {
+				err = errors.Join(err, e)
+				return
+			}
+		}
 		m.Cleaned = true
 		m.Receipt = &receipt
 		if cleanupErr := cleanup.Err(); cleanupErr != nil {
@@ -597,4 +671,12 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 			}
 		}
 	}
+}
+
+func acquisitionFailure(err error) error {
+	var e *Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &e) && e.Code == "validator_runtime_error") {
+		return &Error{Code: "validator_backend_unavailable"}
+	}
+	return err
 }

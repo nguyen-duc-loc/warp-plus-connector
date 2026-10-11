@@ -90,7 +90,7 @@ func TestJournalLostAcknowledgementPoisonsOwnerAndRecoversVisiblePayload(t *test
 			require.NoError(t, d.Recover(t.Context()))
 			var recovered registry
 			require.NoError(t, privatefs.Read(d.path(), &recovered))
-			require.Equal(t, 2, recovered.Version)
+			require.Equal(t, 3, recovered.Version)
 			require.Empty(t, recovered.Sessions)
 			require.Equal(t, tc.creates, f.creates)
 			require.Equal(t, tc.checks, f.checks)
@@ -119,7 +119,7 @@ func TestLegacyJournalLostAcknowledgementRecoversActualVersion(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, json.Unmarshal(data, &visible))
 			if cleaned {
-				require.Equal(t, 2, visible.Version)
+				require.Equal(t, 3, visible.Version)
 				require.Equal(t, 1, f.removals)
 			} else {
 				require.Equal(t, 1, visible.Version)
@@ -129,7 +129,7 @@ func TestLegacyJournalLostAcknowledgementRecoversActualVersion(t *testing.T) {
 			require.NoError(t, d.Recover(t.Context()))
 			var recovered registry
 			require.NoError(t, privatefs.Read(d.path(), &recovered))
-			require.Equal(t, 2, recovered.Version)
+			require.Equal(t, 3, recovered.Version)
 			require.Empty(t, recovered.Sessions)
 			require.Equal(t, 1, f.removals)
 			require.Zero(t, f.creates)

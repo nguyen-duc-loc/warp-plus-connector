@@ -16,14 +16,30 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 	if err != nil {
 		return report, err
 	}
-	w, err := store.OpenWriter(ctx, a.Settings.StateDir, a.Clock)
+	w, err := store.OpenWriterWithPolicy(ctx, a.Settings.StateDir, a.Clock, a.Settings.SchedulePolicy())
 	if err != nil {
 		return report, classified(err)
 	}
 	defer closeStore(&w.Reader, &err)
+	full, err := a.Settings.SelectSources(nil, nil)
+	if err != nil {
+		return report, err
+	}
+	if _, err = w.PrepareSchedule(ctx, a.Clock(), a.Settings.SchedulePolicy(), full, false); err != nil {
+		return report, classified(err)
+	}
+	mutations := newMutationExecutor(nil)
+	defer mutations.close()
+	return a.crawlOwned(ctx, &operationWriter{Writer: w, mutations: mutations}, plan, "manual")
+}
+
+func (a *App) crawlOwned(
+	ctx context.Context, w *operationWriter, plan []state.SourcePlan,
+	origin string,
+) (report state.CrawlReport, err error) {
 	report, err = w.StartCrawlPlan(
 		ctx,
-		state.CrawlPlanInput{RequestID: rand.Text(), StartedAt: a.Clock(), Sources: plan},
+		state.CrawlPlanInput{Origin: origin, RequestID: rand.Text(), StartedAt: a.Clock(), Sources: plan},
 	)
 	if err != nil {
 		return report, classified(err)
@@ -43,6 +59,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 	}()
 	abort := func(cause error) error {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if a.shutdown != nil {
+			cancel()
+			cleanup, cancel = a.shutdown.localContext()
+		}
 		defer cancel()
 		code := classified(cause).(*Error).Code
 		status := state.Failed
@@ -52,7 +72,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 		}
 		_, finishErr := w.FinishCrawlPlan(
 			cleanup,
-			state.RunCompletion{RunID: id, Status: status, FinishedAt: a.Clock(), ReasonCode: code},
+			state.RunCompletion{
+				SchedulePolicy: a.Settings.SchedulePolicy(), RunID: id, Status: status, FinishedAt: a.Clock(),
+				ReasonCode: code,
+			},
 		)
 		if finishErr != nil {
 			return classified(finishErr)
@@ -77,6 +100,14 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 			}
 			if err := ctx.Err(); err != nil {
 				return report, abort(err)
+			}
+			if origin == "scheduled" {
+				if e := witnessClock(a, w, ctx); e != nil {
+					if classified(e).(*Error).Code == "clock_paused" {
+						return report, abort(e)
+					}
+					return report, e
+				}
 			}
 			// Fixture sources use the call start. The HTTP adapter supplies its
 			// actual monotonic request start after returning.
@@ -168,7 +199,9 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 	if err := ctx.Err(); err != nil {
 		return report, abort(err)
 	}
-	completion := state.RunCompletion{RunID: id, Status: state.Completed, FinishedAt: a.Clock()}
+	completion := state.RunCompletion{
+		SchedulePolicy: a.Settings.SchedulePolicy(), RunID: id, Status: state.Completed, FinishedAt: a.Clock(),
+	}
 	if failed {
 		completion.Status = state.Failed
 		completion.ReasonCode = "source_failed"

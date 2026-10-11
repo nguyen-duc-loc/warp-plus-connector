@@ -290,7 +290,10 @@ func TestPlanMigration_RollsBackAllNewTables(t *testing.T) {
 	require.NoError(t, err)
 	_, err = w.h.writeDB.ExecContext(
 		t.Context(),
-		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+		"DROP TABLE candidate_schedule; DROP TABLE scheduler_state; ALTER TABLE runs DROP COLUMN origin; "+
+			"ALTER TABLE runs DROP COLUMN schedule_completion_json; "+
+			"ALTER TABLE validation_attempts DROP COLUMN schedule_completion_json; "+
+			"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
 			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
 	)
 	require.NoError(t, err)
@@ -592,7 +595,10 @@ func TestPlanMigrationPreservesCoveredReport(t *testing.T) {
 	require.NoError(t, err)
 	_, err = w.h.writeDB.ExecContext(
 		ctx,
-		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+		"DROP TABLE candidate_schedule; DROP TABLE scheduler_state; ALTER TABLE runs DROP COLUMN origin; "+
+			"ALTER TABLE runs DROP COLUMN schedule_completion_json; "+
+			"ALTER TABLE validation_attempts DROP COLUMN schedule_completion_json; "+
+			"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
 			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
 	)
 	require.NoError(t, err)

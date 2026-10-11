@@ -10,7 +10,7 @@ import (
 
 type scanner interface{ Scan(...any) error }
 
-const runColumns = "id,request_id,kind,status,started_at,finished_at,recovered_at,reason_code"
+const runColumns = "id,request_id,kind,status,started_at,finished_at,recovered_at,reason_code,origin"
 const attemptColumns = "id,request_id,run_id,candidate_id,backend_id,backend_version," +
 	"started_at,finished_at,recovered_at,outcome,reason_code," +
 	"evidence_json"
@@ -35,7 +35,7 @@ func scanRun(row scanner) (state.Run, error) {
 	var start int64
 	var finish, recovered sql.NullInt64
 	var reason sql.NullString
-	err := row.Scan(&r.ID, &r.RequestID, &r.Kind, &r.Status, &start, &finish, &recovered, &reason)
+	err := row.Scan(&r.ID, &r.RequestID, &r.Kind, &r.Status, &start, &finish, &recovered, &reason, &r.Origin)
 	r.StartedAt = time.UnixMicro(start).UTC()
 	r.FinishedAt, r.RecoveredAt, r.ReasonCode = nullTime(finish), nullTime(recovered), nullString(reason)
 	r.ClockAnomaly = before(r.FinishedAt, r.StartedAt) || before(r.RecoveredAt, r.StartedAt)
@@ -93,4 +93,11 @@ func requireCandidate(ctx context.Context, tx *sql.Tx, id int64) error {
 	}
 	var found int64
 	return tx.QueryRowContext(ctx, "SELECT id FROM candidates WHERE id=?", id).Scan(&found)
+}
+
+func normalizedOrigin(origin string) string {
+	if origin == "" {
+		return "manual"
+	}
+	return origin
 }

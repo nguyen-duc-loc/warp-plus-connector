@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -46,12 +47,18 @@ func run() int {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 	err := cmd.ExecuteContext(ctx)
+	var failed interface{ DiagnosticFailed() bool }
+	diagnosticOK := !errors.As(err, &failed) || !failed.DiagnosticFailed()
 	if code := exitCode.Load(); code != 0 {
-		fmt.Fprintln(os.Stderr, "Error: cancelled")
+		if diagnosticOK {
+			fmt.Fprintln(os.Stderr, "Error: cancelled")
+		}
 		return int(code)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", cli.Diagnostic(err))
+		if diagnosticOK {
+			fmt.Fprintln(os.Stderr, "Error:", cli.Diagnostic(err))
+		}
 		return 1
 	}
 	return 0

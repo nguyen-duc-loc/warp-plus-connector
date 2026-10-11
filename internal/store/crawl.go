@@ -10,6 +10,10 @@ import (
 
 // StartCrawl creates a run and requested coverage in the same transaction.
 func (w *Writer) StartCrawl(ctx context.Context, in state.CrawlInput) (state.CrawlReport, error) {
+	in.Origin = normalizedOrigin(in.Origin)
+	if in.Origin != "manual" && in.Origin != "scheduled" {
+		return state.CrawlReport{}, ErrInvalidInput
+	}
 	return transact(
 		ctx, &w.Reader, true, "start crawl", func(tx *sql.Tx) (state.CrawlReport, error) {
 			var zero state.CrawlReport
@@ -27,7 +31,7 @@ func (w *Writer) StartCrawl(ctx context.Context, in state.CrawlInput) (state.Cra
 				),
 			)
 			if err == nil {
-				if run.Kind != state.Crawl || !run.StartedAt.Equal(at) {
+				if run.Origin != in.Origin || run.Kind != state.Crawl || !run.StartedAt.Equal(at) {
 					return zero, ErrConflict
 				}
 				report, err := crawlReport(ctx, tx, run.ID)
@@ -46,9 +50,9 @@ func (w *Writer) StartCrawl(ctx context.Context, in state.CrawlInput) (state.Cra
 			}
 			result, err := tx.ExecContext(
 				ctx,
-				"INSERT INTO runs(request_id,kind,status,started_at) VALUES(?,'crawl','running',?)",
+				"INSERT INTO runs(request_id,kind,status,started_at,origin) VALUES(?,'crawl','running',?,?)",
 				in.RequestID,
-				at.UnixMicro(),
+				at.UnixMicro(), in.Origin,
 			)
 			if err != nil {
 				return zero, err

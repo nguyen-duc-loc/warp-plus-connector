@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,87 @@ import (
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+// covers: spec 0007 AC-1. Defaults and explicit false flags retain independent lanes.
+func TestResolve_ScheduleDefaultsAndOverrides(t *testing.T) {
+	dir := isolatedConfig(t)
+	s, err := config.Resolve(config.Overrides{})
+	require.NoError(t, err)
+	require.True(t, s.CrawlEnabled)
+	require.True(t, s.ValidationEnabled)
+	require.Equal(t, time.Hour, s.CrawlInterval)
+	require.Equal(t, time.Hour, s.FailureInterval)
+	path := filepath.Join(dir, "schedule.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"crawl_enabled":false,"validation_enabled":true,`+
+		`"crawl_interval":"2h","failure_interval":"3h","recheck_interval":"4h"}`), 0600))
+	yes, no, interval := true, false, "5h"
+	s, err = config.Resolve(config.Overrides{
+		ConfigPath: &path, CrawlEnabled: &yes, ValidationEnabled: &no, FailureInterval: &interval,
+	})
+	require.NoError(t, err)
+	require.True(t, s.CrawlEnabled)
+	require.False(t, s.ValidationEnabled)
+	require.Equal(t, 2*time.Hour, s.CrawlInterval)
+	require.Equal(t, 4*time.Hour, s.RecheckInterval)
+	require.Equal(t, 5*time.Hour, s.FailureInterval)
+	require.NoError(t, s.ValidateRun())
+	_, err = os.Stat(s.StateDir)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// covers: spec 0007 AC-1. Bounds apply even when the corresponding lane is disabled.
+func TestValidateRun_ScheduleIntervalBoundaries(t *testing.T) {
+	isolatedConfig(t)
+	base, err := config.Resolve(config.Overrides{})
+	require.NoError(t, err)
+	base.ValidationEnabled = false
+	for _, field := range []string{"crawl", "routine", "failure"} {
+		for _, d := range []time.Duration{
+			0, time.Minute - time.Nanosecond, time.Minute, time.Minute + time.Nanosecond,
+			720 * time.Hour, 720*time.Hour + time.Nanosecond,
+		} {
+			t.Run(field+"/"+d.String(), func(t *testing.T) {
+				s := base
+				switch field {
+				case "crawl":
+					s.CrawlInterval = d
+				case "routine":
+					s.RecheckInterval = d
+				case "failure":
+					s.FailureInterval = d
+				}
+				if d < time.Minute || d > 720*time.Hour {
+					require.ErrorIs(t, s.ValidateRun(), config.ErrInvalid)
+				} else {
+					require.NoError(t, s.ValidateRun())
+				}
+			})
+		}
+	}
+	base.CrawlEnabled = false
+	require.ErrorIs(t, base.ValidateRun(), config.ErrScheduleDisabled)
+}
+
+// covers: spec 0007 AC-1. Malformed JSON is rejected before flag overrides.
+func TestResolve_RejectsMalformedScheduleValues(t *testing.T) {
+	dir := isolatedConfig(t)
+	path := filepath.Join(dir, "schedule.json")
+	for _, field := range []string{"crawl_enabled", "validation_enabled", "crawl_interval", "failure_interval"} {
+		for _, value := range []string{"null", "42", `"private_secret"`} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				body := fmt.Sprintf(`{%q:%s}`, field, value)
+				require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+				yes, interval := true, "1h"
+				_, err := config.Resolve(config.Overrides{
+					ConfigPath: &path, CrawlEnabled: &yes, ValidationEnabled: &yes,
+					CrawlInterval: &interval, FailureInterval: &interval,
+				})
+				require.ErrorIs(t, err, config.ErrInvalid)
+				require.NotContains(t, err.Error(), "private_secret")
+			})
+		}
+	}
+}
 
 func isolatedConfig(t *testing.T) string {
 	t.Helper()

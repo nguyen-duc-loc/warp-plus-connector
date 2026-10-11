@@ -118,13 +118,23 @@ func (w *Writer) CompleteAttempt(ctx context.Context, in state.AttemptCompletion
 			if batch {
 				return state.Attempt{}, ErrInvalidInput
 			}
-			return completeAttempt(ctx, tx, in)
+			saved, err := completeAttempt(ctx, tx, in)
+			if err != nil {
+				return saved, err
+			}
+			if a.Outcome == "" {
+				err = advanceCandidate(ctx, tx, a.CandidateID, completionPolicy(in.SchedulePolicy))
+			}
+			return saved, err
 		},
 	)
 }
 
 func completeAttempt(ctx context.Context, tx *sql.Tx, in state.AttemptCompletion) (state.Attempt, error) {
 	var zero state.Attempt
+	if err := saveCompletionPolicy(ctx, tx, "validation_attempts", in.AttemptID, 0, in.SchedulePolicy); err != nil {
+		return zero, err
+	}
 	at, err := normalizeTime(in.FinishedAt)
 	if err != nil || in.AttemptID <= 0 {
 		return zero, ErrInvalidInput

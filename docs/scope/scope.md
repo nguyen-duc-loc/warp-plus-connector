@@ -184,17 +184,19 @@ Give crawling and validation separate configurable intervals. New candidates and
 
 **Done when:** both schedules run independently; slow jobs do not create overlapping checks or an unbounded backlog; startup and missed interval behavior are defined; failed work gets a future attempt; restarts preserve freshness information and pending eligibility; manual runs respect the same coordination rules.
 
-**Spec:** [0007. Scheduled crawl and revalidation](../specs/0007-scheduled-crawl-revalidation/index.md), confirmed on 2026-10-11 after independent review. Foreground `run` uses separate crawl and validation schedules, saved eligibility, small bounded batches, and shared validator cooldown recovery. The design is confirmed; implementation has not started. Service management remains in feature 9.
+**Spec:** [0007. Scheduled crawl and revalidation](../specs/0007-scheduled-crawl-revalidation/index.md), confirmed on 2026-10-11 after independent review. Foreground `run` uses separate crawl and validation schedules, saved eligibility, small bounded batches, and shared validator cooldown recovery. Build complete, code in `internal/app/run.go`, `internal/store/schedule.go`, `internal/validator/gate.go`, and `internal/cli/schedule.go`. Service management remains in feature 9.
 
 - [x] Design it (spec): `/architect scheduled crawl and revalidation`
-- [ ] Build it: `/develop scheduled crawl and revalidation`
-  - [ ] Prove a scheduled crawl through configuration, schema version 5, the shared writer, saved inspection, and output after restart (AC-1, AC-6, AC-10, AC-11, AC-12, AC-13).
-  - [ ] Add automatic candidate selection, routine and failure eligibility, history initialization, and matching manual work (AC-3, AC-4, AC-5, AC-6, AC-13).
-  - [ ] Prove registry version 3 conversion, shared cooldowns, single candidate probes, and recovery across profiles (AC-8, AC-9, AC-10, AC-13, AC-14).
-  - [ ] Allow crawl and validation overlap with bounded selection, independent controls, and persisted recovery waits (AC-1, AC-2, AC-3, AC-7, AC-8, AC-10).
-  - [ ] Complete clock handling, inspection consistency, fault recovery, signals, and shared shutdown deadlines on both arm64 platforms (AC-5, AC-7, AC-9, AC-11, AC-12, AC-13, AC-14, AC-15).
-- [ ] Verify it: `/check verify scheduled crawl and revalidation`
-- [ ] Test it: `/test scheduled crawl and revalidation`
+- [x] Build it: `/develop scheduled crawl and revalidation`
+  - [x] Prove a scheduled crawl through configuration, schema version 5, the shared writer, saved inspection, and output after restart (AC-1, AC-6, AC-10, AC-11, AC-12, AC-13).
+  - [x] Add automatic candidate selection, routine and failure eligibility, history initialization, and matching manual work (AC-3, AC-4, AC-5, AC-6, AC-13).
+  - [x] Prove registry version 3 conversion, shared cooldowns, single candidate probes, and recovery across profiles (AC-8, AC-9, AC-10, AC-13, AC-14).
+  - [x] Allow crawl and validation overlap with bounded selection, independent controls, and persisted recovery waits (AC-1, AC-2, AC-3, AC-7, AC-8, AC-10).
+  - [x] Complete clock handling, inspection consistency, fault recovery, signals, and shared shutdown deadlines on both arm64 platforms (AC-5, AC-7, AC-9, AC-11, AC-12, AC-13, AC-14, AC-15).
+- [x] Verify it: `/check verify scheduled crawl and revalidation` (AC-1 through AC-15 passed on macOS and Linux arm64, 2026-10-11; evidence in the feature verification checklist).
+- [x] Test it: `/test scheduled crawl and revalidation`
+
+The test pass on 2026-10-11 added 21 test functions across eight files and extended the existing history migration test. Coverage includes configuration bounds and explicit false overrides, due time rounding and ordering, recovery of started and pending work, restart waits, manual coverage matching, terminal outcome intervals, clock repair, probe selection, private inspection, output failure, shared cleanup allowances, provider cooldowns, and the shared acquisition budget. Acceptance references live beside the tests. The full Go suite and the macOS arm64 formatting, vet, race test, and lint gate passed. All six affected internal package suites also passed as ordinary Linux arm64 test binaries in a disposable container with networking disabled. Provider responses remained controlled; real provider behavior and process crash experiments remain in the separate verification record. Feature completion awaits your confirmation.
 
 ## Slice 6: Operate in the background
 

@@ -60,6 +60,7 @@ const (
 
 // ValidationBatchInput saves the complete ordered selection before external work.
 type ValidationBatchInput struct {
+	Origin                    string
 	RequestID                 string
 	StartedAt                 time.Time
 	CandidateIDs              []int64
@@ -103,6 +104,7 @@ type BatchAttemptCompletion struct {
 
 // ValidationItemCompletion closes an item without creating an attempt.
 type ValidationItemCompletion struct {
+	SchedulePolicy     SchedulePolicy
 	RunID, CandidateID int64
 	FinishedAt         time.Time
 	StopReason         string

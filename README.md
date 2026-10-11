@@ -90,7 +90,7 @@ The new image uses worker protocol 2. You can rebuild it with the existing build
 
 ## Private configuration
 
-Runtime commands accept `--config`, `--state-dir`, and `--recheck-interval`. `check` and `validator recover` also accept `--validator`, `--validator-image`, and `--validator-socket`. Explicit flags override JSON settings. Validator choices are `unsupported` and `docker`.
+Runtime commands accept `--config`, `--state-dir`, and `--recheck-interval`. `check`, `run`, and `validator recover` also accept `--validator`, `--validator-image`, and `--validator-socket`. Explicit flags override JSON settings. Validator choices are `unsupported` and `docker`.
 
 The optional default file is `os.UserConfigDir()/warp-plus-connector/config.json`. An explicit missing file fails. Existing configuration must be a regular file owned by your account, without group or other access or a symlink. For example, you can save this JSON with mode `0600`:
 
@@ -117,9 +117,24 @@ Relative state paths resolve from your invocation directory. Shell expansions su
 
 To select Docker in JSON, set `validator` to `docker` and add `validator_image` with the complete `sha256:` ID printed by the build script. Optional `validator_socket` is an absolute local Unix socket path. Otherwise the backend inspects your selected local Docker context. The recovery directory is `validator` beneath the platform default state directory, independent of a profile's `state_dir` override.
 
-The interval controls freshness evaluation only. Scheduling is not implemented. Configuration rejects unknown or duplicate fields, nulls, invalid values, extra JSON documents, and files larger than 64 KiB. Root invocation, help, and version bypass configuration and state.
+`recheck_interval` controls evidence freshness and the routine validation schedule. `crawl_interval` and `failure_interval` default to `1h`. The routine interval defaults to `6h`. `run` requires all three intervals to be between `1m` and `720h`, including intervals for disabled lanes. Other commands retain positive freshness intervals outside that range. Configuration rejects unknown or duplicate fields, nulls, invalid values, extra JSON documents, and files larger than 64 KiB. Root invocation, help, and version bypass configuration and state.
 
 Results use stdout; fixed diagnostic reasons and structured run logs use stderr. Ordinary failures and unsupported checks exit 1. SIGINT and SIGTERM request cancellation and exit 130 and 143, with a bounded attempt to persist terminal state. A later writer recovers any unresolved local work.
+
+You can keep collection and validation running in the foreground:
+
+```sh
+bin/wpc run --validator docker --validator-image sha256:<image-id>
+bin/wpc run --validation-enabled=false
+bin/wpc schedule show
+bin/wpc schedule show 1 --format json
+```
+
+Both lanes are enabled by default. `--crawl-enabled=false` runs validation alone. The JSON fields `crawl_enabled` and `validation_enabled` accept the same controls. Automatic crawling uses all enabled configured sources and their page limits. Validation selects at most twice the worker count per batch, then reads the next due candidates from saved state. Ordinary failures receive a future attempt; restarts keep timing bases and coalesce missed intervals.
+
+`run` owns the profile writer until it stops. Saved reports, listing, export, and schedule inspection remain available, while other writers report busy. `schedule show` reads saved facts without applying current intervals or contacting Docker. A backward clock pauses automatic admission until the saved checkpoint is reached. Shared Docker throttling survives changes of profile and requires one successful, cleaned, durably saved probe before normal capacity resumes.
+
+The first writer upgrades SQLite to schema 5. Docker acquisition converts clean recovery state to registry 3; both versions reject older executables. Existing history is retained. Service installation and process management remain separate work.
 
 ## Development checks
 

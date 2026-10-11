@@ -10,6 +10,10 @@ import (
 
 // StartRun starts work or returns the current record for identical creation input.
 func (w *Writer) StartRun(ctx context.Context, in state.RunInput) (state.Run, error) {
+	in.Origin = normalizedOrigin(in.Origin)
+	if in.Origin != "manual" && in.Origin != "scheduled" {
+		return state.Run{}, ErrInvalidInput
+	}
 	return transact(
 		ctx, &w.Reader, true, "start run", func(tx *sql.Tx) (state.Run, error) {
 			var zero state.Run
@@ -25,7 +29,7 @@ func (w *Writer) StartRun(ctx context.Context, in state.RunInput) (state.Run, er
 				),
 			)
 			if err == nil {
-				if existing.Kind != in.Kind || !existing.StartedAt.Equal(at) {
+				if existing.Origin != in.Origin || existing.Kind != in.Kind || !existing.StartedAt.Equal(at) {
 					return zero, ErrConflict
 				}
 				return existing, nil
@@ -35,10 +39,10 @@ func (w *Writer) StartRun(ctx context.Context, in state.RunInput) (state.Run, er
 			}
 			result, err := tx.ExecContext(
 				ctx,
-				"INSERT INTO runs(request_id,kind,status,started_at) VALUES(?,?,'running',?)",
+				"INSERT INTO runs(request_id,kind,status,started_at,origin) VALUES(?,?,'running',?,?)",
 				in.RequestID,
 				in.Kind,
-				at.UnixMicro(),
+				at.UnixMicro(), in.Origin,
 			)
 			if err != nil {
 				return zero, err
@@ -57,6 +61,9 @@ func (w *Writer) FinishRun(ctx context.Context, in state.RunCompletion) (state.R
 	return transact(
 		ctx, &w.Reader, true, "finish run", func(tx *sql.Tx) (state.Run, error) {
 			var zero state.Run
+			if err := saveCompletionPolicy(ctx, tx, "runs", in.RunID, 0, in.SchedulePolicy); err != nil {
+				return zero, err
+			}
 			batch, err := hasBatch(ctx, tx, in.RunID)
 			if err != nil {
 				return zero, err
@@ -121,6 +128,11 @@ func (w *Writer) FinishRun(ctx context.Context, in state.RunCompletion) (state.R
 				in.RunID,
 			); err != nil {
 				return zero, err
+			}
+			if r.Kind == state.Crawl {
+				if err := advanceCrawl(ctx, tx, in.RunID, completionPolicy(in.SchedulePolicy)); err != nil {
+					return zero, err
+				}
 			}
 			return getRun(ctx, tx, in.RunID)
 		},

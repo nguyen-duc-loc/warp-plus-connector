@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	_ "modernc.org/sqlite"
 )
 
@@ -35,8 +36,19 @@ type handle struct {
 // OpenWriter initializes, migrates, and recovers private state while holding the
 // exclusive writer lock. The clock supplies one recovery timestamp.
 func OpenWriter(ctx context.Context, stateDir string, clock func() time.Time) (*Writer, error) {
+	return OpenWriterWithPolicy(ctx, stateDir, clock, state.DefaultSchedulePolicy())
+}
+
+// OpenWriterWithPolicy initializes scheduling and interrupted history atomically.
+func OpenWriterWithPolicy(
+	ctx context.Context, stateDir string, clock func() time.Time,
+	policy state.SchedulePolicy,
+) (*Writer, error) {
+	if !policy.Valid() {
+		return nil, ErrInvalidInput
+	}
 	return awaitContext(
-		ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock) }, func(w *Writer) {
+		ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock, policy) }, func(w *Writer) {
 			if w != nil {
 				_ = w.Close()
 			}
@@ -44,7 +56,10 @@ func OpenWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	)
 }
 
-func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*Writer, error) {
+func openWriter(ctx context.Context, stateDir string, clock func() time.Time, policy state.SchedulePolicy) (
+	*Writer,
+	error,
+) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -100,15 +115,15 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	if mode != "wal" {
 		return nil, ErrStateAccess
 	}
-	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema, planSchema, batchSchema}); err != nil {
-		return nil, safeError(ctx, "migrate state", err)
-	}
 	recovery, err := normalizeTime(clock())
 	if err != nil {
 		return nil, err
 	}
-	if err = recoverState(ctx, h.writeDB, recovery); err != nil {
-		return nil, safeError(ctx, "recover state", err)
+	if err = migrateAndRecover(
+		ctx, h.writeDB,
+		[]string{initialSchema, coverageSchema, planSchema, batchSchema, scheduleSchema}, recovery, policy,
+	); err != nil {
+		return nil, safeError(ctx, "initialize state", err)
 	}
 	h.readDB, err = openDB(ctx, dir, true)
 	if err != nil {
@@ -381,12 +396,8 @@ func transactOwned[T any](
 	return awaitContext(ctx, work, nil)
 }
 
-func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
+func recoverStateTx(ctx context.Context, tx *sql.Tx, at time.Time) error {
+	var err error
 	if _, err = tx.ExecContext(
 		ctx,
 		"UPDATE validation_attempts SET outcome='inconclusive', "+
@@ -421,5 +432,5 @@ func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
 	); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }

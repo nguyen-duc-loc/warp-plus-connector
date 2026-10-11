@@ -140,6 +140,9 @@ func (w *Writer) FinishCrawlPlan(ctx context.Context, in state.RunCompletion) (s
 	return transact(
 		ctx, &w.Reader, true, "finish crawl plan", func(tx *sql.Tx) (state.CrawlReport, error) {
 			var zero state.CrawlReport
+			if err := saveCompletionPolicy(ctx, tx, "runs", in.RunID, 0, in.SchedulePolicy); err != nil {
+				return zero, err
+			}
 			at, err := normalizeTime(in.FinishedAt)
 			if err != nil || !validPageOutcome(string(in.Status), in.ReasonCode) {
 				return zero, ErrInvalidInput
@@ -222,6 +225,9 @@ func (w *Writer) FinishCrawlPlan(ctx context.Context, in state.RunCompletion) (s
 				optionalString(in.ReasonCode),
 				in.RunID,
 			); err != nil {
+				return zero, err
+			}
+			if err := advanceCrawl(ctx, tx, in.RunID, completionPolicy(in.SchedulePolicy)); err != nil {
 				return zero, err
 			}
 			return crawlReport(ctx, tx, in.RunID)

@@ -23,7 +23,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 		ctx,
 		w.h.writeDB,
 		[]string{
-			initialSchema, coverageSchema, planSchema, batchSchema,
+			initialSchema, coverageSchema, planSchema, batchSchema, scheduleSchema,
 			"CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);",
 		},
 	)
@@ -47,7 +47,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 			"SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",
 		).Scan(&count),
 	)
-	require.Equal(t, 12, count)
+	require.Equal(t, 14, count)
 	require.NoError(t, w.Close())
 }
 
@@ -227,7 +227,10 @@ func TestCoverageMigrationPreservesLegacyHistory(t *testing.T) {
 	// Remove only the schema 2 addition to reconstruct a populated schema 1 file.
 	_, err = w.h.writeDB.ExecContext(
 		ctx,
-		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+		"DROP TABLE candidate_schedule; DROP TABLE scheduler_state; ALTER TABLE runs DROP COLUMN origin; "+
+			"ALTER TABLE runs DROP COLUMN schedule_completion_json; "+
+			"ALTER TABLE validation_attempts DROP COLUMN schedule_completion_json; "+
+			"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
 			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP "+
 			"TABLE crawl_sources; DROP TABLE crawl_coverage; PRAGMA "+
 			"user_version=1",
@@ -243,6 +246,15 @@ func TestCoverageMigrationPreservesLegacyHistory(t *testing.T) {
 	after, err := w.GetCandidate(ctx, id, evaluation)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
+	// covers: spec 0007 AC-5, AC-13. Historical evidence supplies the scheduling
+	// basis, rather than the later migration or recovery time.
+	schedule, err := w.GetSchedule(ctx, id, func() time.Time { return at.Add(time.Minute) })
+	require.NoError(t, err)
+	require.Equal(t, "routine", schedule.Candidate.Reason)
+	require.Equal(t, at, schedule.Candidate.BasisAt)
+	require.Equal(t, at.Add(6*time.Hour), schedule.Candidate.DueAt)
+	require.Equal(t, attempt.ID, *schedule.Candidate.BasisAttemptID)
+	require.Equal(t, validation.ID, *schedule.Candidate.BasisRunID)
 	afterSightings, err := w.ListSightings(ctx, id, state.PageRequest{})
 	require.NoError(t, err)
 	require.Equal(t, sightings, afterSightings)

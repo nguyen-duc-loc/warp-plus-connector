@@ -56,6 +56,7 @@ type Evidence struct {
 
 // Run retains execution times separately from recovery time.
 type Run struct {
+	Origin       string
 	ID           int64
 	RequestID    string
 	Kind         RunKind
@@ -136,6 +137,7 @@ type Observation struct {
 
 // RunInput supplies a stable retry token and run creation fields.
 type RunInput struct {
+	Origin    string
 	RequestID string
 	Kind      RunKind
 	StartedAt time.Time
@@ -178,19 +180,21 @@ type AttemptInput struct {
 
 // AttemptCompletion contains the terminal result of one invocation.
 type AttemptCompletion struct {
-	AttemptID  int64
-	FinishedAt time.Time
-	Outcome    Outcome
-	ReasonCode string
-	Evidence   *Evidence
+	SchedulePolicy SchedulePolicy
+	AttemptID      int64
+	FinishedAt     time.Time
+	Outcome        Outcome
+	ReasonCode     string
+	Evidence       *Evidence
 }
 
 // RunCompletion supplies the terminal execution result.
 type RunCompletion struct {
-	RunID      int64
-	Status     RunStatus
-	FinishedAt time.Time
-	ReasonCode string
+	SchedulePolicy SchedulePolicy
+	RunID          int64
+	Status         RunStatus
+	FinishedAt     time.Time
+	ReasonCode     string
 }
 
 // Cursor is portable between processes using the same state database. It carries

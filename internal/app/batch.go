@@ -38,8 +38,9 @@ type checkEvent struct {
 }
 
 type batchCoordinator struct {
+	healthy            bool
 	app                *App
-	writer             *store.Writer
+	writer             *operationWriter
 	owner              validator.BatchOwner
 	policy             state.CheckPolicy
 	report             state.ValidationReport
@@ -83,17 +84,44 @@ func (a *App) CheckBatch(
 			return report, &Error{Code: "state_invalid_input"}
 		}
 	}
-	w, err := store.OpenWriter(ctx, a.Settings.StateDir, a.Clock)
+	w, err := store.OpenWriterWithPolicy(ctx, a.Settings.StateDir, a.Clock, a.Settings.SchedulePolicy())
 	if err != nil {
 		return report, classified(err)
 	}
 	defer closeStore(&w.Reader, &err)
+	mutations := newMutationExecutor(nil)
+	defer mutations.close()
+	return a.checkOwned(ctx, &operationWriter{Writer: w, mutations: mutations}, ids, emit, "manual", nil)
+}
+
+func (a *App) checkOwned(
+	ctx context.Context, w *operationWriter, ids []int64, emit func(state.ValidationItem) error,
+	origin string, acquired validator.BatchOwner,
+) (report state.ValidationReport, err error) {
+	if acquired != nil {
+		defer func() { err = errors.Join(err, classified(acquired.Close())) }()
+	}
+	entered := false
+	defer func() {
+		if a.shutdown != nil && !entered {
+			a.shutdown.finishRemote()
+		}
+	}()
+
+	policy := a.Settings.CheckPolicy
+	if policy == (state.CheckPolicy{}) {
+		policy = state.DefaultCheckPolicy()
+	}
 	b := &batchCoordinator{
 		app: a, writer: w, policy: policy, emit: emit, ctx: ctx, reliable: true, outputOK: true,
 		events: make(chan checkEvent, policy.Workers), now: time.Now,
 	}
 	if a.Monotonic != nil {
 		b.now = a.Monotonic
+	}
+	if a.shutdown != nil {
+		b.nextMutation = a.nextMutation
+		defer func() { a.nextMutation = b.nextMutation }()
 	}
 	seen := map[int64]bool{}
 	selection := []int64{}
@@ -110,17 +138,41 @@ func (a *App) CheckBatch(
 		b.jobs = append(b.jobs, &checkJob{candidate: candidate})
 		selection = append(selection, id)
 	}
-	if backend, ok := a.Validator.(validator.BatchBackend); ok {
+	if acquired != nil {
+		b.owner = acquired
+	} else if backend, ok := a.Validator.(validator.ScheduledBackend); ok {
+		acquisition, e := acquireValidator(ctx, backend, a, w.mutations)
+		if e != nil {
+			return report, classified(e)
+		}
+		b.owner = acquisition.Owner
+	} else if backend, ok := a.Validator.(validator.BatchBackend); ok {
 		b.owner, err = backend.Acquire(ctx)
 		if err != nil {
 			return report, classified(err)
 		}
+	}
+	if b.owner != nil && acquired == nil {
 		defer func() { err = errors.Join(err, classified(b.owner.Close())) }()
+	}
+	if gate, ok := b.owner.(validator.GateOwner); ok {
+		probe, e := gate.Admission(a.Clock())
+		if e != nil {
+			return report, classified(e)
+		}
+		if probe {
+			if len(selection) != 1 {
+				return report, &Error{Code: "validator_probe_required"}
+			}
+			policy.Workers = 1
+			policy.MaxAttempts = 1
+			b.policy = policy
+		}
 	}
 	backend, version := a.Validator.Identity()
 	report, err = w.StartValidationBatch(
 		ctx, state.ValidationBatchInput{
-			RequestID: rand.Text(), StartedAt: a.Clock(),
+			Origin: origin, RequestID: rand.Text(), StartedAt: a.Clock(),
 			CandidateIDs: selection, BackendID: backend, BackendVersion: version, Policy: policy,
 		},
 	)
@@ -128,9 +180,22 @@ func (a *App) CheckBatch(
 		return report, classified(err)
 	}
 	b.report = report
-	b.cleanup, b.cancelCleanup = context.WithCancel(context.Background())
+	if gate, ok := b.owner.(validator.GateOwner); ok {
+		if err = w.mutations.call(
+			false,
+			func() error { return gate.Begin(a.Clock(), a.Settings.SchedulePolicy().Failure) },
+		); err != nil {
+			return report, classified(err)
+		}
+	}
+	cleanupParent := context.Background()
+	if a.shutdown != nil {
+		cleanupParent = a.shutdown.cleanup
+	}
+	b.cleanup, b.cancelCleanup = context.WithCancel(cleanupParent)
 	defer b.cancelCleanup()
 	a.log(report.Run.ID, "batch_admitted")
+	entered = true
 	return b.run()
 }
 
@@ -249,10 +314,7 @@ func (b *batchCoordinator) start(j *checkJob) {
 			result.Removed = true
 		}
 		cancel()
-		select {
-		case b.events <- checkEvent{kind: "finished", job: j, result: result, err: err}:
-		case <-b.cleanup.Done():
-		}
+		b.events <- checkEvent{kind: "finished", job: j, result: result, err: err}
 	}()
 }
 
@@ -272,6 +334,22 @@ func (b *batchCoordinator) admission() {
 		if b.mutation != nil || now.Before(b.nextMutation) || now.Before(b.pause) {
 			return
 		}
+		if gate, ok := b.owner.(validator.GateOwner); ok {
+			// Active phase belongs to this owner; clock checks remain mandatory.
+			if b.report.Run.Origin == "scheduled" {
+				if err := witnessClock(b.app, b.writer, b.ctx); err != nil {
+					b.stop(err, "clock_paused")
+					continue
+				}
+			}
+			if err := b.writer.mutations.call(
+				false,
+				func() error { return gate.BeforeMutation(b.app.Clock()) },
+			); err != nil {
+				b.stop(classified(err), classified(err).(*Error).Code)
+				continue
+			}
+		}
 		b.admissions = b.admissions[1:]
 		b.mutation = e.job
 		b.mutationStarted = now
@@ -287,6 +365,17 @@ func (b *batchCoordinator) admission() {
 }
 
 func (b *batchCoordinator) classifyMutation(r validator.Result, err error) {
+	if r.FailureClass == state.Throttled {
+		if gate, ok := b.owner.(validator.GateOwner); ok {
+			e := b.writer.mutations.call(false, func() error { return gate.Throttle(b.app.Clock(), r.ServerDelay) })
+			if e != nil {
+				b.stop(classified(e), "validator_state_error")
+				return
+			}
+			b.stop(&Error{Code: "validation_rate_limited"}, "validation_rate_limited")
+			return
+		}
+	}
 	if r.FailureClass == state.Throttled && r.ServerDelay > 0 {
 		until := b.now().Add(r.ServerDelay)
 		if until.After(b.pause) {
@@ -333,6 +422,9 @@ func (b *batchCoordinator) finish(e checkEvent) {
 		)
 	}
 	r := e.result
+	if r.ProviderResponsive && r.CleanupProven && r.Removed && e.err == nil {
+		b.healthy = true
+	}
 	b.observe(j, r)
 	b.classifyMutation(r, e.err)
 	if b.mutation == j {
@@ -364,8 +456,9 @@ func (b *batchCoordinator) finish(e checkEvent) {
 	}
 	completion := state.BatchAttemptCompletion{
 		AttemptCompletion: state.AttemptCompletion{
-			AttemptID:  j.attempt.ID,
-			FinishedAt: b.app.Clock(), Outcome: r.Outcome, ReasonCode: r.ReasonCode, Evidence: r.Evidence,
+			SchedulePolicy: b.app.Settings.SchedulePolicy(),
+			AttemptID:      j.attempt.ID,
+			FinishedAt:     b.app.Clock(), Outcome: r.Outcome, ReasonCode: r.ReasonCode, Evidence: r.Evidence,
 		}, FailureClass: r.FailureClass,
 	}
 	if r.Outcome == state.Inconclusive {
@@ -480,8 +573,9 @@ func (b *batchCoordinator) dispatch() {
 			if !b.now().Before(j.deadline) {
 				_, err := b.writer.FinishValidationItem(
 					b.ctx, state.ValidationItemCompletion{
-						RunID:       b.report.Run.ID,
-						CandidateID: j.candidate.ID, FinishedAt: b.app.Clock(), StopReason: "candidate_timeout",
+						SchedulePolicy: b.app.Settings.SchedulePolicy(),
+						RunID:          b.report.Run.ID,
+						CandidateID:    j.candidate.ID, FinishedAt: b.app.Clock(), StopReason: "candidate_timeout",
 					},
 				)
 				if err != nil {
@@ -515,6 +609,7 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	cancellation := b.ctx.Done()
+	cleanupDone := b.cleanup.Done()
 	for {
 		if err := b.ctx.Err(); err != nil {
 			b.stop(classified(err), "cancelled")
@@ -535,13 +630,8 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 		case <-cancellation:
 			b.stop(classified(b.ctx.Err()), "cancelled")
 			cancellation = nil
-		case <-b.cleanup.Done():
-			b.active = 0
-			for _, j := range b.jobs {
-				if j.running {
-					j.running = false
-				}
-			}
+		case <-cleanupDone:
+			cleanupDone = nil
 		case <-ticker.C:
 		case e := <-b.events:
 			if err := b.ctx.Err(); err != nil {
@@ -558,7 +648,7 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 					e.reply <- err
 					continue
 				}
-				err := e.commit()
+				err := b.writer.mutations.call(false, e.commit)
 				if err != nil {
 					b.stop(classified(err), "validator_state_error")
 				}
@@ -595,7 +685,17 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 }
 
 func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(b.policy.FinalizeTimeoutUS)*time.Microsecond)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if b.app.shutdown != nil {
+		b.app.shutdown.finishRemote()
+		ctx, cancel = b.app.shutdown.localContext()
+	} else {
+		ctx, cancel = context.WithTimeout(
+			context.Background(),
+			time.Duration(b.policy.FinalizeTimeoutUS)*time.Microsecond,
+		)
+	}
 	defer cancel()
 	if b.reliable {
 		for _, j := range b.jobs {
@@ -610,7 +710,8 @@ func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
 			if item.LatestAttempt != nil && item.LatestAttempt.Outcome == "" {
 				completion := state.BatchAttemptCompletion{
 					AttemptCompletion: state.AttemptCompletion{
-						AttemptID: j.attempt.ID, FinishedAt: b.app.Clock(), Outcome: state.Inconclusive,
+						SchedulePolicy: b.app.Settings.SchedulePolicy(),
+						AttemptID:      j.attempt.ID, FinishedAt: b.app.Clock(), Outcome: state.Inconclusive,
 						ReasonCode: b.stopCode,
 					},
 					FailureClass: state.Unsafe, StopReason: b.stopCode,
@@ -627,7 +728,10 @@ func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
 		}
 	}
 	if b.reliable {
-		in := state.RunCompletion{RunID: b.report.Run.ID, FinishedAt: b.app.Clock(), Status: state.Completed}
+		in := state.RunCompletion{
+			SchedulePolicy: b.app.Settings.SchedulePolicy(), RunID: b.report.Run.ID, FinishedAt: b.app.Clock(),
+			Status: state.Completed,
+		}
 		var err error
 		if b.stopErr != nil {
 			in.Status = state.Failed
@@ -660,6 +764,19 @@ func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
 	}
 	if report, err := b.writer.GetValidationReport(ctx, b.report.Run.ID); err == nil {
 		b.report = report
+	}
+	if gate, ok := b.owner.(validator.GateOwner); ok {
+		acknowledged := b.reliable && b.report.Run.Status != state.Running
+		if err := b.writer.mutations.call(
+			false, func() error {
+				return gate.Resolve(
+					b.app.Clock(), acknowledged,
+					b.healthy && b.stopErr == nil,
+				)
+			},
+		); err != nil {
+			return b.report, classified(err)
+		}
 	}
 	if b.stopErr != nil {
 		return b.report, b.stopErr

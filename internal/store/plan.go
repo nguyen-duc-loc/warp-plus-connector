@@ -11,6 +11,10 @@ import (
 
 // StartCrawlPlan atomically saves an immutable selected plan before requests.
 func (w *Writer) StartCrawlPlan(ctx context.Context, in state.CrawlPlanInput) (state.CrawlReport, error) {
+	in.Origin = normalizedOrigin(in.Origin)
+	if in.Origin != "manual" && in.Origin != "scheduled" {
+		return state.CrawlReport{}, ErrInvalidInput
+	}
 	in.Sources = append([]state.SourcePlan(nil), in.Sources...)
 	return transact(
 		ctx, &w.Reader, true, "start crawl plan", func(tx *sql.Tx) (state.CrawlReport, error) {
@@ -37,7 +41,7 @@ func (w *Writer) StartCrawlPlan(ctx context.Context, in state.CrawlPlanInput) (s
 				),
 			)
 			if err == nil {
-				if run.Kind != state.Crawl || !run.StartedAt.Equal(at) {
+				if run.Origin != in.Origin || run.Kind != state.Crawl || !run.StartedAt.Equal(at) {
 					return zero, ErrConflict
 				}
 				report, err := crawlReport(ctx, tx, run.ID)
@@ -59,9 +63,9 @@ func (w *Writer) StartCrawlPlan(ctx context.Context, in state.CrawlPlanInput) (s
 			}
 			result, err := tx.ExecContext(
 				ctx,
-				"INSERT INTO runs(request_id,kind,status,started_at) VALUES(?,'crawl','running',?)",
+				"INSERT INTO runs(request_id,kind,status,started_at,origin) VALUES(?,'crawl','running',?,?)",
 				in.RequestID,
-				at.UnixMicro(),
+				at.UnixMicro(), in.Origin,
 			)
 			if err != nil {
 				return zero, err

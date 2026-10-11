@@ -33,6 +33,7 @@ type DockerOptions struct {
 
 // Docker checks one candidate at a time with a retained isolated container.
 type Docker struct {
+	mutation     func(func() error) error
 	Options      DockerOptions
 	run          func(context.Context, []byte, ...string) ([]byte, error)
 	writeJournal func(string, any) error
@@ -123,6 +124,12 @@ func dockerCommand(ctx context.Context, input []byte, args ...string) ([]byte, e
 		return nil, &Error{Code: "validator_output_error"}
 	}
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil, &Error{Code: "validator_permission_error"}
+		}
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, &Error{Code: "validator_backend_unavailable"}
+		}
 		var code struct {
 			Code string `json:"code"`
 		}
@@ -195,6 +202,9 @@ func (d *Docker) image(ctx context.Context, endpoint string) error {
 	}
 	data, err := d.at(ctx, endpoint, nil, "image", "inspect", d.Options.Image)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return err
+		}
 		return &Error{Code: "validator_image_unavailable"}
 	}
 	var images []struct {
@@ -236,7 +246,14 @@ func (d *Docker) replaceJournal(value any) error {
 	if write == nil {
 		write = privatefs.Write
 	}
-	if write(d.path(), value) != nil {
+	persist := func() error { return write(d.path(), value) }
+	var err error
+	if d.mutation != nil {
+		err = d.mutation(persist)
+	} else {
+		err = persist()
+	}
+	if err != nil {
 		return &Error{Code: "validator_state_error"}
 	}
 	return nil
@@ -375,7 +392,13 @@ func (d *Docker) remove(ctx context.Context, m *manifest) error {
 			return err
 		}
 	}
-	if privatefs.Remove(d.path()) != nil {
+	remove := func() error { return privatefs.Remove(d.path()) }
+	if d.mutation != nil {
+		err = d.mutation(remove)
+	} else {
+		err = remove()
+	}
+	if err != nil {
 		return &Error{Code: "validator_state_error"}
 	}
 	return nil
@@ -411,7 +434,13 @@ func (d *Docker) reconcile(ctx context.Context, endpoint, daemonID string) error
 	if err != nil {
 		// No remote operation starts until the container ID was durably recorded.
 		if m.ContainerID == "" && len(ids) == 0 {
-			if privatefs.Remove(d.path()) != nil {
+			remove := func() error { return privatefs.Remove(d.path()) }
+			if d.mutation != nil {
+				err = d.mutation(remove)
+			} else {
+				err = remove()
+			}
+			if err != nil {
 				return &Error{Code: "validator_state_error"}
 			}
 			return nil

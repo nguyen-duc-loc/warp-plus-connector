@@ -22,6 +22,10 @@ func (w *Writer) StartValidationBatch(ctx context.Context, in state.ValidationBa
 	state.ValidationReport,
 	error,
 ) {
+	in.Origin = normalizedOrigin(in.Origin)
+	if in.Origin != "manual" && in.Origin != "scheduled" {
+		return state.ValidationReport{}, ErrInvalidInput
+	}
 	in.CandidateIDs = append([]int64(nil), in.CandidateIDs...)
 	return transact(
 		ctx, &w.Reader, true, "start validation batch", func(tx *sql.Tx) (state.ValidationReport, error) {
@@ -53,7 +57,10 @@ func (w *Writer) StartValidationBatch(ctx context.Context, in state.ValidationBa
 				if err != nil {
 					return zero, err
 				}
-				if report.Policy == nil || !reflect.DeepEqual(*report.Policy, in.Policy) ||
+				if existing.Origin != in.Origin || report.Policy == nil || !reflect.DeepEqual(
+					*report.Policy,
+					in.Policy,
+				) ||
 					report.BackendID != in.BackendID || report.BackendVersion != in.BackendVersion || !existing.StartedAt.Equal(at) {
 					return zero, ErrConflict
 				}
@@ -86,8 +93,8 @@ func (w *Writer) StartValidationBatch(ctx context.Context, in state.ValidationBa
 				return zero, err
 			}
 			result, err := tx.ExecContext(
-				ctx, "INSERT INTO runs(request_id,kind,status,started_at) VALUES(?,'validation','running',?)",
-				in.RequestID, at.UnixMicro(),
+				ctx, "INSERT INTO runs(request_id,kind,status,started_at,origin) VALUES(?,'validation','running',?,?)",
+				in.RequestID, at.UnixMicro(), in.Origin,
 			)
 			if err != nil {
 				return zero, err
@@ -301,6 +308,11 @@ func (w *Writer) CompleteBatchAttempt(ctx context.Context, in state.BatchAttempt
 					return zero, err
 				}
 			}
+			if in.RetryWait == 0 {
+				if err := advanceCandidate(ctx, tx, a.CandidateID, completionPolicy(in.SchedulePolicy)); err != nil {
+					return zero, err
+				}
+			}
 			return getBatchAttempt(ctx, tx, a.ID)
 		},
 	)
@@ -323,6 +335,16 @@ func finishValidationItem(ctx context.Context, tx *sql.Tx, in state.ValidationIt
 	error,
 ) {
 	var zero state.ValidationItem
+	if err := saveCompletionPolicy(
+		ctx,
+		tx,
+		"validation_items",
+		in.RunID,
+		in.CandidateID,
+		in.SchedulePolicy,
+	); err != nil {
+		return zero, err
+	}
 	at, err := normalizeTime(in.FinishedAt)
 	if err != nil || !reasonPattern.MatchString(in.StopReason) {
 		return zero, ErrInvalidInput
@@ -350,6 +372,11 @@ func finishValidationItem(ctx context.Context, tx *sql.Tx, in state.ValidationIt
 	); err != nil {
 		return zero, err
 	}
+	if item.Attempts > 0 {
+		if err := advanceCandidate(ctx, tx, in.CandidateID, completionPolicy(in.SchedulePolicy)); err != nil {
+			return zero, err
+		}
+	}
 	return getValidationItem(ctx, tx, in.RunID, in.CandidateID)
 }
 
@@ -370,6 +397,9 @@ func (w *Writer) finishValidationBatch(ctx context.Context, in state.RunCompleti
 	return transact(
 		ctx, &w.Reader, true, "finish validation batch", func(tx *sql.Tx) (state.ValidationReport, error) {
 			var zero state.ValidationReport
+			if err := saveCompletionPolicy(ctx, tx, "runs", in.RunID, 0, in.SchedulePolicy); err != nil {
+				return zero, err
+			}
 			at, err := normalizeTime(in.FinishedAt)
 			if err != nil {
 				return zero, err
@@ -400,7 +430,26 @@ func (w *Writer) finishValidationBatch(ctx context.Context, in state.RunCompleti
 			if report.Totals.Unresolved > 0 {
 				return zero, ErrAttemptActive
 			}
+			var stopped []int64
 			if stop {
+				rows, e := tx.QueryContext(
+					ctx,
+					"SELECT candidate_id FROM validation_items WHERE run_id=? AND status='active'",
+					in.RunID,
+				)
+				if e != nil {
+					return zero, e
+				}
+				for rows.Next() {
+					var id int64
+					if e = rows.Scan(&id); e != nil {
+						break
+					}
+					stopped = append(stopped, id)
+				}
+				if e = errors.Join(e, rows.Err(), rows.Close()); e != nil {
+					return zero, e
+				}
 				if _, err = tx.ExecContext(
 					ctx, "UPDATE validation_items SET status=CASE WHEN status='pending' THEN 'skipped' "+
 						"ELSE 'completed' END,finished_at=?,stop_reason=? WHERE run_id=? AND status IN ('pending','active')",
@@ -416,6 +465,11 @@ func (w *Writer) finishValidationBatch(ctx context.Context, in state.RunCompleti
 				in.Status, at.UnixMicro(), optionalString(in.ReasonCode), in.RunID,
 			); err != nil {
 				return zero, err
+			}
+			for _, id := range stopped {
+				if err := advanceCandidate(ctx, tx, id, completionPolicy(in.SchedulePolicy)); err != nil {
+					return zero, err
+				}
 			}
 			return getValidationReport(ctx, tx, in.RunID)
 		},

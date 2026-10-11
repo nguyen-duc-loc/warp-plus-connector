@@ -66,10 +66,7 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 	}
 	commonFlags(check)
 	validatorFlags(check)
-	check.Flags().String("workers", "2", "Active checks (1 through 4)")
-	check.Flags().String("max-attempts", "3", "Attempts per candidate (1 through 5)")
-	check.Flags().String("mutation-interval", "1s", "Interval after registration and license commands (1s through 60s)")
-	check.Flags().String("candidate-timeout", "15m", "Active candidate budget (1m through 60m)")
+	checkPolicyFlags(check)
 	check.RunE = func(cmd *cobra.Command, args []string) error {
 		a, err := application(cmd, version)
 		if err != nil {
@@ -173,6 +170,7 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 		return nil
 	}
 	root.AddCommand(crawl, check, list, export, validation, sources)
+	addScheduleCommands(root, version)
 }
 
 func validatorFlags(cmd *cobra.Command) {
@@ -223,6 +221,13 @@ func commonFlags(cmd *cobra.Command) {
 }
 
 func resolveSettings(cmd *cobra.Command) (config.Settings, error) {
+	boolFlag := func(name string) *bool {
+		if !cmd.Flags().Changed(name) {
+			return nil
+		}
+		v, _ := cmd.Flags().GetBool(name)
+		return &v
+	}
 	flag := func(name string) *string {
 		if !cmd.Flags().Changed(name) {
 			return nil
@@ -232,6 +237,8 @@ func resolveSettings(cmd *cobra.Command) (config.Settings, error) {
 	}
 	return config.Resolve(
 		config.Overrides{
+			CrawlEnabled: boolFlag("crawl-enabled"), ValidationEnabled: boolFlag("validation-enabled"),
+			CrawlInterval: flag("crawl-interval"), FailureInterval: flag("failure-interval"),
 			CheckWorkers: flag("workers"), CheckMaxAttempts: flag("max-attempts"),
 			CheckMutationInterval: flag("mutation-interval"), CheckCandidateTimeout: flag("candidate-timeout"),
 			ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"),
@@ -247,7 +254,7 @@ func application(cmd *cobra.Command, version string) (*app.App, error) {
 		return nil, err
 	}
 	var backend validator.Backend = validator.Unsupported{Version: version}
-	if settings.Validator == "docker" && (cmd.Name() == "check" || cmd.Name() == "recover") {
+	if settings.Validator == "docker" && (cmd.Name() == "check" || cmd.Name() == "recover" || cmd.Name() == "run") {
 		backend = &validator.Docker{
 			Options: validator.DockerOptions{
 				Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir,
@@ -388,7 +395,8 @@ func Diagnostic(err error) string {
 		return runtime.Code
 	}
 	for _, known := range []error{
-		config.ErrInvalid, config.ErrAccess, config.ErrSelectionInvalid, config.ErrSelectionEmpty, errArguments,
+		config.ErrInvalid, config.ErrAccess, config.ErrScheduleDisabled, config.ErrSelectionInvalid,
+		config.ErrSelectionEmpty, errArguments,
 	} {
 		if errors.Is(err, known) {
 			return known.Error()

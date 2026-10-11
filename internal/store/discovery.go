@@ -177,6 +177,9 @@ func recordMessage(
 			}
 		}
 		result.NewObservations += n
+		if err := firstSchedule(ctx, tx, d.CandidateID, observed); err != nil {
+			return result, err
+		}
 		result.Discoveries = append(result.Discoveries, d)
 	}
 	return result, nil

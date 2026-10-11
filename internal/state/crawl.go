@@ -4,6 +4,7 @@ import "time"
 
 // CrawlInput creates a crawl and its immutable requested coverage atomically.
 type CrawlInput struct {
+	Origin       string
 	RequestID    string
 	StartedAt    time.Time
 	SourceID     string
@@ -46,8 +47,8 @@ type CrawlReport struct {
 
 // SourcePlan is an immutable normalized channel and its bounded coverage.
 type SourcePlan struct {
-	Channel   string
-	PageLimit int
+	Channel   string `json:"channel"`
+	PageLimit int    `json:"page_limit"`
 }
 
 // NormalizeChannel validates bare ASCII names and normalizes their identity.
@@ -71,6 +72,7 @@ func NormalizeChannel(channel string) (string, bool) {
 
 // CrawlPlanInput creates a run and all selected sources atomically.
 type CrawlPlanInput struct {
+	Origin    string
 	RequestID string
 	StartedAt time.Time
 	Sources   []SourcePlan

@@ -178,7 +178,7 @@ func TestDockerCheckCompletesAndRemovesSession(t *testing.T) {
 	require.Empty(t, f.ids)
 	var registry registry
 	require.NoError(t, privatefs.Read(d.path(), &registry))
-	require.Equal(t, 2, registry.Version)
+	require.Equal(t, 3, registry.Version)
 	require.Empty(t, registry.Sessions)
 	require.Equal(t, "ABCDEFGH-12345678-AbCdEf01", f.input.Key)
 }
@@ -245,7 +245,7 @@ func TestLegacyRecoveryConvertsOnlyAfterCleanup(t *testing.T) {
 			require.Zero(t, f.checks)
 			var converted registry
 			require.NoError(t, privatefs.Read(d.path(), &converted))
-			require.Equal(t, 2, converted.Version)
+			require.Equal(t, 3, converted.Version)
 			require.NotNil(t, converted.Sessions)
 			require.Empty(t, converted.Sessions)
 			_, err := d.read()
