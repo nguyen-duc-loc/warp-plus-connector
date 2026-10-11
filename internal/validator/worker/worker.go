@@ -76,11 +76,11 @@ func (e *Engine) load() (protocol.Session, error) {
 		return s, privatefs.ErrAccess
 	}
 	switch s.Phase {
-	case "prepared", "registration_pending":
+	case "prepared", "registration_pending", "registration_created":
 		if s.RegistrationID != "" || s.DeviceID != "" {
 			return s, privatefs.ErrAccess
 		}
-	case "registered", "attachment_pending", "observed", "cleanup_pending":
+	case "registration_identified", "registered", "attachment_pending", "observed", "cleanup_pending":
 		if s.RegistrationID == "" || s.DeviceID == "" {
 			return s, privatefs.ErrAccess
 		}
@@ -130,16 +130,48 @@ func (e *Engine) Initialize(in protocol.Request) (protocol.Receipt, error) {
 	return s.Receipt, nil
 }
 
-// Check initializes and executes one request through the same durable handshake.
-func (e *Engine) Check(ctx context.Context, in protocol.Request) (protocol.Receipt, error) {
-	if receipt, err := e.Initialize(in); err != nil {
-		return receipt, err
+func (e *Engine) cancelled(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return true
 	}
-	return e.Start(ctx)
+	var marker bool
+	err := privatefs.Read(filepath.Join(e.Dir, "cancel.json"), &marker)
+	return !errors.Is(err, os.ErrNotExist)
 }
 
-// Start executes an initialized request, rejecting any replay of entered work.
-func (e *Engine) Start(ctx context.Context) (protocol.Receipt, error) {
+// operationContext observes cancellation while a vendor command is running.
+func (e *Engine) operationContext(parent context.Context, in protocol.Operation) (
+	context.Context,
+	context.CancelFunc,
+	error,
+) {
+	if in.RemainingUS <= 0 || in.RemainingUS > 240000000 {
+		return nil, nil, errors.New("validation_invalid_input")
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(in.RemainingUS)*time.Microsecond)
+	if e.cancelled(ctx) {
+		cancel()
+	}
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if e.cancelled(ctx) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel, nil
+}
+
+// Register creates and identifies one registration, then awaits host attachment.
+func (e *Engine) Register(parent context.Context, in protocol.Operation) (protocol.Receipt, error) {
 	lock, err := e.lock()
 	if err != nil {
 		return protocol.Receipt{}, err
@@ -152,65 +184,109 @@ func (e *Engine) Start(ctx context.Context) (protocol.Receipt, error) {
 	if s.Phase != "prepared" {
 		return s.Receipt, ErrPending
 	}
-	active, cancel := context.WithTimeout(ctx, 4*time.Minute)
-	err = e.observe(active, &s)
+	ctx, cancel, err := e.operationContext(parent, in)
+	if err != nil {
+		return s.Receipt, err
+	}
+	defer cancel()
+	if e.cancelled(ctx) {
+		s.Result.ReasonCode = "cancelled"
+		s.Result.FailureClass = state.Terminal
+		err = e.save(&s, "cleaned")
+		return s.Receipt, err
+	}
+	if err = e.save(&s, "registration_pending"); err != nil {
+		return s.Receipt, err
+	}
+	if reply := e.Runner.Run(ctx, "registration", "new"); reply.Code != "" {
+		if e.rejectedRegistration(ctx) {
+			s.Result.ReasonCode = "validation_rate_limited"
+			s.Result.FailureClass = state.Throttled
+			err = e.save(&s, "cleaned")
+			return s.Receipt, err
+		}
+		return s.Receipt, ErrPending
+	}
+	if err = e.save(&s, "registration_created"); err != nil {
+		return s.Receipt, err
+	}
+	r, err := e.registration(ctx)
+	if err != nil {
+		return s.Receipt, ErrPending
+	}
+	s.RegistrationID, s.DeviceID = r.ID, r.DeviceID
+	if err = e.save(&s, "registration_identified"); err != nil {
+		return s.Receipt, err
+	}
+	if e.cancelled(ctx) || e.Runner.Run(ctx, "disconnect").Code != "" {
+		return s.Receipt, ErrPending
+	}
+	s.Result.FailureClass = ""
+	err = e.save(&s, "registered")
+	return s.Receipt, err
+}
+
+// Attach applies the license once, retains command completion, observes, and cleans.
+func (e *Engine) Attach(parent context.Context, in protocol.Operation) (protocol.Receipt, error) {
+	lock, err := e.lock()
+	if err != nil {
+		return protocol.Receipt{}, err
+	}
+	defer func() { _ = lock.Close() }()
+	s, err := e.load()
+	if err != nil {
+		return s.Receipt, err
+	}
+	if s.Phase != "registered" {
+		return s.Receipt, ErrPending
+	}
+	ctx, cancel, err := e.operationContext(parent, in)
+	if err != nil {
+		return s.Receipt, err
+	}
+	err = e.attach(ctx, &s)
 	cancel()
 	if err != nil {
 		return s.Receipt, err
 	}
-	// Cleanup has its own bound and remains independent of caller cancellation.
 	cleanup, stop := context.WithTimeout(context.Background(), 60*time.Second)
 	defer stop()
-	if cleanupErr := e.cleanup(cleanup, &s); cleanupErr != nil {
-		return s.Receipt, cleanupErr
-	}
-	return s.Receipt, nil
+	err = e.cleanup(cleanup, &s)
+	return s.Receipt, err
 }
 
-func (e *Engine) cancelled(ctx context.Context) bool {
-	if ctx.Err() != nil {
-		return true
-	}
-	_, err := os.Lstat(filepath.Join(e.Dir, "cancel.json"))
-	return err == nil || !errors.Is(err, os.ErrNotExist)
-}
-
-func (e *Engine) observe(ctx context.Context, s *protocol.Session) error {
+func (e *Engine) attach(ctx context.Context, s *protocol.Session) error {
 	if e.cancelled(ctx) {
 		s.Result.ReasonCode = "cancelled"
-		return e.save(s, "cleaned")
-	}
-	if err := e.save(s, "registration_pending"); err != nil {
-		return err
-	}
-	if reply := e.Runner.Run(ctx, "registration", "new"); reply.Code != "" {
-		if e.rejectedRegistration(ctx) {
-			s.Result.ReasonCode = "rate_limited"
-			return e.save(s, "cleaned")
-		}
-		return ErrPending
-	}
-	r, err := e.registration(ctx)
-	if err != nil {
-		return ErrPending
-	}
-	s.RegistrationID, s.DeviceID = r.ID, r.DeviceID
-	if err := e.save(s, "registered"); err != nil {
-		return err
-	}
-	if e.Runner.Run(ctx, "disconnect").Code != "" {
-		return ErrPending
-	}
-	if e.cancelled(ctx) {
-		s.Result.ReasonCode = "cancelled"
-		return nil
+		s.Result.FailureClass = state.Terminal
+		s.AttachmentFinished = true
+		operation := s.Result
+		s.OperationResult = &operation
+		return e.save(s, "observed")
 	}
 	if err := e.save(s, "attachment_pending"); err != nil {
 		return err
 	}
 	reply := e.Runner.Run(ctx, "registration", "license", s.Key)
+	s.AttachmentFinished = true
+	operation := protocol.Result{Outcome: state.Inconclusive}
 	if reply.Code != "" {
-		s.Result.ReasonCode = reason(reply.Code)
+		operation.ReasonCode = reason(reply.Code)
+		operation.FailureClass = state.Terminal
+		switch operation.ReasonCode {
+		case "validation_timeout":
+			operation.FailureClass = state.Temporary
+		case "rate_limited":
+			operation.ReasonCode = "validation_rate_limited"
+			operation.FailureClass = state.Throttled
+		}
+	}
+	s.OperationResult = &operation
+	if err := e.save(s, "attachment_pending"); err != nil {
+		return err
+	}
+	if reply.Code != "" {
+		s.Result = operation
 		return e.save(s, "observed")
 	}
 	interval := e.PollInterval
@@ -223,28 +299,33 @@ func (e *Engine) observe(ctx context.Context, s *protocol.Session) error {
 	}
 	poll, stop := context.WithTimeout(ctx, limit)
 	defer stop()
-	s.Result.ReasonCode = "validation_unattributed"
+	s.Result = protocol.Result{
+		Outcome: state.Inconclusive, ReasonCode: "validation_observation_timeout", FailureClass: state.Temporary,
+	}
 	for {
-		r, err := e.registration(poll)
-		if err == nil {
-			if r.ID != s.RegistrationID || r.DeviceID != s.DeviceID {
-				return ErrPending
-			}
-			if r.Account.License == s.Key {
-				s.Result.ReasonCode = "not_unlimited"
-				if r.Account.Type == "unlimited" {
-					s.Result = protocol.Result{
-						Outcome: state.Confirmed, Evidence: &state.Evidence{
-							Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: e.Clock().UTC(),
-						},
-					}
-				}
-				break
-			}
+		if e.cancelled(ctx) {
+			s.Result.ReasonCode = "cancelled"
+			s.Result.FailureClass = state.Terminal
+			break
 		}
-		if e.cancelled(poll) {
-			if e.cancelled(ctx) {
-				s.Result.ReasonCode = "cancelled"
+		r, err := e.registration(poll)
+		if err != nil {
+			s.Result.ReasonCode = "validation_unattributed"
+			s.Result.FailureClass = state.Terminal
+			break
+		}
+		if r.ID != s.RegistrationID || r.DeviceID != s.DeviceID {
+			return ErrPending
+		}
+		if r.Account.License == s.Key {
+			s.Result.ReasonCode = "not_unlimited"
+			s.Result.FailureClass = state.Terminal
+			if r.Account.Type == "unlimited" {
+				s.Result = protocol.Result{
+					Outcome: state.Confirmed, Evidence: &state.Evidence{
+						Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: e.Clock().UTC(),
+					},
+				}
 			}
 			break
 		}
@@ -337,7 +418,8 @@ func (e *Engine) cleanup(ctx context.Context, s *protocol.Session) error {
 		return e.save(s, "cleaned")
 	}
 	if s.Phase == "registration_pending" && s.RegistrationID == "" && e.rejectedRegistration(ctx) {
-		s.Result.ReasonCode = "rate_limited"
+		s.Result.ReasonCode = "validation_rate_limited"
+		s.Result.FailureClass = state.Throttled
 		return e.save(s, "cleaned")
 	}
 	r, err := e.registration(ctx)
@@ -377,6 +459,8 @@ func (e *Engine) rejectedRegistration(ctx context.Context) bool {
 
 // Recover reconciles the existing registration without ever creating or attaching.
 func (e *Engine) Recover(ctx context.Context) (protocol.Receipt, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 	var zero protocol.Receipt
 	lock, err := e.lock()
 	if err != nil {

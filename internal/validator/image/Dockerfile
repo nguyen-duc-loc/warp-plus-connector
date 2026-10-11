@@ -11,6 +11,6 @@ RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends "cloudflare-warp=${WARP_VERSION}" \
     && rm -rf /var/lib/apt/lists/* /tmp/cloudflare-pubkey.gpg
 
-LABEL io.wpc.validator.protocol="1" io.wpc.validator.warp="2026.8.2100.0"
+LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2100.0"
 COPY wpc-worker /usr/local/bin/wpc-worker
 ENTRYPOINT ["/usr/local/bin/wpc-worker", "serve"]

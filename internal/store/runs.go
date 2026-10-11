@@ -57,6 +57,13 @@ func (w *Writer) FinishRun(ctx context.Context, in state.RunCompletion) (state.R
 	return transact(
 		ctx, &w.Reader, true, "finish run", func(tx *sql.Tx) (state.Run, error) {
 			var zero state.Run
+			batch, err := hasBatch(ctx, tx, in.RunID)
+			if err != nil {
+				return zero, err
+			}
+			if batch {
+				return zero, ErrInvalidInput
+			}
 			plan, err := hasPlan(ctx, tx, in.RunID)
 			if err != nil {
 				return zero, err

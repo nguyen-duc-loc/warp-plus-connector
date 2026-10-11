@@ -3,7 +3,6 @@ package validator
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -14,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator/privatefs"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator/protocol"
 )
@@ -40,20 +38,22 @@ type Docker struct {
 }
 
 type manifest struct {
-	Version     int       `json:"version"`
-	SessionID   string    `json:"session_id"`
-	Name        string    `json:"name"`
-	ContainerID string    `json:"container_id"`
-	Endpoint    string    `json:"endpoint"`
-	DaemonID    string    `json:"daemon_id"`
-	Image       string    `json:"image"`
-	Profile     string    `json:"profile"`
-	CandidateID int64     `json:"candidate_id"`
-	RunID       int64     `json:"run_id"`
-	AttemptID   int64     `json:"attempt_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	Cleaned     bool      `json:"cleaned"`
-	Submitted   bool      `json:"submitted"`
+	Version     int               `json:"version"`
+	SessionID   string            `json:"session_id"`
+	Name        string            `json:"name"`
+	ContainerID string            `json:"container_id"`
+	Endpoint    string            `json:"endpoint"`
+	DaemonID    string            `json:"daemon_id"`
+	Image       string            `json:"image"`
+	Profile     string            `json:"profile"`
+	CandidateID int64             `json:"candidate_id"`
+	RunID       int64             `json:"run_id"`
+	AttemptID   int64             `json:"attempt_id"`
+	CreatedAt   time.Time         `json:"created_at"`
+	Cleaned     bool              `json:"cleaned"`
+	Submitted   bool              `json:"submitted"`
+	Operation   string            `json:"operation,omitempty"`
+	Receipt     *protocol.Receipt `json:"receipt,omitempty"`
 }
 
 type containerInfo struct {
@@ -206,7 +206,7 @@ func (d *Docker) image(ctx context.Context, endpoint string) error {
 	}
 	i := images[0]
 	if i.ID != d.Options.Image || i.Architecture != "arm64" || i.Os != "linux" ||
-		i.Config.Labels[containerLabel+".protocol"] != "1" || i.Config.Labels[containerLabel+
+		i.Config.Labels[containerLabel+".protocol"] != "2" || i.Config.Labels[containerLabel+
 		".warp"] != protocol.WARPVersion {
 		return &Error{Code: "validator_version_mismatch"}
 	}
@@ -297,6 +297,20 @@ func (d *Docker) containers(ctx context.Context, endpoint string) ([]string, err
 
 func (d *Docker) worker(ctx context.Context, m *manifest, operation string, input []byte) (protocol.Receipt, error) {
 	var receipt protocol.Receipt
+	if operation == "recover" && m.Version == 2 {
+		remaining := 60 * time.Second
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < remaining {
+			remaining = time.Until(deadline)
+		}
+		if remaining <= 0 {
+			return receipt, context.DeadlineExceeded
+		}
+		var err error
+		input, err = json.Marshal(protocol.Operation{RemainingUS: remaining.Microseconds()})
+		if err != nil {
+			return receipt, &Error{Code: "validator_protocol_error"}
+		}
+	}
 	data, err := d.at(ctx, m.Endpoint, input, "exec", "-i", m.ContainerID, "/usr/local/bin/wpc-worker", operation)
 	if err != nil {
 		return receipt, err
@@ -304,7 +318,7 @@ func (d *Docker) worker(ctx context.Context, m *manifest, operation string, inpu
 	if json.Unmarshal(
 		data,
 		&receipt,
-	) != nil || receipt.Version != protocol.Version || receipt.SessionID != m.SessionID {
+	) != nil || receipt.Version != m.Version || receipt.SessionID != m.SessionID {
 		return receipt, &Error{Code: "validator_protocol_error"}
 	}
 	return receipt, nil
@@ -447,147 +461,16 @@ func (d *Docker) reconcile(ctx context.Context, endpoint, daemonID string) error
 	}
 }
 
-// Recover cleans an earlier session and never starts a new remote registration.
+// Recover reconciles all retained sessions without new registration or attachment.
 func (d *Docker) Recover(parent context.Context) error {
-	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
-	defer cancel()
-	lock, err := d.lock()
+	owner, err := d.acquire(parent, false)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Close() }()
-	endpoint, err := d.endpoint(ctx)
-	if err != nil {
-		return err
-	}
-	daemonID, err := d.runtime(ctx, endpoint)
-	if err != nil {
-		return err
-	}
-	return d.reconcile(ctx, endpoint, daemonID)
+	return owner.Close()
 }
 
-// Check reconciles old work, then starts one isolated validation session.
-func (d *Docker) Check(parent context.Context, in Input) (Result, error) {
-	var zero Result
-	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
-	defer cancel()
-	lock, err := d.lock()
-	if err != nil {
-		return zero, err
-	}
-	defer func() { _ = lock.Close() }()
-	endpoint, err := d.endpoint(ctx)
-	if err != nil {
-		return zero, err
-	}
-	daemonID, err := d.runtime(ctx, endpoint)
-	if err != nil {
-		return zero, err
-	}
-	if err := d.reconcile(ctx, endpoint, daemonID); err != nil {
-		return zero, err
-	}
-	if err := d.image(ctx, endpoint); err != nil {
-		return zero, err
-	}
-	token := rand.Text()
-	m := &manifest{
-		Version: 1, SessionID: token, Name: "wpc-validator-" + strings.ToLower(token), Endpoint: endpoint,
-		DaemonID: daemonID, Image: d.Options.Image, Profile: in.StateDir, CandidateID: in.CandidateID, RunID: in.RunID,
-		AttemptID: in.AttemptID, CreatedAt: time.Now().UTC(),
-	}
-	if err := d.save(m); err != nil {
-		return zero, err
-	}
-	data, err := d.at(
-		ctx,
-		endpoint,
-		nil,
-		"create",
-		"--name",
-		m.Name,
-		"--platform",
-		"linux/arm64",
-		"--network",
-		"bridge",
-		"--memory",
-		"512m",
-		"--cpus",
-		"1",
-		"--pids-limit",
-		"256",
-		"--security-opt",
-		"no-new-privileges",
-		"--label",
-		containerLabel+"=1",
-		"--label",
-		containerLabel+".session="+m.SessionID,
-		m.Image,
-	)
-	if err != nil {
-		return zero, err
-	}
-	m.ContainerID = strings.TrimSpace(string(data))
-	if !idPattern.MatchString(m.ContainerID) {
-		return zero, &Error{Code: "validator_protocol_error"}
-	}
-	if err := d.save(m); err != nil {
-		return zero, err
-	}
-	if _, err := d.inspect(ctx, m); err != nil {
-		return zero, err
-	}
-	if _, err := d.at(ctx, endpoint, nil, "start", m.ContainerID); err != nil {
-		return zero, err
-	}
-	ready, stop := context.WithTimeout(ctx, 15*time.Second)
-	err = d.ready(ready, m)
-	stop()
-	if err != nil {
-		return zero, err
-	}
-	input, err := json.Marshal(protocol.Request{SessionID: m.SessionID, Key: in.Key})
-	if err != nil {
-		return zero, &Error{Code: "validator_protocol_error"}
-	}
-	initialized, err := d.worker(ctx, m, "initialize", input)
-	if err != nil {
-		return zero, err
-	}
-	if initialized.Phase != "prepared" {
-		return zero, &Error{Code: "validator_protocol_error"}
-	}
-	m.Submitted = true
-	if err := d.save(m); err != nil {
-		return zero, err
-	}
-	receipt, err := d.worker(ctx, m, "check", nil)
-	if ctx.Err() != nil {
-		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		_, _ = d.at(cleanup, endpoint, nil, "exec", m.ContainerID, "/usr/local/bin/wpc-worker", "cancel")
-		stop()
-		return zero, ctx.Err()
-	}
-	if err != nil || receipt.Phase != "cleaned" {
-		return Result{Outcome: state.Inconclusive, ReasonCode: "validation_cleanup_pending"}, nil
-	}
-	if receipt.Result.Outcome != state.Confirmed && receipt.Result.Outcome != state.Inconclusive {
-		return zero, &Error{Code: "validator_protocol_error"}
-	}
-	if receipt.Result.Outcome == state.Confirmed && (receipt.Result.Evidence == nil ||
-		receipt.Result.Evidence.Kind != state.AccountType ||
-		receipt.Result.Evidence.AccountType != "Unlimited" || receipt.RegistrationID == "" || receipt.DeviceID == "") {
-		return zero, &Error{Code: "validator_protocol_error"}
-	}
-	m.Cleaned = true
-	if err := d.save(m); err != nil {
-		return zero, err
-	}
-	if err := d.remove(ctx, m); err != nil {
-		return zero, err
-	}
-	return Result{
-		Outcome: receipt.Result.Outcome, ReasonCode: receipt.Result.ReasonCode, Evidence: receipt.Result.Evidence,
-	}, nil
+// Check cannot bypass batch ownership or shared mutation admission.
+func (d *Docker) Check(context.Context, Input) (Result, error) {
+	return Result{}, &Error{Code: "validation_batch_required"}
 }

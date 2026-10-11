@@ -44,10 +44,28 @@ func run() int {
 			return fail("validation_invalid_input")
 		}
 		receipt, err = e.Initialize(request)
-	case "check":
-		receipt, err = e.Start(ctx)
+	case "register", "attach":
+		var operation protocol.Operation
+		d := json.NewDecoder(io.LimitReader(os.Stdin, 4096))
+		d.DisallowUnknownFields()
+		if d.Decode(&operation) != nil {
+			return fail("validation_invalid_input")
+		}
+		if os.Args[1] == "register" {
+			receipt, err = e.Register(ctx, operation)
+		} else {
+			receipt, err = e.Attach(ctx, operation)
+		}
 	case "recover":
-		receipt, err = e.Recover(ctx)
+		var operation protocol.Operation
+		d := json.NewDecoder(io.LimitReader(os.Stdin, 4096))
+		d.DisallowUnknownFields()
+		if d.Decode(&operation) != nil || operation.RemainingUS <= 0 || operation.RemainingUS > 60000000 {
+			return fail("validation_invalid_input")
+		}
+		cleanup, stop := context.WithTimeout(ctx, time.Duration(operation.RemainingUS)*time.Microsecond)
+		receipt, err = e.Recover(cleanup)
+		stop()
 	case "status":
 		receipt, err = e.Status()
 	case "cancel":

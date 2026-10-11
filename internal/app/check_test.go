@@ -169,7 +169,7 @@ func TestUnsupportedCheckPreservesDefinitiveEvidenceAndUnknownIDCreatesNoWork(t 
 	a.Clock = func() time.Time { return crawlTime.Add(2 * time.Hour) }
 	a.Validator = validator.Unsupported{Version: "test"}
 	attempt, err = a.Check(t.Context(), 1)
-	require.EqualError(t, err, "validation_unsupported")
+	require.EqualError(t, err, "validation_batch_inconclusive")
 	require.Equal(t, state.Inconclusive, attempt.Outcome)
 	_, err = a.Check(t.Context(), 999)
 	require.ErrorIs(t, err, store.ErrNotFound)

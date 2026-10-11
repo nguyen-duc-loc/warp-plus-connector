@@ -253,7 +253,7 @@ func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 	out, diagnostic, code = invoke("check", "1")
 	require.Equal(t, 1, code)
 	require.Contains(t, out, "outcome=inconclusive reason=validation_unsupported")
-	require.Contains(t, diagnostic, "Error: validation_unsupported")
+	require.Contains(t, diagnostic, "Error: validation_batch_inconclusive")
 	require.NotContains(t, out+diagnostic, keys[0])
 	out, diagnostic, code = invoke("list")
 	require.Zero(t, code, diagnostic)
@@ -262,6 +262,26 @@ func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 	require.Equal(t, 1, code)
 	require.Empty(t, out)
 	require.Contains(t, diagnostic, "state_record_not_found")
+	batchArgs := []string{"check"}
+	for i := 1; i <= 338; i++ {
+		batchArgs = append(batchArgs, fmt.Sprint(i))
+	}
+	batchArgs = append(batchArgs, "1", "--workers", "4", "--max-attempts", "1")
+	out, diagnostic, code = invoke(batchArgs...)
+	require.Equal(t, 1, code)
+	require.Contains(t, out, "selected=338")
+	require.Equal(t, 338, strings.Count(out, "item_status=completed"))
+	require.NotContains(t, out+diagnostic, "AbCdEf01")
+	// A separate process reads the saved policy rather than current defaults.
+	out, diagnostic, code = invoke("check", "show", "3")
+	require.Zero(t, code, diagnostic)
+	require.Empty(t, diagnostic)
+	require.Contains(t, out, `"workers":4`)
+	require.Contains(t, out, `"max_attempts":1`)
+	require.Contains(t, out, "selected=338")
+	require.Equal(t, 338, strings.Count(out, "item_status=completed"))
+	require.Equal(t, 338, strings.Count(out, "attempt_number=1"))
+	require.NotContains(t, out, "AbCdEf01")
 }
 
 // covers: spec 0003 AC-5, AC-6. Runtime help ignores invalid configuration,
@@ -271,6 +291,7 @@ func TestCLI_RuntimeHelpAndErrorsHaveNoSideEffects(t *testing.T) {
 	for _, args := range [][]string{
 		{"crawl", "--help"}, {"crawl", "show", "--help"}, {"list", "--help"}, {"check", "--help"},
 		{"validator", "recover", "--help"},
+		{"check", "show", "--help"},
 	} {
 		out, diagnostic, code := runCLI(t, binary, args...)
 		require.Zero(t, code, diagnostic)

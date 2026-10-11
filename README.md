@@ -1,6 +1,6 @@
 # WPC (Warp Plus Connector)
 
-A personal CLI for publicly shared WARP Plus key candidates. You can crawl bounded public Telegram previews, inspect saved coverage, list all saved candidates, and check a selected authorized key in an isolated Linux container.
+A personal CLI for publicly shared WARP Plus key candidates. You can crawl bounded public Telegram previews, inspect saved coverage, list all saved candidates, and check selected authorized keys in an isolated Linux container.
 
 The first version targets macOS and Linux on arm64. Support for amd64 is deferred. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
 
@@ -45,7 +45,8 @@ The [architecture](docs/specs/0001-stack-architecture/index.md) defines the conf
 ./bin/wpc crawl --source warpplus --page-limit 2
 ./bin/wpc crawl show 1
 ./bin/wpc list
-./bin/wpc check 1
+./bin/wpc check 1 2 3
+./bin/wpc check show 2
 ./bin/wpc list --show-keys
 ```
 
@@ -53,7 +54,7 @@ You can replace the example IDs with a saved run ID or candidate ID. Crawling de
 
 `sources` shows configured channels, including disabled entries, without opening state. Only `crawl` accepts repeatable `--source` selection and `--page-limit`. Selection preserves configuration order and cannot enable a disabled channel. One source failure allows later channels to run; HTTP 429 stops further requests.
 
-`crawl show` and `list` use saved state without contacting Telegram or a validator. Listing follows every bounded store page, with no total limit. Keys stay hidden unless you supply `--show-keys`. Missing state is an error; an initialized empty collection reports `No candidates saved.`
+`crawl show`, `check show`, and `list` use saved state without contacting Telegram or a validator. Listing follows every bounded store page, with no total limit. Keys stay hidden unless you supply `--show-keys`. Missing state is an error; an initialized empty collection reports `No candidates saved.`
 
 The default validator is `unsupported`. It saves an inconclusive attempt with reason `validation_unsupported` and exits 1 without registration work. The optional Docker backend uses the official WARP client, confirms only matching Unlimited evidence, and deletes its temporary registration before returning a confirmation. Source claims and matching key formats do not establish entitlement.
 
@@ -69,15 +70,23 @@ rtk proxy ./bin/wpc list
 
 Replace `1` with a saved candidate ID you are authorized to activate. The build downloads the signed official WARP package; a check uses only the prepared local image. The backend does not change your host registration or connect a host tunnel. Remote Docker endpoints, privileged containers, host networking, and host mounts are unsupported.
 
-A confirmed result includes `account_type=Unlimited`, its observation time, and the tested backend version. Matching Free accounts remain inconclusive with `not_unlimited`. Full accounts report `device_limit`. Throttling reports `rate_limited` when the tested client provides sufficient evidence. Results are observations, not reserved device slots.
+A confirmed result includes `account_type=Unlimited`, its observation time, and the tested backend version. Matching Free accounts remain inconclusive with `not_unlimited`. Full accounts report `device_limit`. Throttling reports `validation_rate_limited` when the tested client provides sufficient evidence. Results are observations, not reserved device slots.
 
-The backend keeps one shared recovery record across profiles. A new check first reconciles interrupted work. You can also request cleanup alone:
+The backend keeps one shared recovery registry across profiles, with up to four isolated sessions. A new check first reconciles interrupted work. You can also request cleanup alone:
 
 ```sh
 rtk proxy ./bin/wpc validator recover --validator docker --validator-image "$validator_image_id"
 ```
 
 Unknown remote outcomes retain the container and block further attachments with `validation_cleanup_pending`. Deleting that container or its journal does not prove remote cleanup. The [validator notes](internal/validator/README.md) describe the retained state and recovery boundary.
+
+`check` removes duplicate IDs in your supplied order and resolves the whole selection before saving a batch. Each final item prints when its result is committed, followed by saved totals. `check show <run-id>` reads the policy, selection, every attempt, retry waits, and totals after restart. Reading a report exits 0 even when that historical batch failed.
+
+Checks default to two workers, three attempts per candidate, one second between completed registration or license commands, and a 15 minute candidate budget. You can set `--workers` from 1 through 4, `--max-attempts` from 1 through 5, `--mutation-interval` in whole seconds from 1s through 60s, and `--candidate-timeout` from 1m through 60m. The budget begins at the first admitted attempt and includes later waits.
+
+Only classified temporary failures retry after proven cleanup. Retry waits grow with jitter and release capacity. Free accounts, device capacity, unsupported validation, and unclassified errors do not retry. The pinned Docker adapter cannot supply a trusted server delay, so throttling stops the batch. Inconclusive attempts preserve earlier definitive evidence and cause exit 1.
+
+The new image uses worker protocol 2. You can rebuild it with the existing build script before selecting its new immutable ID. Recovery reconciles a retained protocol 1 session with its original image before converting the journal. Older binaries cannot use the new registry. Cancellation allows up to 60 seconds for remote collection, then five seconds for local finalization submissions. Entered store work retains ownership until it finishes, so these are not hard process exit deadlines.
 
 ## Private configuration
 
@@ -90,6 +99,10 @@ The optional default file is `os.UserConfigDir()/warp-plus-connector/config.json
   "state_dir": "/absolute/private/path/wpc",
   "recheck_interval": "6h",
   "validator": "unsupported",
+  "check_workers": 2,
+  "check_max_attempts": 3,
+  "check_mutation_interval": "1s",
+  "check_candidate_timeout": "15m",
   "crawl_page_limit": 1,
   "sources": [
     {"channel": "warpplus", "page_limit": 2},

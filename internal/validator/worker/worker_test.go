@@ -112,14 +112,18 @@ func TestCheckRequiresAttributionAndCleanup(t *testing.T) {
 		{"delayed", "unlimited", "", "", 1, true},
 		{"free", "free", "", "not_unlimited", 0, false},
 		{"capacity", "free", "ApiErrorTooManyDevices", "device_limit", 0, false},
-		{"unattributed", "unlimited", "", "validation_unattributed", 100, false},
+		{"unattributed", "unlimited", "", "validation_observation_timeout", 100, false},
 		{"unknown", "free", "VendorUnexpectedSecret", "validation_provider_error", 0, false},
 	} {
 		t.Run(
 			tc.name, func(t *testing.T) {
 				v := &vendor{accountType: tc.account, applyCode: tc.applyCode, delay: tc.delay}
 				e := engine(t, v)
-				r, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+				r, err := stagedCheck(
+					e,
+					context.Background(),
+					protocol.Request{SessionID: fixtureSession, Key: fixtureKey},
+				)
 				require.NoError(t, err)
 				require.Equal(t, "cleaned", r.Phase)
 				require.False(t, v.registered)
@@ -131,7 +135,11 @@ func TestCheckRequiresAttributionAndCleanup(t *testing.T) {
 					require.Equal(t, state.Inconclusive, r.Result.Outcome)
 					require.Nil(t, r.Result.Evidence)
 				}
-				_, err = e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+				_, err = stagedCheck(
+					e,
+					context.Background(),
+					protocol.Request{SessionID: fixtureSession, Key: fixtureKey},
+				)
 				require.ErrorIs(t, err, ErrPending)
 				require.Equal(t, 1, count(v.calls, "registration new"))
 				require.Equal(t, 1, count(v.calls, "registration license"))
@@ -155,7 +163,7 @@ func count(values []string, want string) int {
 func TestLostDeletionAcknowledgementBlocksRecovery(t *testing.T) {
 	v := &vendor{accountType: "unlimited", deleteCode: "validation_timeout"}
 	e := engine(t, v)
-	r, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+	r, err := stagedCheck(e, context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
 	require.ErrorIs(t, err, ErrPending)
 	require.Equal(t, "cleanup_pending", r.Phase)
 	saved, err := e.load()
@@ -184,7 +192,8 @@ func TestRecoveryStages(t *testing.T) {
 				require.NoError(t, privatefs.Directory(e.Dir))
 				s := protocol.Session{
 					Receipt: protocol.Receipt{
-						Version: 1, SessionID: fixtureSession, RegistrationID: "registration", DeviceID: "device",
+						Version: protocol.Version, SessionID: fixtureSession, RegistrationID: "registration",
+						DeviceID: "device",
 					}, Key: fixtureKey,
 				}
 				if phase == "prepared" || phase == "registration_pending" {
@@ -209,7 +218,9 @@ func TestRecoveryStages(t *testing.T) {
 				v := &vendor{accountType: "free"}
 				e := engine(t, v)
 				require.NoError(t, privatefs.Directory(e.Dir))
-				s := protocol.Session{Receipt: protocol.Receipt{Version: 1, SessionID: fixtureSession}, Key: fixtureKey}
+				s := protocol.Session{
+					Receipt: protocol.Receipt{Version: protocol.Version, SessionID: fixtureSession}, Key: fixtureKey,
+				}
 				if phase == "cleanup_pending" {
 					s.RegistrationID = "registration"
 					s.DeviceID = "device"
@@ -234,7 +245,7 @@ func TestJournalFailureStopsMutation(t *testing.T) {
 		}
 		return nil
 	}
-	_, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+	_, err := stagedCheck(e, context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
 	require.Error(t, err)
 	require.NotContains(t, v.calls, "registration license")
 	require.True(t, v.registered)
@@ -254,7 +265,7 @@ func TestCancellationPreventsAttachment(t *testing.T) {
 		}
 		return nil
 	}
-	r, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+	r, err := stagedCheck(e, context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", r.Result.ReasonCode)
 	require.Equal(t, "cleaned", r.Phase)
@@ -267,7 +278,11 @@ func TestUnknownDeletionPayloadDoesNotProveCleanup(t *testing.T) {
 			payload, func(t *testing.T) {
 				v := &vendor{accountType: "unlimited", deleteData: []byte(payload)}
 				e := engine(t, v)
-				r, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+				r, err := stagedCheck(
+					e,
+					context.Background(),
+					protocol.Request{SessionID: fixtureSession, Key: fixtureKey},
+				)
 				require.ErrorIs(t, err, ErrPending)
 				require.Equal(t, "cleanup_pending", r.Phase)
 			},
@@ -278,7 +293,7 @@ func TestUnknownDeletionPayloadDoesNotProveCleanup(t *testing.T) {
 func TestRecoveryPreservesPrivateObservationOnAnotherFailure(t *testing.T) {
 	v := &vendor{accountType: "unlimited", deleteCode: "validation_timeout", retainOnDelete: true}
 	e := engine(t, v)
-	_, err := e.Check(context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+	_, err := stagedCheck(e, context.Background(), protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
 	require.ErrorIs(t, err, ErrPending)
 	_, err = e.Recover(context.Background())
 	require.ErrorIs(t, err, ErrPending)
@@ -298,7 +313,7 @@ func TestInitializedRequestCannotStartAfterRecovery(t *testing.T) {
 	r, err := e.Recover(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "cleaned", r.Phase)
-	_, err = e.Start(context.Background())
+	_, err = e.Register(context.Background(), protocol.Operation{RemainingUS: 240000000})
 	require.ErrorIs(t, err, ErrPending)
 	require.Empty(t, v.calls)
 }
@@ -354,7 +369,8 @@ func TestRecoveryRejectsChangedRegistrationIdentity(t *testing.T) {
 	require.NoError(t, privatefs.Directory(e.Dir))
 	s := protocol.Session{
 		Receipt: protocol.Receipt{
-			Version: 1, SessionID: fixtureSession, RegistrationID: "registration", DeviceID: "original-device",
+			Version: protocol.Version, SessionID: fixtureSession, RegistrationID: "registration",
+			DeviceID: "original-device",
 		}, Key: fixtureKey,
 	}
 	require.NoError(t, e.save(&s, "attachment_pending"))
@@ -367,4 +383,20 @@ func TestRecoveryRejectsChangedRegistrationIdentity(t *testing.T) {
 	receipt, err := e.Status()
 	require.NoError(t, err)
 	require.Equal(t, "attachment_pending", receipt.Phase)
+}
+
+// stagedCheck exercises the real version 2 boundaries in order.
+func stagedCheck(e *Engine, ctx context.Context, in protocol.Request) (protocol.Receipt, error) {
+	r, err := e.Initialize(in)
+	if err != nil {
+		return r, err
+	}
+	r, err = e.Register(ctx, protocol.Operation{RemainingUS: 240000000})
+	if err != nil {
+		return r, err
+	}
+	if r.Phase == "cleaned" {
+		return r, nil
+	}
+	return e.Attach(ctx, protocol.Operation{RemainingUS: 240000000})
 }

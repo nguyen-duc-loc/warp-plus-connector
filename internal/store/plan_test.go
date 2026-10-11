@@ -290,7 +290,8 @@ func TestPlanMigration_RollsBackAllNewTables(t *testing.T) {
 	require.NoError(t, err)
 	_, err = w.h.writeDB.ExecContext(
 		t.Context(),
-		"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
+		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
 	)
 	require.NoError(t, err)
 	err = migrate(
@@ -591,7 +592,8 @@ func TestPlanMigrationPreservesCoveredReport(t *testing.T) {
 	require.NoError(t, err)
 	_, err = w.h.writeDB.ExecContext(
 		ctx,
-		"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
+		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; PRAGMA user_version=2",
 	)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
@@ -603,7 +605,7 @@ func TestPlanMigrationPreservesCoveredReport(t *testing.T) {
 	require.Equal(t, before, after)
 	var version, tables int
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version))
-	require.Equal(t, 3, version)
+	require.Equal(t, schemaVersion, version)
 	require.NoError(
 		t,
 		w.h.writeDB.QueryRowContext(

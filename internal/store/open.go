@@ -97,7 +97,7 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	if mode != "wal" {
 		return nil, ErrStateAccess
 	}
-	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema, planSchema}); err != nil {
+	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema, planSchema, batchSchema}); err != nil {
 		return nil, safeError(ctx, "migrate state", err)
 	}
 	recovery, err := normalizeTime(clock())
@@ -384,6 +384,8 @@ func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
 		return err
 	}
 	for _, query := range []string{
+		"UPDATE validation_items SET status='interrupted',stop_reason='interrupted'," +
+			"recovered_at=? WHERE status IN ('pending','active')",
 		"UPDATE crawl_pages SET status='interrupted'," +
 			"reason_code='interrupted',recovered_at=? WHERE status IN " +
 			"('requested','parsed') AND run_id IN (SELECT id FROM runs WHERE " +

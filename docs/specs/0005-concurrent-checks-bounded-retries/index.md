@@ -1,7 +1,7 @@
 # 0005. Concurrent checks and bounded retries
 
 **Date**: 2026-10-11
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

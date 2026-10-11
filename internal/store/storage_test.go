@@ -23,7 +23,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 		ctx,
 		w.h.writeDB,
 		[]string{
-			initialSchema, coverageSchema, planSchema,
+			initialSchema, coverageSchema, planSchema, batchSchema,
 			"CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);",
 		},
 	)
@@ -47,7 +47,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 			"SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",
 		).Scan(&count),
 	)
-	require.Equal(t, 9, count)
+	require.Equal(t, 12, count)
 	require.NoError(t, w.Close())
 }
 
@@ -227,7 +227,8 @@ func TestCoverageMigrationPreservesLegacyHistory(t *testing.T) {
 	// Remove only the schema 2 addition to reconstruct a populated schema 1 file.
 	_, err = w.h.writeDB.ExecContext(
 		ctx,
-		"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP "+
+		"DROP TABLE validation_attempt_details; DROP TABLE validation_items; DROP TABLE validation_batches; "+
+			"DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP "+
 			"TABLE crawl_sources; DROP TABLE crawl_coverage; PRAGMA "+
 			"user_version=1",
 	)

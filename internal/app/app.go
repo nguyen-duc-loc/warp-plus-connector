@@ -3,7 +3,6 @@ package app
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"log/slog"
 	"time"
@@ -37,6 +36,8 @@ type App struct {
 	Source      Source
 	Validator   validator.Backend
 	Clock       func() time.Time
+	Monotonic   func() time.Time
+	RetryDraw   func(time.Duration, time.Duration) time.Duration
 	Logger      *slog.Logger
 }
 
@@ -84,99 +85,17 @@ func (a *App) log(runID int64, code string) {
 	}
 }
 
-// Check records one deliberate attempt. Unknown IDs create no run or attempt.
+// Check uses the batch engine for compatibility with single candidate callers.
 func (a *App) Check(ctx context.Context, id int64) (attempt state.Attempt, err error) {
-	w, err := store.OpenWriter(ctx, a.Settings.StateDir, a.Clock)
-	if err != nil {
-		return attempt, classified(err)
-	}
-	defer closeStore(&w.Reader, &err)
-	candidate, err := w.GetCandidate(ctx, id, a.evaluation())
-	if err != nil {
-		return attempt, classified(err)
-	}
-	run, err := w.StartRun(ctx, state.RunInput{RequestID: rand.Text(), Kind: state.Validation, StartedAt: a.Clock()})
-	if err != nil {
-		return attempt, classified(err)
-	}
-	completionStarted := false
-	defer func() {
-		if err != nil && !completionStarted {
-			if saved := a.cleanup(w, run.ID, attempt.ID, err); saved != nil {
-				attempt = *saved
+	_, err = a.CheckBatch(
+		ctx, []int64{id}, func(item state.ValidationItem) error {
+			if item.LatestAttempt != nil {
+				attempt = *item.LatestAttempt
 			}
-		}
-		a.log(run.ID, string(attempt.Outcome))
-	}()
-	backend, version := a.Validator.Identity()
-	attempt, err = w.BeginAttempt(
-		ctx,
-		state.AttemptInput{
-			RequestID: rand.Text(), RunID: run.ID, CandidateID: id, BackendID: backend, BackendVersion: version,
-			StartedAt: a.Clock(),
-		},
-	)
-	if err != nil {
-		return attempt, classified(err)
-	}
-	result, err := a.Validator.Check(
-		ctx,
-		validator.Input{
-			Key: candidate.Key, StateDir: a.Settings.StateDir, CandidateID: id, RunID: run.ID, AttemptID: attempt.ID,
-		},
-	)
-	if err != nil {
-		return attempt, classified(err)
-	}
-	if err = ctx.Err(); err != nil {
-		return attempt, classified(err)
-	}
-	// Once completion begins, an uncertain commit is left for recovery. Never
-	// replace it with a conflicting cancellation payload.
-	completionStarted = true
-	attempt, err = w.CompleteAttempt(
-		ctx,
-		state.AttemptCompletion{
-			AttemptID: attempt.ID, FinishedAt: a.Clock(), Outcome: result.Outcome, ReasonCode: result.ReasonCode,
-			Evidence: result.Evidence,
-		},
-	)
-	if err != nil {
-		return attempt, classified(err)
-	}
-	_, err = w.FinishRun(ctx, state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: a.Clock()})
-	if err != nil {
-		return attempt, classified(err)
-	}
-	if attempt.Outcome == state.Inconclusive {
-		return attempt, &Error{Code: result.ReasonCode}
-	}
-	return attempt, nil
-}
-
-func (a *App) cleanup(w *store.Writer, runID, attemptID int64, cause error) *state.Attempt {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	code := classified(cause).(*Error).Code
-	status := state.Failed
-	if errors.Is(cause, context.Canceled) {
-		code, status = "cancelled", state.Cancelled
-	}
-	var saved *state.Attempt
-	if attemptID != 0 {
-		completed, err := w.CompleteAttempt(
-			ctx,
-			state.AttemptCompletion{
-				AttemptID: attemptID, FinishedAt: a.Clock(), Outcome: state.Inconclusive, ReasonCode: code,
-			},
-		)
-		if err != nil {
 			return nil
-		}
-		saved = &completed
-	}
-	_, _ = w.FinishRun(ctx, state.RunCompletion{RunID: runID, Status: status, FinishedAt: a.Clock(), ReasonCode: code})
-	return saved
+		},
+	)
+	return attempt, err
 }
 
 // ShowCrawl opens only a reader and retrieves persisted progress after restart.

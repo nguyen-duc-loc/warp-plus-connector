@@ -30,6 +30,7 @@ type fakeDocker struct {
 	removals      int
 	input         protocol.Request
 	check         func(context.Context) error
+	protocol      int
 }
 
 func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]byte, error) {
@@ -49,7 +50,7 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 				map[string]any{
 					"Id": testImage, "Os": "linux", "Architecture": "arm64", "Config": map[string]any{
 						"Labels": map[string]string{
-							containerLabel + ".protocol": "1", containerLabel + ".warp": protocol.WARPVersion,
+							containerLabel + ".protocol": "2", containerLabel + ".warp": protocol.WARPVersion,
 						},
 					},
 				},
@@ -59,6 +60,7 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 		return []byte(strings.Join(f.ids, "\n")), nil
 	case "create":
 		f.creates++
+		f.protocol = 2
 		f.ids = append(f.ids, testContainer)
 		for _, arg := range a {
 			if strings.HasPrefix(arg, containerLabel+".session=") {
@@ -98,7 +100,9 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 	case "exec":
 		op := a[len(a)-1]
 		receipt := protocol.Receipt{
-			Version: 1, SessionID: f.session, Phase: "cleaned", RegistrationID: "reg", DeviceID: "device",
+			Version: f.protocol, SessionID: f.session, Phase: "cleaned",
+			AttachmentFinished: true, OperationResult: &protocol.Result{Outcome: state.Inconclusive},
+			RegistrationID: "reg", DeviceID: "device",
 			Result: protocol.Result{
 				Outcome:  state.Confirmed,
 				Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: time.Now()},
@@ -112,9 +116,15 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 			require.Equal(f.t, f.session, f.input.SessionID)
 			receipt.Phase = "prepared"
 			return encode(receipt)
-		case "check":
+		case "register":
+			receipt.Phase = "registered"
+			receipt.Result = protocol.Result{Outcome: state.Inconclusive, ReasonCode: "validation_interrupted"}
+			return encode(receipt)
+		case "status":
+			return encode(receipt)
+		case "attach":
 			f.checks++
-			require.Empty(f.t, input)
+			require.NotEmpty(f.t, input)
 			if f.check != nil {
 				if err := f.check(ctx); err != nil {
 					return nil, err
@@ -144,6 +154,7 @@ func dockerFixture(t *testing.T) (*Docker, *fakeDocker) {
 func savedManifest(t *testing.T, d *Docker, f *fakeDocker, cleaned bool) {
 	t.Helper()
 	f.session = "0123456789abcdefghijklmnop"
+	f.protocol = 1
 	m := &manifest{
 		Version: 1, SessionID: f.session, Name: "wpc-validator-" + f.session, ContainerID: testContainer,
 		Endpoint: "unix:///tmp/docker.sock", DaemonID: "daemon", Image: testImage, Submitted: true, Cleaned: cleaned,
@@ -154,7 +165,8 @@ func savedManifest(t *testing.T, d *Docker, f *fakeDocker, cleaned bool) {
 // AC-8: input is private, cleanup precedes result delivery, and resources are retired.
 func TestDockerCheckCompletesAndRemovesSession(t *testing.T) {
 	d, f := dockerFixture(t)
-	r, err := d.Check(
+	r, err := ownedCheck(
+		d,
 		context.Background(),
 		Input{Key: "ABCDEFGH-12345678-AbCdEf01", StateDir: "/profile", CandidateID: 1, RunID: 2, AttemptID: 3},
 	)
@@ -164,8 +176,10 @@ func TestDockerCheckCompletesAndRemovesSession(t *testing.T) {
 	require.Equal(t, 1, f.checks)
 	require.Equal(t, 1, f.removals)
 	require.Empty(t, f.ids)
-	_, err = os.Stat(d.path())
-	require.ErrorIs(t, err, os.ErrNotExist)
+	var registry registry
+	require.NoError(t, privatefs.Read(d.path(), &registry))
+	require.Equal(t, 2, registry.Version)
+	require.Empty(t, registry.Sessions)
 	require.Equal(t, "ABCDEFGH-12345678-AbCdEf01", f.input.Key)
 }
 
@@ -180,7 +194,7 @@ func TestCleanedSessionStillRejectsOrphans(t *testing.T) {
 				if ownPresent {
 					f.ids = append(f.ids, testContainer)
 				}
-				_, err := d.Check(context.Background(), Input{})
+				_, err := ownedCheck(d, context.Background(), Input{})
 				var diagnostic *Error
 				require.ErrorAs(t, err, &diagnostic)
 				require.Equal(t, "validator_orphaned_session", diagnostic.Code)
@@ -196,7 +210,7 @@ func TestRecoveryBlocksNewAttachmentWhenUncertain(t *testing.T) {
 	savedManifest(t, d, f, false)
 	f.ids = []string{testContainer}
 	f.recoveryError = &Error{Code: "validation_cleanup_pending"}
-	_, err := d.Check(context.Background(), Input{})
+	_, err := ownedCheck(d, context.Background(), Input{})
 	require.Error(t, err)
 	require.Zero(t, f.creates)
 	require.Zero(t, f.checks)
@@ -209,14 +223,18 @@ func TestCancelledHostRetainsSessionForRecovery(t *testing.T) {
 	d, f := dockerFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	f.check = func(context.Context) error { cancel(); return context.Canceled }
-	_, err := d.Check(ctx, Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
+	f.recoveryError = &Error{Code: "validation_cleanup_pending"}
+	_, err := ownedCheck(d, ctx, Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Zero(t, f.removals)
-	var m manifest
-	require.NoError(t, privatefs.Read(d.path(), &m))
+	var registry registry
+	require.NoError(t, privatefs.Read(d.path(), &registry))
+	require.Len(t, registry.Sessions, 1)
+	m := registry.Sessions[0]
 	require.True(t, m.Submitted)
 	require.False(t, m.Cleaned)
 	f.check = nil
+	f.recoveryError = nil
 	require.NoError(t, d.Recover(context.Background()))
 	require.Equal(t, 1, f.creates)
 	require.Equal(t, 1, f.removals)
@@ -226,14 +244,14 @@ func TestSharedOwnershipAndUnsafeEndpoint(t *testing.T) {
 	d, f := dockerFixture(t)
 	lock, err := privatefs.Lock(filepath.Join(d.Options.StateDir, "owner.lock"))
 	require.NoError(t, err)
-	_, err = d.Check(context.Background(), Input{})
+	_, err = ownedCheck(d, context.Background(), Input{})
 	require.Error(t, err)
 	require.Zero(t, f.creates)
 	require.NoError(t, lock.Close())
 	d.Options.Socket = ""
 	t.Setenv("DOCKER_CONTEXT", "")
 	t.Setenv("DOCKER_HOST", "tcp://remote:2375")
-	_, err = d.Check(context.Background(), Input{})
+	_, err = ownedCheck(d, context.Background(), Input{})
 	var diagnostic *Error
 	require.ErrorAs(t, err, &diagnostic)
 	require.Equal(t, "validator_local_socket_required", diagnostic.Code)
@@ -292,6 +310,7 @@ func TestDockerCheckRejectsUnsafeRuntimeImageAndContainer(t *testing.T) {
 		t.Run(
 			tc.name, func(t *testing.T) {
 				d, f := dockerFixture(t)
+				f.recoveryError = &Error{Code: "validation_cleanup_pending"}
 				d.run = func(ctx context.Context, input []byte, args ...string) ([]byte, error) {
 					data, err := f.run(ctx, input, args...)
 					if err != nil || args[2] != tc.operation {
@@ -308,8 +327,8 @@ func TestDockerCheckRejectsUnsafeRuntimeImageAndContainer(t *testing.T) {
 					tc.change(values[0])
 					return json.Marshal(values)
 				}
-				_, err := d.Check(t.Context(), Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
-				require.EqualError(t, err, tc.reason)
+				_, err := ownedCheck(d, t.Context(), Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
+				require.ErrorContains(t, err, tc.reason)
 				require.Zero(t, f.checks)
 				require.Empty(t, f.input.Key)
 				require.Zero(t, f.removals)
@@ -336,9 +355,10 @@ func TestDockerCheckRetainsSessionWhenReceiptDoesNotProveCleanup(t *testing.T) {
 		t.Run(
 			tc.name, func(t *testing.T) {
 				d, f := dockerFixture(t)
+				f.recoveryError = &Error{Code: "validation_cleanup_pending"}
 				d.run = func(ctx context.Context, input []byte, args ...string) ([]byte, error) {
 					data, err := f.run(ctx, input, args...)
-					if err != nil || args[2] != "exec" || args[len(args)-1] != "check" {
+					if err != nil || args[2] != "exec" || args[len(args)-1] != "attach" {
 						return data, err
 					}
 					var receipt protocol.Receipt
@@ -346,21 +366,53 @@ func TestDockerCheckRetainsSessionWhenReceiptDoesNotProveCleanup(t *testing.T) {
 					tc.change(&receipt)
 					return json.Marshal(receipt)
 				}
-				result, err := d.Check(t.Context(), Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
-				if tc.wantError {
-					require.EqualError(t, err, "validator_protocol_error")
-				} else {
-					require.NoError(t, err)
-					require.Equal(t, state.Inconclusive, result.Outcome)
-					require.Equal(t, "validation_cleanup_pending", result.ReasonCode)
-				}
+				result, err := ownedCheck(d, t.Context(), Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
+				require.Error(t, err)
 				require.Nil(t, result.Evidence)
 				require.Zero(t, f.removals)
-				var saved manifest
-				require.NoError(t, privatefs.Read(d.path(), &saved))
+				var registry registry
+				require.NoError(t, privatefs.Read(d.path(), &registry))
+				require.Len(t, registry.Sessions, 1)
+				saved := registry.Sessions[0]
 				require.True(t, saved.Submitted)
 				require.False(t, saved.Cleaned)
 			},
 		)
 	}
+}
+
+// ownedCheck uses the batch owner and staged hooks for one controlled session.
+func ownedCheck(d *Docker, ctx context.Context, in Input) (Result, error) {
+	owner, err := d.Acquire(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { _ = owner.Close() }()
+	if in.StateDir == "" {
+		in.StateDir = "/profile"
+	}
+	if in.RunID == 0 {
+		in.RunID = 1
+	}
+	if in.CandidateID == 0 {
+		in.CandidateID = 1
+	}
+	if in.AttemptID == 0 {
+		in.AttemptID = 1
+	}
+	active, cancel := context.WithTimeout(ctx, 240*time.Second)
+	defer cancel()
+	return owner.Run(
+		active, in, Hooks{
+			Commit:       func(fn func() error) error { return fn() },
+			Admit:        func(ctx context.Context, _ string) error { return ctx.Err() },
+			MutationDone: func(Result, error) error { return nil }, Observe: func(Result) error { return nil },
+			CleanupContext: func() (
+				context.Context,
+				context.CancelFunc,
+			) {
+				return context.WithTimeout(context.Background(), time.Second)
+			},
+		},
+	)
 }

@@ -62,22 +62,69 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 	}
 	crawl.AddCommand(show)
 	check := &cobra.Command{
-		Use: "check <candidate-id>", Short: "Check a saved candidate with the selected validator", Args: oneID,
+		Use: "check <candidate-id>...", Short: "Check selected saved candidates", Args: manyIDs,
 	}
 	commonFlags(check)
 	validatorFlags(check)
+	check.Flags().String("workers", "2", "Active checks (1 through 4)")
+	check.Flags().String("max-attempts", "3", "Attempts per candidate (1 through 5)")
+	check.Flags().String("mutation-interval", "1s", "Interval after registration and license commands (1s through 60s)")
+	check.Flags().String("candidate-timeout", "15m", "Active candidate budget (1m through 60m)")
 	check.RunE = func(cmd *cobra.Command, args []string) error {
 		a, err := application(cmd, version)
 		if err != nil {
 			return err
 		}
-		id, _ := strconv.ParseInt(args[0], 10, 64)
-		attempt, err := a.Check(cmd.Context(), id)
-		if attempt.ID != 0 {
-			err = errors.Join(err, renderAttempt(cmd.OutOrStdout(), attempt))
+		ids := make([]int64, len(args))
+		for i, arg := range args {
+			ids[i], _ = strconv.ParseInt(arg, 10, 64)
+		}
+		outputOK := true
+		report, err := a.CheckBatch(
+			cmd.Context(), ids, func(item state.ValidationItem) error {
+				e := renderValidationItem(cmd.OutOrStdout(), item)
+				if e != nil {
+					outputOK = false
+				}
+				return e
+			},
+		)
+		if report.Run.ID != 0 && outputOK {
+			if e := renderValidationSummary(cmd.OutOrStdout(), report); e != nil {
+				return &app.Error{Code: "output_error"}
+			}
 		}
 		return err
 	}
+	checkShow := &cobra.Command{
+		Use: "show <run-id>", Short: "Read saved check selection, policy, and attempts", Args: oneID,
+	}
+	commonFlags(checkShow)
+	checkShow.RunE = func(cmd *cobra.Command, args []string) error {
+		a, err := application(cmd, version)
+		if err != nil {
+			return err
+		}
+		id, _ := strconv.ParseInt(args[0], 10, 64)
+		var report state.ValidationReport
+		err = a.ShowCheck(
+			cmd.Context(), id, func(record state.CheckRecord) error {
+				if record.Header != nil {
+					report = *record.Header
+				}
+				return renderCheckRecord(cmd.OutOrStdout(), record)
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if err = renderValidationSummary(cmd.OutOrStdout(), report); err != nil {
+			return &app.Error{Code: "output_error"}
+		}
+		return nil
+	}
+	check.AddCommand(checkShow)
+
 	list := &cobra.Command{Use: "list", Short: "List every saved candidate, hiding keys by default", Args: noArguments}
 	commonFlags(list)
 	list.Flags().Bool("show-keys", false, "Include complete saved keys in output")
@@ -172,6 +219,18 @@ func noArguments(_ *cobra.Command, args []string) error {
 	return nil
 }
 
+func manyIDs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return errArguments
+	}
+	for _, arg := range args {
+		if err := oneID(cmd, []string{arg}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func oneID(_ *cobra.Command, args []string) error {
 	if len(args) != 1 || args[0] == "" {
 		return errArguments
@@ -204,6 +263,8 @@ func resolveSettings(cmd *cobra.Command) (config.Settings, error) {
 	}
 	return config.Resolve(
 		config.Overrides{
+			CheckWorkers: flag("workers"), CheckMaxAttempts: flag("max-attempts"),
+			CheckMutationInterval: flag("mutation-interval"), CheckCandidateTimeout: flag("candidate-timeout"),
 			ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"),
 			Validator: flag("validator"), ValidatorImage: flag("validator-image"),
 			ValidatorSocket: flag("validator-socket"),

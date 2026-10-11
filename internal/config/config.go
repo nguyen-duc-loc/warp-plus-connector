@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ var (
 
 // Settings are fully validated runtime inputs.
 type Settings struct {
+	CheckPolicy       state.CheckPolicy
 	Sources           []Source
 	CrawlPageLimit    int
 	StateDir          string
@@ -39,12 +41,13 @@ type Settings struct {
 
 // Overrides distinguishes explicitly supplied flags from absent flags.
 type Overrides struct {
-	ConfigPath      *string
-	StateDir        *string
-	RecheckInterval *string
-	Validator       *string
-	ValidatorImage  *string
-	ValidatorSocket *string
+	CheckWorkers, CheckMaxAttempts, CheckMutationInterval, CheckCandidateTimeout *string
+	ConfigPath                                                                   *string
+	StateDir                                                                     *string
+	RecheckInterval                                                              *string
+	Validator                                                                    *string
+	ValidatorImage                                                               *string
+	ValidatorSocket                                                              *string
 }
 
 // Resolve reads settings once, using defaults, JSON, then explicit flags.
@@ -65,7 +68,8 @@ func Resolve(in Overrides) (Settings, error) {
 		stateDir = filepath.Join(xdg, "warp-plus-connector")
 	}
 	out := Settings{
-		Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
+		CheckPolicy: state.DefaultCheckPolicy(),
+		Sources:     defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
 		Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator"),
 	}
 	path := filepath.Join(base, "warp-plus-connector", "config.json")
@@ -95,6 +99,8 @@ func Resolve(in Overrides) (Settings, error) {
 		name  string
 		value *string
 	}{
+		{"check_workers", in.CheckWorkers}, {"check_max_attempts", in.CheckMaxAttempts},
+		{"check_mutation_interval", in.CheckMutationInterval}, {"check_candidate_timeout", in.CheckCandidateTimeout},
 		{"state_dir", in.StateDir}, {"recheck_interval", in.RecheckInterval}, {"validator", in.Validator},
 		{"validator_image", in.ValidatorImage}, {"validator_socket", in.ValidatorSocket},
 	} {
@@ -235,6 +241,14 @@ func applyJSON(out *Settings, values map[string]json.RawMessage) error {
 	}
 	for k, raw := range values {
 		switch k {
+		case "check_workers", "check_max_attempts":
+			var n int
+			if string(raw) == "null" || json.Unmarshal(raw, &n) != nil {
+				return ErrInvalid
+			}
+			if err := apply(out, k, strconv.Itoa(n)); err != nil {
+				return err
+			}
 		case "crawl_page_limit":
 		case "sources":
 			var entries []map[string]json.RawMessage
@@ -247,6 +261,7 @@ func applyJSON(out *Settings, values map[string]json.RawMessage) error {
 				item := Source{Enabled: true, PageLimit: out.CrawlPageLimit}
 				for name, v := range entry {
 					switch name {
+
 					case "channel":
 						if string(v) == "null" || json.Unmarshal(v, &item.Channel) != nil {
 							return ErrInvalid
@@ -334,6 +349,32 @@ func (s Settings) SelectSources(names []string, limit *int) ([]state.SourcePlan,
 
 func apply(out *Settings, name, value string) error {
 	switch name {
+	case "check_workers", "check_max_attempts":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return ErrInvalid
+		}
+		if name == "check_workers" {
+			out.CheckPolicy.Workers = n
+		} else {
+			out.CheckPolicy.MaxAttempts = n
+		}
+		if !out.CheckPolicy.Valid() {
+			return ErrInvalid
+		}
+	case "check_mutation_interval", "check_candidate_timeout":
+		d, err := time.ParseDuration(value)
+		if err != nil || d%time.Microsecond != 0 {
+			return ErrInvalid
+		}
+		if name == "check_mutation_interval" {
+			out.CheckPolicy.MutationIntervalUS = d.Microseconds()
+		} else {
+			out.CheckPolicy.CandidateTimeoutUS = d.Microseconds()
+		}
+		if !out.CheckPolicy.Valid() {
+			return ErrInvalid
+		}
 	case "state_dir":
 		if value == "" {
 			return ErrInvalid
