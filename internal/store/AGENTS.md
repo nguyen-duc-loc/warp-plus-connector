@@ -12,6 +12,8 @@ New directories use `0700`; managed files use `0600`. Existing broad permissions
 
 Schema version 3 adds [003_crawl_plan.sql](migrations/003_crawl_plan.sql), preserving old rows without backfill. `crawl_sources`, `crawl_pages`, and `crawl_page_observations` implement [spec 0004](../../docs/specs/0004-configurable-source-coverage/index.md). A failed migration rolls back its tables and version together; an older binary rejects the newer schema.
 
+Schema version 4 adds [004_validation_batches.sql](migrations/004_validation_batches.sql) for [spec 0005](../../docs/specs/0005-concurrent-checks-bounded-retries/index.md), preserving earlier history. `validation_batches`, `validation_items`, and `validation_attempt_details` retain immutable selection, a typed policy snapshot, and separate scheduling facts for every attempt.
+
 ## Saved records and retries
 
 [discovery.go](discovery.go) saves one message atomically. Identity trims surrounding key whitespace and preserves the remaining bytes. Sightings retain their first known publication time and URL; each run and sighting pair retains its first observation time. Discovery times are derived from saved observations.
@@ -24,6 +26,8 @@ Schema version 3 adds [003_crawl_plan.sql](migrations/003_crawl_plan.sql), prese
 
 [runs.go](runs.go) and [attempts.go](attempts.go) use caller request tokens for repeatable creation. Matching normalized inputs return the current saved record; conflicting inputs or terminal results return `ErrConflict`. One unresolved attempt per candidate is permitted across all runs. A validation run finishes only after all its attempts resolve.
 
+[batch.go](batch.go) saves batch intent atomically and enforces sequential attempt numbers, matching backend identity, saved retry plans, and the attempt ceiling. Completion atomically saves an attempt plus its retry plan or terminal item. Legacy mutation APIs reject batch runs. Recovery marks pending and active items interrupted, preserves completed attempts and retry plans, and never resumes unused attempts.
+
 Times normalize to UTC microseconds. Recovery marks unfinished runs interrupted and unresolved attempts inconclusive, with explicit recovery time and no invented finish time. Earlier completed evidence remains intact.
 
 Plan recovery marks active pages and sources `interrupted`, skips pending sources with `interrupted_before_start`, and preserves terminal children. Recovered records have `recovered_at` and no invented `finished_at`. Request intent does not prove that an HTTP request reached Telegram; later crawls create new plans rather than resuming cursors.
@@ -35,6 +39,8 @@ Plan recovery marks active pages and sources `interrupted`, skips pending source
 Pages default to 100 rows and allow up to 1000 per call, with no total cap. The first page fixes the highest included ID; later pages read current details. Cursors retain collection, parent, filter, and evaluation. Observation traversal requires a terminal crawl run.
 
 [plan_reads.go](plan_reads.go) reads every saved source and page in configuration and page order. `GetCrawlReport` returns saved plans independently of current settings, while preserving both earlier report formats. Candidate totals use distinct IDs at each report level; page totals cannot be summed to infer distinct run candidates. Parsed post counts include overlapping occurrences and posts without keys.
+
+[batch_reads.go](batch_reads.go) derives report totals from saved rows and pages through items in selection order and attempts in attempt number order. Cursors bind the batch and candidate. Legacy runs have a nil policy; they retain their original history without invented selection metadata. An active report header is a point in time, while later pages may reflect newer commits.
 
 [values.go](values.go) validates typed evidence and normalized reason codes. [errors.go](errors.go) preserves stable errors and cancellation for `errors.Is`, while excluding raw driver text from both messages and unwrap chains. The store emits no routine logs and never accepts message bodies or raw validator output.
 

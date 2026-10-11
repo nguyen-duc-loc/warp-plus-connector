@@ -28,7 +28,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 3 | Persistent key state | Foundation | done |
 | 4 | One source crawl and validation loop | Slice 1 | done |
 | 5 | Configurable source coverage | Slice 2 | done |
-| 6 | Concurrent checks and bounded retries | Slice 3 | in-progress |
+| 6 | Concurrent checks and bounded retries | Slice 3 | done |
 | 7 | Complete results and export | Slice 4 | planned |
 | 8 | Scheduled crawl and revalidation | Slice 5 | planned |
 | 9 | Background operation and diagnostics | Slice 6 | planned |
@@ -135,13 +135,13 @@ The test pass on 2026-10-11 added 16 test functions across five existing test fi
 
 ## Slice 3: Check reliably at scale
 
-### 6. Concurrent checks and bounded retries · in-progress
+### 6. Concurrent checks and bounded retries · done
 
 Use Go concurrency to validate independent candidates with configurable worker and request limits. Retry transient failures with increasing delay and jitter, a small random variation that avoids synchronized retries.
 
 **Done when:** multiple checks can run with isolated state and a measurable concurrency ceiling; each key has at most one active check; timeouts and cancellation bound work; transient failures retry within a finite budget and respect server delays; exhausted retries remain inconclusive; definitive rejection does not enter an immediate retry loop.
 
-**Spec:** [0005. Concurrent checks and bounded retries](../specs/0005-concurrent-checks-bounded-retries/index.md), confirmed on 2026-10-11 after independent review. Explicit candidate batches use two workers and three attempts by default, with shared command pacing and recovery ownership. Saved reports retain selection, effective limits, and retry history. Code in `internal/app/batch.go`, `internal/store/batch.go`, `internal/validator/batch.go`, and `internal/validator/worker/worker.go`. One authorized live protocol 2 session confirmed Unlimited on 2026-10-11, with a 1.005 second mutation gap, a durable cleanup receipt, an empty registry, no retained containers, a matching report after restart, and unchanged host registration. Controlled legacy conversion checks pass in `internal/validator/docker_test.go`. Private run evidence is in `/private/tmp/wpc-live-0005-x_vahyfc`. Verification passed on 2026-10-11 after closing the output pipe and cancellation races. Two authorized live sessions overlapped for 9.628 seconds with mutation gaps above one second, complete cleanup, saved reports after restart, and unchanged host registration. Retained acknowledgement, journal, cancellation, and staged command fault cases pass under race tests on macOS and Linux arm64. Final evidence is recorded in the feature verification file. The separate test workflow remains pending.
+**Spec:** [0005. Concurrent checks and bounded retries](../specs/0005-concurrent-checks-bounded-retries/index.md), confirmed on 2026-10-11 after independent review. Explicit candidate batches use two workers and three attempts by default, with shared command pacing and recovery ownership. Saved reports retain selection, effective limits, and retry history. Code in `internal/app/batch.go`, `internal/store/batch.go`, `internal/validator/batch.go`, and `internal/validator/worker/worker.go`. One authorized live protocol 2 session confirmed Unlimited on 2026-10-11, with a 1.005 second mutation gap, a durable cleanup receipt, an empty registry, no retained containers, a matching report after restart, and unchanged host registration. Controlled legacy conversion checks pass in `internal/validator/docker_test.go`. Private run evidence is in `/private/tmp/wpc-live-0005-x_vahyfc`. Verification passed on 2026-10-11 after closing the output pipe and cancellation races. Two authorized live sessions overlapped for 9.628 seconds with mutation gaps above one second, complete cleanup, saved reports after restart, and unchanged host registration. Retained acknowledgement, journal, cancellation, and staged command fault cases pass under race tests on macOS and Linux arm64. Final evidence is recorded in the feature verification file. The separate test workflow is complete; `/sync` reconciled the feature status to done.
 
 - [x] Design it (spec): `/architect concurrent checks and bounded retries`
 - [x] Build it: `/develop concurrent checks and bounded retries`
@@ -151,7 +151,7 @@ Use Go concurrency to validate independent candidates with configurable worker a
   - [x] Add classified retries, saved wait plans, finite budgets, and throttling behavior without changing definitive evidence (AC-4, AC-5, AC-6).
   - [x] Complete cancellation, uncertain acknowledgements, recovery across sessions, privacy, and output failures (AC-2, AC-7, AC-8, AC-9, AC-10, AC-11).
 - [x] Verify it: `/check verify concurrent checks and bounded retries` (AC-1 through AC-12, including separately authorized live Docker checks).
-- [ ] Test it: `/test concurrent checks and bounded retries`
+- [x] Test it: `/test concurrent checks and bounded retries` (13 added tests cover worker ceilings, retry bounds, terminal classifications, cleanup requirements, server delays, budget exhaustion, evidence preservation, committed output, saved reports, CLI validation, and configuration precedence. The full Go suite and macOS formatting, vet, race, and lint gate pass.)
 
 ## Slice 4: Reach every result
 
