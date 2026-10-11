@@ -22,6 +22,17 @@ go build -ldflags '-X main.version=0.1.0 -X main.commit=abc1234' -o bin/wpc ./cm
 
 The values above are examples. You can use your actual release version and commit. If you omit the commit, the output omits it too.
 
+For both supported platforms, you can use GoReleaser (tested with `2.18.3`):
+
+```sh
+rtk proxy goreleaser check
+rtk proxy goreleaser build --snapshot --clean
+```
+
+[The build configuration](.goreleaser.yaml) produces macOS and Linux arm64 binaries in `dist/`, with version and commit metadata. It disables CGO so the builds need no C compiler. To also create local archives and SHA256 checksums, you can use `rtk proxy goreleaser release --snapshot --clean`. Snapshot mode does not publish. These commands replace the generated `dist/` directory. The Docker validator image keeps its separate build script.
+
+The configuration follows the official [Go build options](https://goreleaser.com/customization/builds/builders/go/) and [snapshot workflow](https://goreleaser.com/getting-started/quick-start/).
+
 The executable entry point lives in `cmd/wpc`. Command definitions live in `internal/cli`. Cobra `v1.10.2` handles command parsing and help, as selected by the architecture. The scaffold was initialized with Go tooling and Cobra CLI `v1.3.0`, then adapted to this layout. Cobra CLI is only a generator, not an application dependency. See the [official Cobra guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md) for the command framework.
 
 The [architecture](docs/specs/0001-stack-architecture/index.md) defines the configuration, persistence, and validator boundaries. The [scope](docs/scope/scope.md) tracks their implementation. The public preview parser uses goquery `v1.13.0` for scoped HTML traversal, with cascadia `v1.3.4` and `golang.org/x/net v0.58.0`. These versions were exercised with live markup and synthetic fixtures on macOS and Linux arm64.
