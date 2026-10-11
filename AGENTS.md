@@ -22,6 +22,7 @@ rtk proxy sh scripts/build-validator-image.sh
 rtk proxy go run ./cmd/wpc --help
 rtk proxy go test ./...
 rtk proxy gofmt -l cmd internal scripts
+rtk proxy sh scripts/format.sh
 rtk proxy sh scripts/check-format.sh
 rtk proxy pre-commit install
 rtk proxy pre-commit run --all-files
@@ -29,7 +30,7 @@ rtk proxy go vet ./...
 rtk proxy go test -race ./...
 rtk proxy golangci-lint run ./...
 ```
-Formatting passes when `gofmt -l` prints nothing. To format changed Go files, use `rtk proxy gofmt -w <files>`. Tests live beside source as `*_test.go`; preferences are in `test-preferences.json`.
+Formatting passes when `scripts/check-format.sh` reports no gofmt or EditorConfig violations. Use `rtk proxy sh scripts/format.sh` to apply GoLand's `.editorconfig` rules, run gofmt, and check the result. `gofmt -w` alone does not enforce the 120-character limit; split remaining long strings without changing their values. Tests live beside source as `*_test.go`; preferences are in `test-preferences.json`.
 
 ## Rules
 1. Keep `cmd/wpc` responsible for process exit and output streams, and `internal/cli` for parsing and rendering. Add other packages only when a real path needs them.
@@ -44,7 +45,7 @@ Formatting passes when `gofmt -l` prints nothing. To format changed Go files, us
 
 ## Tooling
 The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. CI remains pending provider selection; its planned checks include the same gate and builds for macOS and Linux arm64.
-The formatting gate uses `scripts/check-format.sh` to reject unformatted Go files under `cmd` and `internal` without changing them. Go tests under `scripts` also need the broader formatting command above. `.golangci.yml` enables `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`. Repeatable hook checks are in [tooling verification](docs/reviews/tooling/verify.md).
+The formatting gate uses `scripts/check-format.sh` to reject gofmt and EditorConfig violations in Go files under `cmd`, `internal`, and `scripts` without changing them. It requires `editorconfig-checker 4.0.2`; only its indentation check is disabled because gofmt owns Go indentation and raw string whitespace is data. `scripts/format.sh` uses GoLand `2026.2.0.1` (macOS app detection or `goland.sh` on PATH; override with `GOLAND_BIN`) before gofmt and the gate. `.golangci.yml` enables `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`. Repeatable hook checks are in [tooling verification](docs/reviews/tooling/verify.md).
 Observed tools: `golangci-lint 2.14.0`, `pre-commit 4.6.2`. Formatting, vet, race tests, lint, and configuration validation passed on macOS arm64. Sandbox runs of vet, race tests, and golangci encountered cache access or package loading errors; all passed with approved toolchain and cache access. Check the environment before changing dependencies to address those errors.
 GoReleaser `2.18.3` uses `.goreleaser.yaml` for macOS and Linux arm64 builds with CGO disabled and version metadata. Snapshot builds replace generated `dist/` output. `rtk proxy goreleaser release --snapshot --clean` also creates local archives and SHA256 checksums without publishing; the Docker worker image keeps its separate build script.
 

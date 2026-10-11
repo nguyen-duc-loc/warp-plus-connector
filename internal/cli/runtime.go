@@ -21,7 +21,9 @@ import (
 var errArguments = errors.New("invalid arguments, see command help")
 
 func addRuntimeCommands(root *cobra.Command, version string) {
-	crawl := &cobra.Command{Use: "crawl", Short: "Collect bounded pages from configured public channels", Args: noArguments}
+	crawl := &cobra.Command{
+		Use: "crawl", Short: "Collect bounded pages from configured public channels", Args: noArguments,
+	}
 	commonFlags(crawl)
 	var sourceNames []string
 	crawl.Flags().StringArrayVar(&sourceNames, "source", nil, "Select a configured enabled channel (repeatable)")
@@ -59,7 +61,9 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 		return renderCrawl(cmd.OutOrStdout(), report)
 	}
 	crawl.AddCommand(show)
-	check := &cobra.Command{Use: "check <candidate-id>", Short: "Check a saved candidate with the selected validator", Args: oneID}
+	check := &cobra.Command{
+		Use: "check <candidate-id>", Short: "Check a saved candidate with the selected validator", Args: oneID,
+	}
 	commonFlags(check)
 	validatorFlags(check)
 	check.RunE = func(cmd *cobra.Command, args []string) error {
@@ -87,26 +91,30 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 			return err
 		}
 		count := 0
-		err = a.List(cmd.Context(), func(c state.Candidate) error {
-			if count == 0 {
-				header := "ID\tLATEST\tREASON\tLAST_DEFINITIVE\tEVIDENCE_AT\tFRESHNESS\tCLOCK_ANOMALY"
-				if showKeys {
-					header += "\tKEY"
+		err = a.List(
+			cmd.Context(), func(c state.Candidate) error {
+				if count == 0 {
+					header := "ID\tLATEST\tREASON\tLAST_DEFINITIVE\tEVIDENCE_AT\tFRESHNESS\tCLOCK_ANOMALY"
+					if showKeys {
+						header += "\tKEY"
+					}
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), header); err != nil {
+						return err
+					}
 				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), header); err != nil {
-					return err
-				}
-			}
-			count++
-			return renderCandidate(cmd.OutOrStdout(), c, showKeys)
-		})
+				count++
+				return renderCandidate(cmd.OutOrStdout(), c, showKeys)
+			},
+		)
 		if err == nil && count == 0 {
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), "No candidates saved.")
 		}
 		return err
 	}
 	validation := &cobra.Command{Use: "validator", Short: "Manage isolated validation recovery"}
-	recoverCommand := &cobra.Command{Use: "recover", Short: "Reconcile an earlier validation without a new registration", Args: noArguments}
+	recoverCommand := &cobra.Command{
+		Use: "recover", Short: "Reconcile an earlier validation without a new registration", Args: noArguments,
+	}
 	commonFlags(recoverCommand)
 	validatorFlags(recoverCommand)
 	recoverCommand.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -125,7 +133,9 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 		return err
 	}
 	validation.AddCommand(recoverCommand)
-	sources := &cobra.Command{Use: "sources", Short: "Show configured sources and effective page limits", Args: noArguments}
+	sources := &cobra.Command{
+		Use: "sources", Short: "Show configured sources and effective page limits", Args: noArguments,
+	}
 	commonFlags(sources)
 	sources.RunE = func(cmd *cobra.Command, _ []string) error {
 		settings, err := resolveSettings(cmd)
@@ -192,7 +202,13 @@ func resolveSettings(cmd *cobra.Command) (config.Settings, error) {
 		value, _ := cmd.Flags().GetString(name)
 		return &value
 	}
-	return config.Resolve(config.Overrides{ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"), Validator: flag("validator"), ValidatorImage: flag("validator-image"), ValidatorSocket: flag("validator-socket")})
+	return config.Resolve(
+		config.Overrides{
+			ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"),
+			Validator: flag("validator"), ValidatorImage: flag("validator-image"),
+			ValidatorSocket: flag("validator-socket"),
+		},
+	)
 }
 
 func application(cmd *cobra.Command, version string) (*app.App, error) {
@@ -202,10 +218,16 @@ func application(cmd *cobra.Command, version string) (*app.App, error) {
 	}
 	var backend validator.Backend = validator.Unsupported{Version: version}
 	if settings.Validator == "docker" && (cmd.Name() == "check" || cmd.Name() == "recover") {
-		backend = &validator.Docker{Options: validator.DockerOptions{Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir}}
+		backend = &validator.Docker{
+			Options: validator.DockerOptions{
+				Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir,
+			},
+		}
 	}
-	return &app.App{Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend, Clock: time.Now,
-		Logger: slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))}, nil
+	return &app.App{
+		Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend, Clock: time.Now,
+		Logger: slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)),
+	}, nil
 }
 
 func textValue(v *string) string {
@@ -232,13 +254,33 @@ func renderCrawl(w io.Writer, r state.CrawlReport) error {
 		return renderPlan(w, r)
 	}
 	b := strings.Builder{}
-	fmt.Fprintf(&b, "run_id=%d status=%s reason=%s counts_current=%t\n", r.Run.ID, r.Run.Status, textValue(r.Run.ReasonCode), r.Run.Status == state.Running)
+	fmt.Fprintf(
+		&b,
+		"run_id=%d status=%s reason=%s counts_current=%t\n",
+		r.Run.ID,
+		r.Run.Status,
+		textValue(r.Run.ReasonCode),
+		r.Run.Status == state.Running,
+	)
 	if c := r.Coverage; c != nil {
 		count := "none"
 		if c.ParsedPostCount != nil {
 			count = strconv.Itoa(*c.ParsedPostCount)
 		}
-		fmt.Fprintf(&b, "source=%s url=%s coverage=%s page_limit=%d history_complete=false\nfetched_at=%s parsed_posts=%s min_message_id=%s max_message_id=%s\n", c.SourceID, c.RequestedURL, c.CoverageMode, c.PageLimit, timeValue(c.FetchedAt), count, idValue(c.MinMessageID), idValue(c.MaxMessageID))
+		fmt.Fprintf(
+			&b,
+			"source=%s url=%s coverage=%s page_limit=%d "+
+				"history_complete=false\nfetched_at=%s parsed_posts=%s "+
+				"min_message_id=%s max_message_id=%s\n",
+			c.SourceID,
+			c.RequestedURL,
+			c.CoverageMode,
+			c.PageLimit,
+			timeValue(c.FetchedAt),
+			count,
+			idValue(c.MinMessageID),
+			idValue(c.MaxMessageID),
+		)
 	} else {
 		b.WriteString("coverage unavailable\n")
 	}
@@ -250,9 +292,26 @@ func renderCrawl(w io.Writer, r state.CrawlReport) error {
 func renderAttempt(w io.Writer, a state.Attempt) error {
 	evidence := "none"
 	if e := a.Evidence; e != nil {
-		evidence = fmt.Sprintf("kind=%s observed_at=%s account_type=%s rejection_code=%s", e.Kind, timeValue(&e.ObservedAt), e.AccountType, e.RejectionCode)
+		evidence = fmt.Sprintf(
+			"kind=%s observed_at=%s account_type=%s rejection_code=%s",
+			e.Kind,
+			timeValue(&e.ObservedAt),
+			e.AccountType,
+			e.RejectionCode,
+		)
 	}
-	_, err := fmt.Fprintf(w, "candidate_id=%d run_id=%d attempt_id=%d outcome=%s reason=%s backend=%s version=%s evidence=%s\n", a.CandidateID, a.RunID, a.ID, a.Outcome, textValue(a.ReasonCode), a.BackendID, a.BackendVersion, evidence)
+	_, err := fmt.Fprintf(
+		w,
+		"candidate_id=%d run_id=%d attempt_id=%d outcome=%s reason=%s backend=%s version=%s evidence=%s\n",
+		a.CandidateID,
+		a.RunID,
+		a.ID,
+		a.Outcome,
+		textValue(a.ReasonCode),
+		a.BackendID,
+		a.BackendVersion,
+		evidence,
+	)
 	return err
 }
 
@@ -267,7 +326,16 @@ func renderCandidate(w io.Writer, c state.Candidate, showKeys bool) error {
 			evidenceAt = timeValue(&a.Evidence.ObservedAt)
 		}
 	}
-	line := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%t", c.ID, c.LatestOutcome, reason, definitive, evidenceAt, c.Freshness, c.ClockAnomaly)
+	line := fmt.Sprintf(
+		"%d\t%s\t%s\t%s\t%s\t%s\t%t",
+		c.ID,
+		c.LatestOutcome,
+		reason,
+		definitive,
+		evidenceAt,
+		c.Freshness,
+		c.ClockAnomaly,
+	)
 	if showKeys {
 		line += "\t" + strconv.Quote(c.Key)
 	}
@@ -285,13 +353,17 @@ func Diagnostic(err error) string {
 	if errors.As(err, &runtime) {
 		return runtime.Code
 	}
-	for _, known := range []error{config.ErrInvalid, config.ErrAccess, config.ErrSelectionInvalid, config.ErrSelectionEmpty, errArguments} {
+	for _, known := range []error{
+		config.ErrInvalid, config.ErrAccess, config.ErrSelectionInvalid, config.ErrSelectionEmpty, errArguments,
+	} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
 	}
 	// Cobra includes supplied values in these errors. Preserve the category only.
-	for _, prefix := range []string{"unknown command", "unknown flag", "unknown shorthand flag", "invalid argument", "flag needs an argument"} {
+	for _, prefix := range []string{
+		"unknown command", "unknown flag", "unknown shorthand flag", "invalid argument", "flag needs an argument",
+	} {
 		if strings.HasPrefix(err.Error(), prefix) {
 			return prefix + ", see command help"
 		}

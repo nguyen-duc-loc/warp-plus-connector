@@ -73,7 +73,8 @@ func (ProcessRunner) Run(parent context.Context, args ...string) Reply {
 		return Reply{Code: "validation_provider_error"}
 	}
 	mutation := len(args) == 1 && args[0] == "disconnect"
-	if len(args) >= 2 && args[0] == "registration" && (args[1] == "new" || args[1] == "license" || args[1] == "delete") {
+	if len(args) >= 2 && args[0] == "registration" && (args[1] == "new" || args[1] == "license" ||
+		args[1] == "delete") {
 		mutation = true
 	}
 	if mutation && !acknowledged(out.Bytes()) {
@@ -107,7 +108,10 @@ func registrationRejected(data []byte) bool {
 		}
 		if strings.Contains(line, "Request completed") {
 			completions++
-			if completions != 1 || failures != 1 || !strings.Contains(line, "result=Err(MaxRateLimitAttemptsReached(0))") || !strings.Contains(line, "is_rate_limited: true") {
+			if completions != 1 || failures != 1 || !strings.Contains(
+				line,
+				"result=Err(MaxRateLimitAttemptsReached(0))",
+			) || !strings.Contains(line, "is_rate_limited: true") {
 				return false
 			}
 			terminal = id

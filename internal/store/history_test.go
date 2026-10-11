@@ -13,7 +13,13 @@ import (
 
 func beginAttempt(t *testing.T, w *store.Writer, run, candidate int64, at time.Time) state.Attempt {
 	t.Helper()
-	a, err := w.BeginAttempt(t.Context(), state.AttemptInput{RequestID: rand.Text(), RunID: run, CandidateID: candidate, BackendID: "controlled_fixture", BackendVersion: "dev", StartedAt: at})
+	a, err := w.BeginAttempt(
+		t.Context(),
+		state.AttemptInput{
+			RequestID: rand.Text(), RunID: run, CandidateID: candidate, BackendID: "controlled_fixture",
+			BackendVersion: "dev", StartedAt: at,
+		},
+	)
 	require.NoError(t, err)
 	return a
 }
@@ -31,7 +37,10 @@ func TestDiscoveryIdentityAndReplay(t *testing.T) {
 	conflict.Kind = state.Validation
 	_, err = w.StartRun(t.Context(), conflict)
 	require.ErrorIs(t, err, store.ErrConflict)
-	msg := state.MessageInput{RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime, Keys: []string{" key ", "key", "Key", "k ey"}}
+	msg := state.MessageInput{
+		RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime,
+		Keys: []string{" key ", "key", "Key", "k ey"},
+	}
 	first, err := w.RecordMessage(t.Context(), msg)
 	require.NoError(t, err)
 	require.Equal(t, 3, first.NewCandidates)
@@ -100,7 +109,10 @@ func TestEvidenceFreshnessAndTerminalRetries(t *testing.T) {
 	crawl := startRun(t, w, state.Crawl)
 	candidate := discover(t, w, crawl.ID, "synthetic").Discoveries[0].CandidateID
 	run := startRun(t, w, state.Validation)
-	input := state.AttemptInput{RequestID: rand.Text(), RunID: run.ID, CandidateID: candidate, BackendID: "fixture", BackendVersion: "dev", StartedAt: fixtureTime}
+	input := state.AttemptInput{
+		RequestID: rand.Text(), RunID: run.ID, CandidateID: candidate, BackendID: "fixture", BackendVersion: "dev",
+		StartedAt: fixtureTime,
+	}
 	a, err := w.BeginAttempt(t.Context(), input)
 	require.NoError(t, err)
 	again, err := w.BeginAttempt(t.Context(), input)
@@ -109,9 +121,15 @@ func TestEvidenceFreshnessAndTerminalRetries(t *testing.T) {
 	input.RequestID = rand.Text()
 	_, err = w.BeginAttempt(t.Context(), input)
 	require.ErrorIs(t, err, store.ErrAttemptActive)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime},
+	)
 	require.ErrorIs(t, err, store.ErrAttemptActive)
-	completion := state.AttemptCompletion{AttemptID: a.ID, FinishedAt: fixtureTime.Add(time.Second), Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"}}
+	completion := state.AttemptCompletion{
+		AttemptID: a.ID, FinishedAt: fixtureTime.Add(time.Second), Outcome: state.Confirmed,
+		Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"},
+	}
 	completed, err := w.CompleteAttempt(t.Context(), completion)
 	require.NoError(t, err)
 	again, err = w.CompleteAttempt(t.Context(), completion)
@@ -122,7 +140,13 @@ func TestEvidenceFreshnessAndTerminalRetries(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrConflict)
 	// A retry is later by identity, even with an earlier event clock.
 	retry := beginAttempt(t, w, run.ID, candidate, fixtureTime.Add(-time.Minute))
-	_, err = w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: retry.ID, FinishedAt: fixtureTime.Add(-2 * time.Minute), Outcome: state.Inconclusive, ReasonCode: "transport_error"})
+	_, err = w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: retry.ID, FinishedAt: fixtureTime.Add(-2 * time.Minute), Outcome: state.Inconclusive,
+			ReasonCode: "transport_error",
+		},
+	)
 	require.NoError(t, err)
 	for _, test := range []struct {
 		at      time.Time
@@ -143,13 +167,25 @@ func TestEvidenceFreshnessAndTerminalRetries(t *testing.T) {
 		require.Equal(t, test.anomaly, c.ClockAnomaly)
 	}
 	rejection := beginAttempt(t, w, run.ID, candidate, fixtureTime)
-	_, err = w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: rejection.ID, FinishedAt: fixtureTime, Outcome: state.Invalid, ReasonCode: "fixture_rejected", Evidence: &state.Evidence{Kind: state.Rejection, ObservedAt: fixtureTime, RejectionCode: "fixture_rejected"}})
+	_, err = w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: rejection.ID, FinishedAt: fixtureTime, Outcome: state.Invalid, ReasonCode: "fixture_rejected",
+			Evidence: &state.Evidence{
+				Kind: state.Rejection, ObservedAt: fixtureTime,
+				RejectionCode: "fixture_rejected",
+			},
+		},
+	)
 	require.NoError(t, err)
 	c, err := w.GetCandidate(t.Context(), candidate, evaluation())
 	require.NoError(t, err)
 	require.Equal(t, state.Invalid, c.LatestOutcome)
 	require.Equal(t, state.NotApplicable, c.Freshness)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime},
+	)
 	require.NoError(t, err)
 	input.RequestID = a.RequestID
 	again, err = w.BeginAttempt(t.Context(), input)
@@ -162,7 +198,11 @@ func TestEvidenceFreshnessAndTerminalRetries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, history.Items, 2)
 	require.NotNil(t, history.Next)
-	history, err = w.ListAttempts(t.Context(), state.AttemptFilter{CandidateID: candidate}, state.PageRequest{Size: 2, Cursor: history.Next})
+	history, err = w.ListAttempts(
+		t.Context(),
+		state.AttemptFilter{CandidateID: candidate},
+		state.PageRequest{Size: 2, Cursor: history.Next},
+	)
 	require.NoError(t, err)
 	require.Len(t, history.Items, 1)
 	require.Nil(t, history.Next)
@@ -176,7 +216,13 @@ func TestRecoveryPreservesEvidenceAndReplay(t *testing.T) {
 	candidate := discovery.Discoveries[0].CandidateID
 	run := startRun(t, w, state.Validation)
 	a := beginAttempt(t, w, run.ID, candidate, fixtureTime)
-	completed, err := w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"}})
+	completed, err := w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed,
+			Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"},
+		},
+	)
 	require.NoError(t, err)
 	pending := beginAttempt(t, w, run.ID, candidate, fixtureTime)
 	require.NoError(t, w.Close())
@@ -232,45 +278,80 @@ func TestCompleteAttempt_RejectsInvalidEvidenceWithoutChangingHistory(t *testing
 		{"zero evidence time", func(c *state.AttemptCompletion) { c.Evidence.ObservedAt = time.Time{} }},
 		{"zero finish time", func(c *state.AttemptCompletion) { c.FinishedAt = time.Time{} }},
 		{"unknown outcome", func(c *state.AttemptCompletion) { c.Outcome = state.Unchecked }},
-		{"inconclusive with evidence", func(c *state.AttemptCompletion) { c.Outcome = state.Inconclusive; c.ReasonCode = "timeout" }},
-		{"inconclusive without reason", func(c *state.AttemptCompletion) { c.Outcome = state.Inconclusive; c.Evidence = nil }},
-		{"free text reason", func(c *state.AttemptCompletion) {
-			c.Outcome = state.Inconclusive
-			c.Evidence = nil
-			c.ReasonCode = "synthetic_secret raw output"
-		}},
-		{"reason too long", func(c *state.AttemptCompletion) {
-			c.Outcome = state.Inconclusive
-			c.Evidence = nil
-			c.ReasonCode = strings.Repeat("a", 65)
-		}},
-		{"invalid without reason", func(c *state.AttemptCompletion) { c.Outcome = state.Invalid; c.Evidence = &rejection }},
-		{"invalid with account evidence", func(c *state.AttemptCompletion) { c.Outcome = state.Invalid; c.ReasonCode = "license_rejected" }},
-		{"rejection without code", func(c *state.AttemptCompletion) {
-			c.Outcome = state.Invalid
-			c.ReasonCode = "license_rejected"
-			c.Evidence = &state.Evidence{Kind: state.Rejection, ObservedAt: fixtureTime}
-		}},
-		{"rejection with free text", func(c *state.AttemptCompletion) {
-			c.Outcome = state.Invalid
-			c.ReasonCode = "license_rejected"
-			c.Evidence = &state.Evidence{Kind: state.Rejection, ObservedAt: fixtureTime, RejectionCode: "synthetic_secret raw output"}
-		}},
+		{
+			"inconclusive with evidence",
+			func(c *state.AttemptCompletion) { c.Outcome = state.Inconclusive; c.ReasonCode = "timeout" },
+		},
+		{
+			"inconclusive without reason",
+			func(c *state.AttemptCompletion) { c.Outcome = state.Inconclusive; c.Evidence = nil },
+		},
+		{
+			"free text reason", func(c *state.AttemptCompletion) {
+				c.Outcome = state.Inconclusive
+				c.Evidence = nil
+				c.ReasonCode = "synthetic_secret raw output"
+			},
+		},
+		{
+			"reason too long", func(c *state.AttemptCompletion) {
+				c.Outcome = state.Inconclusive
+				c.Evidence = nil
+				c.ReasonCode = strings.Repeat("a", 65)
+			},
+		},
+		{
+			"invalid without reason",
+			func(c *state.AttemptCompletion) { c.Outcome = state.Invalid; c.Evidence = &rejection },
+		},
+		{
+			"invalid with account evidence",
+			func(c *state.AttemptCompletion) { c.Outcome = state.Invalid; c.ReasonCode = "license_rejected" },
+		},
+		{
+			"rejection without code", func(c *state.AttemptCompletion) {
+				c.Outcome = state.Invalid
+				c.ReasonCode = "license_rejected"
+				c.Evidence = &state.Evidence{Kind: state.Rejection, ObservedAt: fixtureTime}
+			},
+		},
+		{
+			"rejection with free text", func(c *state.AttemptCompletion) {
+				c.Outcome = state.Invalid
+				c.ReasonCode = "license_rejected"
+				c.Evidence = &state.Evidence{
+					Kind: state.Rejection, ObservedAt: fixtureTime, RejectionCode: "synthetic_secret raw output",
+				}
+			},
+		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			evidence := confirmation
-			input := state.AttemptCompletion{AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed, Evidence: &evidence}
-			tt.change(&input)
-			_, err := w.CompleteAttempt(t.Context(), input)
-			require.ErrorIs(t, err, store.ErrInvalidInput)
-			require.NotContains(t, err.Error(), "synthetic_secret")
-			history, err := w.ListAttempts(t.Context(), state.AttemptFilter{CandidateID: candidate}, state.PageRequest{})
-			require.NoError(t, err)
-			require.Equal(t, []state.Attempt{a}, history.Items)
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				evidence := confirmation
+				input := state.AttemptCompletion{
+					AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed, Evidence: &evidence,
+				}
+				tt.change(&input)
+				_, err := w.CompleteAttempt(t.Context(), input)
+				require.ErrorIs(t, err, store.ErrInvalidInput)
+				require.NotContains(t, err.Error(), "synthetic_secret")
+				history, err := w.ListAttempts(
+					t.Context(),
+					state.AttemptFilter{CandidateID: candidate},
+					state.PageRequest{},
+				)
+				require.NoError(t, err)
+				require.Equal(t, []state.Attempt{a}, history.Items)
+			},
+		)
 	}
 	// The maximum valid reason length remains usable after all rejected writes.
-	result, err := w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive, ReasonCode: strings.Repeat("a", 64)})
+	result, err := w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive, ReasonCode: strings.Repeat("a", 64),
+		},
+	)
 	require.NoError(t, err)
 	require.Equal(t, state.Inconclusive, result.Outcome)
 	require.Nil(t, result.Evidence)
@@ -283,7 +364,10 @@ func TestBeginAttempt_SeparatesPendingWorkAndConflictingRetryInputs(t *testing.T
 	keys := discover(t, w, crawl.ID, "first", "second")
 	run := startRun(t, w, state.Validation)
 	other := startRun(t, w, state.Validation)
-	input := state.AttemptInput{RequestID: "stable_attempt", RunID: run.ID, CandidateID: keys.Discoveries[0].CandidateID, BackendID: "fixture", BackendVersion: "v1", StartedAt: fixtureTime.Add(123 * time.Nanosecond)}
+	input := state.AttemptInput{
+		RequestID: "stable_attempt", RunID: run.ID, CandidateID: keys.Discoveries[0].CandidateID, BackendID: "fixture",
+		BackendVersion: "v1", StartedAt: fixtureTime.Add(123 * time.Nanosecond),
+	}
 	a, err := w.BeginAttempt(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, fixtureTime, a.StartedAt)
@@ -297,12 +381,14 @@ func TestBeginAttempt_SeparatesPendingWorkAndConflictingRetryInputs(t *testing.T
 		{"version", func(in *state.AttemptInput) { in.BackendVersion = "v2" }},
 		{"start", func(in *state.AttemptInput) { in.StartedAt = fixtureTime.Add(time.Microsecond) }},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			changed := input
-			tt.change(&changed)
-			_, err := w.BeginAttempt(t.Context(), changed)
-			require.ErrorIs(t, err, store.ErrConflict)
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				changed := input
+				tt.change(&changed)
+				_, err := w.BeginAttempt(t.Context(), changed)
+				require.ErrorIs(t, err, store.ErrConflict)
+			},
+		)
 	}
 	input.StartedAt = fixtureTime.In(time.FixedZone("fixture", 7*60*60)).Add(999 * time.Nanosecond)
 	replay, err := w.BeginAttempt(t.Context(), input)
@@ -326,38 +412,42 @@ func TestBeginAttempt_SeparatesPendingWorkAndConflictingRetryInputs(t *testing.T
 // covers: AC-3, AC-12. Terminal execution results are immutable and repeatable.
 func TestFinishRun_RetainsTerminalResultsAndNormalizedRetryIdentity(t *testing.T) {
 	for _, status := range []state.RunStatus{state.Completed, state.Failed, state.Cancelled} {
-		t.Run(string(status), func(t *testing.T) {
-			w, _ := openWriter(t)
-			input := state.RunInput{RequestID: "stable_run", Kind: state.Crawl, StartedAt: fixtureTime.Add(123 * time.Nanosecond)}
-			run, err := w.StartRun(t.Context(), input)
-			require.NoError(t, err)
-			finish := state.RunCompletion{RunID: run.ID, Status: status, FinishedAt: fixtureTime.Add(-time.Minute)}
-			if status != state.Completed {
-				finish.ReasonCode = "fixture_stopped"
-			}
-			terminal, err := w.FinishRun(t.Context(), finish)
-			require.NoError(t, err)
-			require.True(t, terminal.ClockAnomaly)
-			require.Equal(t, &finish.FinishedAt, terminal.FinishedAt)
-			require.Nil(t, terminal.RecoveredAt)
-			finish.FinishedAt = finish.FinishedAt.In(time.FixedZone("fixture", 3600)).Add(999 * time.Nanosecond)
-			again, err := w.FinishRun(t.Context(), finish)
-			require.NoError(t, err)
-			require.Equal(t, terminal, again)
-			input.StartedAt = fixtureTime
-			again, err = w.StartRun(t.Context(), input)
-			require.NoError(t, err)
-			require.Equal(t, terminal, again)
-			input.StartedAt = fixtureTime.Add(time.Microsecond)
-			_, err = w.StartRun(t.Context(), input)
-			require.ErrorIs(t, err, store.ErrConflict)
-			finish.FinishedAt = fixtureTime
-			_, err = w.FinishRun(t.Context(), finish)
-			require.ErrorIs(t, err, store.ErrConflict)
-			page, err := w.ListRuns(t.Context(), state.Crawl, state.PageRequest{})
-			require.NoError(t, err)
-			require.Equal(t, []state.Run{terminal}, page.Items)
-		})
+		t.Run(
+			string(status), func(t *testing.T) {
+				w, _ := openWriter(t)
+				input := state.RunInput{
+					RequestID: "stable_run", Kind: state.Crawl, StartedAt: fixtureTime.Add(123 * time.Nanosecond),
+				}
+				run, err := w.StartRun(t.Context(), input)
+				require.NoError(t, err)
+				finish := state.RunCompletion{RunID: run.ID, Status: status, FinishedAt: fixtureTime.Add(-time.Minute)}
+				if status != state.Completed {
+					finish.ReasonCode = "fixture_stopped"
+				}
+				terminal, err := w.FinishRun(t.Context(), finish)
+				require.NoError(t, err)
+				require.True(t, terminal.ClockAnomaly)
+				require.Equal(t, &finish.FinishedAt, terminal.FinishedAt)
+				require.Nil(t, terminal.RecoveredAt)
+				finish.FinishedAt = finish.FinishedAt.In(time.FixedZone("fixture", 3600)).Add(999 * time.Nanosecond)
+				again, err := w.FinishRun(t.Context(), finish)
+				require.NoError(t, err)
+				require.Equal(t, terminal, again)
+				input.StartedAt = fixtureTime
+				again, err = w.StartRun(t.Context(), input)
+				require.NoError(t, err)
+				require.Equal(t, terminal, again)
+				input.StartedAt = fixtureTime.Add(time.Microsecond)
+				_, err = w.StartRun(t.Context(), input)
+				require.ErrorIs(t, err, store.ErrConflict)
+				finish.FinishedAt = fixtureTime
+				_, err = w.FinishRun(t.Context(), finish)
+				require.ErrorIs(t, err, store.ErrConflict)
+				page, err := w.ListRuns(t.Context(), state.Crawl, state.PageRequest{})
+				require.NoError(t, err)
+				require.Equal(t, []state.Run{terminal}, page.Items)
+			},
+		)
 	}
 }
 
@@ -389,7 +479,10 @@ func TestRecordMessage_PreservesKnownMetadataAndTerminalReplay(t *testing.T) {
 	input.ObservedAt = fixtureTime.Add(time.Hour)
 	_, err = w.RecordMessage(t.Context(), input)
 	require.NoError(t, err)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime},
+	)
 	require.NoError(t, err)
 	replay, err = w.RecordMessage(t.Context(), input)
 	require.NoError(t, err)

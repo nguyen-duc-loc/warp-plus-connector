@@ -38,7 +38,10 @@ func migrate(ctx context.Context, db *sql.DB, migrations []string) error {
 	}
 	if version == 0 {
 		var count int
-		if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE substr(name,1,7) != 'sqlite_'").Scan(&count); err != nil {
+		if err = tx.QueryRowContext(
+			ctx,
+			"SELECT count(*) FROM sqlite_schema WHERE substr(name,1,7) != 'sqlite_'",
+		).Scan(&count); err != nil {
 			return err
 		}
 		if count != 0 {

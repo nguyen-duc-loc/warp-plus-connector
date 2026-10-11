@@ -100,7 +100,8 @@ func encodeEvidence(outcome state.Outcome, reason string, e *state.Evidence) (an
 			return nil, ErrInvalidInput
 		}
 	case state.Invalid:
-		if !reasonPattern.MatchString(reason) || e.Kind != state.Rejection || !reasonPattern.MatchString(e.RejectionCode) || e.AccountType != "" {
+		if !reasonPattern.MatchString(reason) || e.Kind != state.Rejection ||
+			!reasonPattern.MatchString(e.RejectionCode) || e.AccountType != "" {
 			return nil, ErrInvalidInput
 		}
 	default:
@@ -121,5 +122,8 @@ func decodeEvidence(s string) (*state.Evidence, error) {
 	if e.Version != 1 {
 		return nil, ErrStateAccess
 	}
-	return &state.Evidence{Kind: e.Kind, ObservedAt: time.UnixMicro(e.ObservedAt).UTC(), AccountType: e.AccountType, RejectionCode: e.RejectionCode}, nil
+	return &state.Evidence{
+		Kind: e.Kind, ObservedAt: time.UnixMicro(e.ObservedAt).UTC(), AccountType: e.AccountType,
+		RejectionCode: e.RejectionCode,
+	}, nil
 }

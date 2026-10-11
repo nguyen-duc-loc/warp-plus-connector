@@ -35,7 +35,12 @@ func startRun(t *testing.T, w *store.Writer, kind state.RunKind) state.Run {
 
 func discover(t *testing.T, w *store.Writer, run int64, keys ...string) state.MessageResult {
 	t.Helper()
-	result, err := w.RecordMessage(t.Context(), state.MessageInput{RunID: run, SourceID: "fixture_source", MessageID: "fixture_message", ObservedAt: fixtureTime, Keys: keys})
+	result, err := w.RecordMessage(
+		t.Context(),
+		state.MessageInput{
+			RunID: run, SourceID: "fixture_source", MessageID: "fixture_message", ObservedAt: fixtureTime, Keys: keys,
+		},
+	)
 	require.NoError(t, err)
 	return result
 }
@@ -93,7 +98,10 @@ func TestPrivateStateAndWriterOwnership(t *testing.T) {
 	require.NoError(t, w.Close())
 	_, err = w.ListRuns(t.Context(), "", state.PageRequest{})
 	require.ErrorIs(t, err, store.ErrClosed)
-	_, err = w.StartRun(t.Context(), state.RunInput{RequestID: "after_close", Kind: state.Crawl, StartedAt: fixtureTime})
+	_, err = w.StartRun(
+		t.Context(),
+		state.RunInput{RequestID: "after_close", Kind: state.Crawl, StartedAt: fixtureTime},
+	)
 	require.ErrorIs(t, err, store.ErrClosed)
 	stillReadable, err := r.ListCandidates(t.Context(), state.PageRequest{}, evaluation())
 	require.NoError(t, err)
@@ -122,7 +130,13 @@ func TestBoundedCandidateTraversal(t *testing.T) {
 	validation := startRun(t, w, state.Validation)
 	changedID := preview.Items[0].ID
 	attempt := beginAttempt(t, w, validation.ID, changedID, fixtureTime)
-	_, err = w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: attempt.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"}})
+	_, err = w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: attempt.ID, FinishedAt: fixtureTime, Outcome: state.Confirmed,
+			Evidence: &state.Evidence{Kind: state.AccountType, ObservedAt: fixtureTime, AccountType: "Unlimited"},
+		},
+	)
 	require.NoError(t, err)
 	seen := map[int64]bool{}
 	page := first
@@ -150,9 +164,16 @@ func TestBoundedCandidateTraversal(t *testing.T) {
 	invalid.Collection = "runs"
 	_, err = w.ListCandidates(t.Context(), state.PageRequest{Cursor: &invalid}, evaluation())
 	require.ErrorIs(t, err, store.ErrInvalidCursor)
-	_, err = w.ListCandidates(t.Context(), state.PageRequest{Cursor: first.Next}, state.Evaluation{AsOf: fixtureTime.Add(time.Second), MaxAge: 6 * time.Hour})
+	_, err = w.ListCandidates(
+		t.Context(),
+		state.PageRequest{Cursor: first.Next},
+		state.Evaluation{AsOf: fixtureTime.Add(time.Second), MaxAge: 6 * time.Hour},
+	)
 	require.ErrorIs(t, err, store.ErrInvalidCursor)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime},
+	)
 	require.NoError(t, err)
 	observations := 0
 	var cursor *state.Cursor

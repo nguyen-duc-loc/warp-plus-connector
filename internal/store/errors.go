@@ -35,10 +35,12 @@ func safeError(ctx context.Context, op string, err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%s: %w", op, ErrNotFound)
 	}
-	for _, known := range []error{ErrBusy, ErrStateAccess, ErrSchemaTooNew,
+	for _, known := range []error{
+		ErrBusy, ErrStateAccess, ErrSchemaTooNew,
 		ErrMigrationRequired, ErrNotInitialized, ErrInvalidInput, ErrConflict,
 		ErrRunClosed, ErrRunActive, ErrAttemptActive, ErrNotFound, ErrInvalidCursor, ErrClosed,
-		context.Canceled, context.DeadlineExceeded} {
+		context.Canceled, context.DeadlineExceeded,
+	} {
 		if errors.Is(err, known) {
 			return fmt.Errorf("%s: %w", op, known)
 		}

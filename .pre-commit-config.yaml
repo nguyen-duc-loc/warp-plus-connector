@@ -3,7 +3,7 @@ repos:
   - repo: local
     hooks:
       - id: gofmt
-        name: Go formatting
+        name: Go formatting and EditorConfig
         entry: sh scripts/check-format.sh
         language: system
         pass_filenames: false

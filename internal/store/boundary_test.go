@@ -22,37 +22,39 @@ func TestPermissionAndSymlinkRefusal(t *testing.T) {
 			if symlink {
 				label += "_symlink"
 			}
-			t.Run(label, func(t *testing.T) {
-				w, dir := openWriter(t)
-				require.NoError(t, w.Close())
-				path := filepath.Join(dir, name)
-				if symlink {
-					target := filepath.Join(t.TempDir(), "target")
-					require.NoError(t, os.WriteFile(target, []byte("synthetic fixture"), 0600))
-					if err := os.Remove(path); err != nil {
-						require.True(t, os.IsNotExist(err))
+			t.Run(
+				label, func(t *testing.T) {
+					w, dir := openWriter(t)
+					require.NoError(t, w.Close())
+					path := filepath.Join(dir, name)
+					if symlink {
+						target := filepath.Join(t.TempDir(), "target")
+						require.NoError(t, os.WriteFile(target, []byte("synthetic fixture"), 0600))
+						if err := os.Remove(path); err != nil {
+							require.True(t, os.IsNotExist(err))
+						}
+						require.NoError(t, os.Symlink(target, path))
+					} else if name == "" {
+						require.NoError(t, os.Chmod(path, 0755))
+					} else {
+						f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+						require.NoError(t, err)
+						require.NoError(t, f.Close())
+						require.NoError(t, os.Chmod(path, 0644))
 					}
-					require.NoError(t, os.Symlink(target, path))
-				} else if name == "" {
-					require.NoError(t, os.Chmod(path, 0755))
-				} else {
-					f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+					before, err := os.Lstat(path)
 					require.NoError(t, err)
-					require.NoError(t, f.Close())
-					require.NoError(t, os.Chmod(path, 0644))
-				}
-				before, err := os.Lstat(path)
-				require.NoError(t, err)
-				reader, err := store.OpenReader(t.Context(), dir)
-				require.ErrorIs(t, err, store.ErrStateAccess)
-				require.Nil(t, reader)
-				writer, err := store.OpenWriter(t.Context(), dir, time.Now)
-				require.ErrorIs(t, err, store.ErrStateAccess)
-				require.Nil(t, writer)
-				after, err := os.Lstat(path)
-				require.NoError(t, err)
-				require.Equal(t, before.Mode(), after.Mode())
-			})
+					reader, err := store.OpenReader(t.Context(), dir)
+					require.ErrorIs(t, err, store.ErrStateAccess)
+					require.Nil(t, reader)
+					writer, err := store.OpenWriter(t.Context(), dir, time.Now)
+					require.ErrorIs(t, err, store.ErrStateAccess)
+					require.Nil(t, writer)
+					after, err := os.Lstat(path)
+					require.NoError(t, err)
+					require.Equal(t, before.Mode(), after.Mode())
+				},
+			)
 		}
 	}
 	missing := filepath.Join(t.TempDir(), "missing")
@@ -67,13 +69,29 @@ func TestPermissionAndSymlinkRefusal(t *testing.T) {
 func TestInputRejectionIsAtomicAndSanitized(t *testing.T) {
 	w, _ := openWriter(t)
 	run := startRun(t, w, state.Crawl)
-	for _, keys := range [][]string{{"synthetic_secret", " "}, {"synthetic_secret", string([]byte{0xff})}, {"synthetic_secret", "nul\x00key"}} {
-		_, err := w.RecordMessage(t.Context(), state.MessageInput{RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime, Keys: keys})
+	for _, keys := range [][]string{
+		{"synthetic_secret", " "}, {"synthetic_secret", string([]byte{0xff})}, {"synthetic_secret", "nul\x00key"},
+	} {
+		_, err := w.RecordMessage(
+			t.Context(),
+			state.MessageInput{
+				RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime, Keys: keys,
+			},
+		)
 		require.ErrorIs(t, err, store.ErrInvalidInput)
 		require.NotContains(t, err.Error(), "synthetic_secret")
 	}
-	for _, url := range []string{"relative", "https://user:secret@example.com/a", "https://example.com/a?token=secret", "https://example.com/a#secret", "https://example.com/a?", "file:///tmp/key"} {
-		_, err := w.RecordMessage(t.Context(), state.MessageInput{RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime, MessageURL: &url, Keys: []string{"synthetic_secret"}})
+	for _, url := range []string{
+		"relative", "https://user:secret@example.com/a", "https://example.com/a?token=secret",
+		"https://example.com/a#secret", "https://example.com/a?", "file:///tmp/key",
+	} {
+		_, err := w.RecordMessage(
+			t.Context(),
+			state.MessageInput{
+				RunID: run.ID, SourceID: "source", MessageID: "message", ObservedAt: fixtureTime, MessageURL: &url,
+				Keys: []string{"synthetic_secret"},
+			},
+		)
 		require.ErrorIs(t, err, store.ErrInvalidInput)
 		require.NotContains(t, err.Error(), "secret")
 	}
@@ -99,13 +117,25 @@ func TestAllHistoryCollectionsAreUncapped(t *testing.T) {
 	candidate := discover(t, w, crawl.ID, "synthetic").Discoveries[0].CandidateID
 	for i := 0; i < 105; i++ {
 		run := startRun(t, w, state.Crawl)
-		_, err := w.RecordMessage(t.Context(), state.MessageInput{RunID: run.ID, SourceID: run.RequestID, MessageID: "message", ObservedAt: fixtureTime, Keys: []string{"synthetic"}})
+		_, err := w.RecordMessage(
+			t.Context(),
+			state.MessageInput{
+				RunID: run.ID, SourceID: run.RequestID, MessageID: "message", ObservedAt: fixtureTime,
+				Keys: []string{"synthetic"},
+			},
+		)
 		require.NoError(t, err)
 	}
 	validation := startRun(t, w, state.Validation)
 	for i := 0; i < 105; i++ {
 		attempt := beginAttempt(t, w, validation.ID, candidate, fixtureTime)
-		_, err := w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: attempt.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive, ReasonCode: "fixture_unknown"})
+		_, err := w.CompleteAttempt(
+			t.Context(),
+			state.AttemptCompletion{
+				AttemptID: attempt.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive,
+				ReasonCode: "fixture_unknown",
+			},
+		)
 		require.NoError(t, err)
 	}
 	count := 0
@@ -169,12 +199,14 @@ func TestListCandidates_RejectsChangedCursorContract(t *testing.T) {
 		{"evaluation time", func(c *state.Cursor) { c.Evaluation.AsOf = fixtureTime.Add(time.Second) }},
 		{"evaluation interval", func(c *state.Cursor) { c.Evaluation.MaxAge += time.Second }},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			cursor := *first.Next
-			tt.change(&cursor)
-			_, err := w.ListCandidates(t.Context(), state.PageRequest{Size: 1, Cursor: &cursor}, evaluation())
-			require.ErrorIs(t, err, store.ErrInvalidCursor)
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				cursor := *first.Next
+				tt.change(&cursor)
+				_, err := w.ListCandidates(t.Context(), state.PageRequest{Size: 1, Cursor: &cursor}, evaluation())
+				require.ErrorIs(t, err, store.ErrInvalidCursor)
+			},
+		)
 	}
 	// Page size may change without changing the traversal's membership.
 	next, err := w.ListCandidates(t.Context(), state.PageRequest{Size: 1000, Cursor: first.Next}, evaluation())
@@ -189,46 +221,76 @@ func TestHistoryPages_RejectChangedParentsAndFilters(t *testing.T) {
 	crawl := startRun(t, w, state.Crawl)
 	otherCrawl := startRun(t, w, state.Crawl)
 	keys := discover(t, w, crawl.ID, "a", "b")
-	_, err := w.RecordMessage(t.Context(), state.MessageInput{RunID: crawl.ID, SourceID: "other_source", MessageID: "message", ObservedAt: fixtureTime, Keys: []string{"a"}})
+	_, err := w.RecordMessage(
+		t.Context(),
+		state.MessageInput{
+			RunID: crawl.ID, SourceID: "other_source", MessageID: "message", ObservedAt: fixtureTime,
+			Keys: []string{"a"},
+		},
+	)
 	require.NoError(t, err)
 	for _, run := range []state.Run{crawl, otherCrawl} {
-		_, err := w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime})
+		_, err := w.FinishRun(
+			t.Context(),
+			state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: fixtureTime},
+		)
 		require.NoError(t, err)
 	}
 	validation := startRun(t, w, state.Validation)
 	for i := 0; i < 2; i++ {
 		a := beginAttempt(t, w, validation.ID, keys.Discoveries[0].CandidateID, fixtureTime)
-		_, err := w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive, ReasonCode: "unsupported"})
+		_, err := w.CompleteAttempt(
+			t.Context(),
+			state.AttemptCompletion{
+				AttemptID: a.ID, FinishedAt: fixtureTime, Outcome: state.Inconclusive, ReasonCode: "unsupported",
+			},
+		)
 		require.NoError(t, err)
 	}
-	t.Run("runs", func(t *testing.T) {
-		page, err := w.ListRuns(t.Context(), state.Crawl, state.PageRequest{Size: 1})
-		require.NoError(t, err)
-		require.NotNil(t, page.Next)
-		_, err = w.ListRuns(t.Context(), state.Validation, state.PageRequest{Cursor: page.Next})
-		require.ErrorIs(t, err, store.ErrInvalidCursor)
-	})
-	t.Run("sightings", func(t *testing.T) {
-		page, err := w.ListSightings(t.Context(), keys.Discoveries[0].CandidateID, state.PageRequest{Size: 1})
-		require.NoError(t, err)
-		require.NotNil(t, page.Next)
-		_, err = w.ListSightings(t.Context(), keys.Discoveries[1].CandidateID, state.PageRequest{Cursor: page.Next})
-		require.ErrorIs(t, err, store.ErrInvalidCursor)
-	})
-	t.Run("observations", func(t *testing.T) {
-		page, err := w.ListObservations(t.Context(), crawl.ID, state.PageRequest{Size: 1})
-		require.NoError(t, err)
-		require.NotNil(t, page.Next)
-		_, err = w.ListObservations(t.Context(), otherCrawl.ID, state.PageRequest{Cursor: page.Next})
-		require.ErrorIs(t, err, store.ErrInvalidCursor)
-	})
-	t.Run("attempts", func(t *testing.T) {
-		page, err := w.ListAttempts(t.Context(), state.AttemptFilter{CandidateID: keys.Discoveries[0].CandidateID}, state.PageRequest{Size: 1})
-		require.NoError(t, err)
-		require.NotNil(t, page.Next)
-		_, err = w.ListAttempts(t.Context(), state.AttemptFilter{RunID: validation.ID}, state.PageRequest{Cursor: page.Next})
-		require.ErrorIs(t, err, store.ErrInvalidCursor)
-	})
+	t.Run(
+		"runs", func(t *testing.T) {
+			page, err := w.ListRuns(t.Context(), state.Crawl, state.PageRequest{Size: 1})
+			require.NoError(t, err)
+			require.NotNil(t, page.Next)
+			_, err = w.ListRuns(t.Context(), state.Validation, state.PageRequest{Cursor: page.Next})
+			require.ErrorIs(t, err, store.ErrInvalidCursor)
+		},
+	)
+	t.Run(
+		"sightings", func(t *testing.T) {
+			page, err := w.ListSightings(t.Context(), keys.Discoveries[0].CandidateID, state.PageRequest{Size: 1})
+			require.NoError(t, err)
+			require.NotNil(t, page.Next)
+			_, err = w.ListSightings(t.Context(), keys.Discoveries[1].CandidateID, state.PageRequest{Cursor: page.Next})
+			require.ErrorIs(t, err, store.ErrInvalidCursor)
+		},
+	)
+	t.Run(
+		"observations", func(t *testing.T) {
+			page, err := w.ListObservations(t.Context(), crawl.ID, state.PageRequest{Size: 1})
+			require.NoError(t, err)
+			require.NotNil(t, page.Next)
+			_, err = w.ListObservations(t.Context(), otherCrawl.ID, state.PageRequest{Cursor: page.Next})
+			require.ErrorIs(t, err, store.ErrInvalidCursor)
+		},
+	)
+	t.Run(
+		"attempts", func(t *testing.T) {
+			page, err := w.ListAttempts(
+				t.Context(),
+				state.AttemptFilter{CandidateID: keys.Discoveries[0].CandidateID},
+				state.PageRequest{Size: 1},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, page.Next)
+			_, err = w.ListAttempts(
+				t.Context(),
+				state.AttemptFilter{RunID: validation.ID},
+				state.PageRequest{Cursor: page.Next},
+			)
+			require.ErrorIs(t, err, store.ErrInvalidCursor)
+		},
+	)
 }
 
 // covers: AC-7, AC-8, AC-11. Failed opening must release ownership for a retry.

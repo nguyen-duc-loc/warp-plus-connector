@@ -10,7 +10,10 @@ import (
 )
 
 func crawlInput() state.CrawlInput {
-	return state.CrawlInput{RequestID: "page", StartedAt: fixtureTime, SourceID: "telegram:warpplus", RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1}
+	return state.CrawlInput{
+		RequestID: "page", StartedAt: fixtureTime, SourceID: "telegram:warpplus",
+		RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1,
+	}
 }
 
 // covers: spec 0003 AC-2, AC-9. Coverage is durable, immutable and replayable.
@@ -25,7 +28,9 @@ func TestCrawlCoverage_ReplaysAndSurvivesRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, report, retry)
 	minID, maxID := int64(2), int64(20)
-	page := state.CrawlPage{RunID: report.Run.ID, FetchedAt: fixtureTime, ParsedPostCount: 3, MinMessageID: &minID, MaxMessageID: &maxID}
+	page := state.CrawlPage{
+		RunID: report.Run.ID, FetchedAt: fixtureTime, ParsedPostCount: 3, MinMessageID: &minID, MaxMessageID: &maxID,
+	}
 	coverage, err := w.RecordCrawlPage(t.Context(), page)
 	require.NoError(t, err)
 	again, err := w.RecordCrawlPage(t.Context(), page)
@@ -64,16 +69,18 @@ func TestStartCrawl_RejectsInvalidCoverageAtomically(t *testing.T) {
 		{"mode", func(v *state.CrawlInput) { v.CoverageMode = "history" }},
 		{"pages", func(v *state.CrawlInput) { v.PageLimit = 2 }},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			w, _ := openWriter(t)
-			in := crawlInput()
-			tc.change(&in)
-			_, err := w.StartCrawl(t.Context(), in)
-			require.ErrorIs(t, err, store.ErrInvalidInput)
-			runs, err := w.ListRuns(t.Context(), "", state.PageRequest{})
-			require.NoError(t, err)
-			require.Empty(t, runs.Items)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				w, _ := openWriter(t)
+				in := crawlInput()
+				tc.change(&in)
+				_, err := w.StartCrawl(t.Context(), in)
+				require.ErrorIs(t, err, store.ErrInvalidInput)
+				runs, err := w.ListRuns(t.Context(), "", state.PageRequest{})
+				require.NoError(t, err)
+				require.Empty(t, runs.Items)
+			},
+		)
 	}
 }
 
@@ -91,15 +98,28 @@ func TestRecordCrawlPage_RejectsInvalidAndClosedInputs(t *testing.T) {
 		{"negative count", -1, nil, nil}, {"empty with bounds", 0, &one, &one},
 		{"missing bounds", 1, nil, nil}, {"zero bound", 1, &zero, &one}, {"reversed bounds", 1, &two, &one},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := w.RecordCrawlPage(t.Context(), state.CrawlPage{RunID: report.Run.ID, FetchedAt: fixtureTime, ParsedPostCount: tc.count, MinMessageID: tc.min, MaxMessageID: tc.max})
-			require.ErrorIs(t, err, store.ErrInvalidInput)
-			saved, err := w.GetCrawlReport(t.Context(), report.Run.ID)
-			require.NoError(t, err)
-			require.Nil(t, saved.Coverage.FetchedAt)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				_, err := w.RecordCrawlPage(
+					t.Context(),
+					state.CrawlPage{
+						RunID: report.Run.ID, FetchedAt: fixtureTime, ParsedPostCount: tc.count, MinMessageID: tc.min,
+						MaxMessageID: tc.max,
+					},
+				)
+				require.ErrorIs(t, err, store.ErrInvalidInput)
+				saved, err := w.GetCrawlReport(t.Context(), report.Run.ID)
+				require.NoError(t, err)
+				require.Nil(t, saved.Coverage.FetchedAt)
+			},
+		)
 	}
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: report.Run.ID, Status: state.Failed, FinishedAt: fixtureTime, ReasonCode: "source_http_error"})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{
+			RunID: report.Run.ID, Status: state.Failed, FinishedAt: fixtureTime, ReasonCode: "source_http_error",
+		},
+	)
 	require.NoError(t, err)
 	_, err = w.RecordCrawlPage(t.Context(), state.CrawlPage{RunID: report.Run.ID, FetchedAt: fixtureTime})
 	require.ErrorIs(t, err, store.ErrRunClosed)

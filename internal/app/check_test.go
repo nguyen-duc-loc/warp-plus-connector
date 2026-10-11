@@ -25,7 +25,10 @@ type confirmedBackend struct{}
 
 func (confirmedBackend) Identity() (string, string) { return "controlled_fixture", "1" }
 func (confirmedBackend) Check(context.Context, validator.Input) (validator.Result, error) {
-	return validator.Result{Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: time.Now().UTC()}}, nil
+	return validator.Result{
+		Outcome:  state.Confirmed,
+		Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: time.Now().UTC()},
+	}, nil
 }
 
 // AC-8: the normalized confirmation crosses application persistence unchanged.
@@ -37,12 +40,21 @@ func TestConfirmedCheckPersistsEvidence(t *testing.T) {
 	require.NoError(t, err)
 	run, err := w.StartRun(ctx, state.RunInput{RequestID: "seed", Kind: state.Crawl, StartedAt: time.Now()})
 	require.NoError(t, err)
-	_, err = w.RecordMessage(ctx, state.MessageInput{RunID: run.ID, SourceID: "controlled_fixture", MessageID: "1", ObservedAt: time.Now(), Keys: []string{"ABCDEFGH-12345678-AbCdEf01"}})
+	_, err = w.RecordMessage(
+		ctx,
+		state.MessageInput{
+			RunID: run.ID, SourceID: "controlled_fixture", MessageID: "1", ObservedAt: time.Now(),
+			Keys: []string{"ABCDEFGH-12345678-AbCdEf01"},
+		},
+	)
 	require.NoError(t, err)
 	_, err = w.FinishRun(ctx, state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: time.Now()})
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
-	a := app.App{Settings: config.Settings{StateDir: dir, RecheckInterval: time.Hour}, Validator: confirmedBackend{}, Clock: time.Now}
+	a := app.App{
+		Settings: config.Settings{StateDir: dir, RecheckInterval: time.Hour}, Validator: confirmedBackend{},
+		Clock: time.Now,
+	}
 	attempt, err := a.Check(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, state.Confirmed, attempt.Outcome)
@@ -62,32 +74,49 @@ func TestFailedCheckReturnsItsSavedAttempt(t *testing.T) {
 	for _, tc := range []struct {
 		name, reason string
 		err          error
-	}{{"runtime", "validator_runtime_error", &validator.Error{Code: "validator_runtime_error"}}, {"cancelled", "cancelled", context.Canceled}} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			require.NoError(t, os.Chmod(dir, 0700))
-			ctx := context.Background()
-			w, err := store.OpenWriter(ctx, dir, time.Now)
-			require.NoError(t, err)
-			run, err := w.StartRun(ctx, state.RunInput{RequestID: "seed", Kind: state.Crawl, StartedAt: time.Now()})
-			require.NoError(t, err)
-			_, err = w.RecordMessage(ctx, state.MessageInput{RunID: run.ID, SourceID: "fixture", MessageID: "1", ObservedAt: time.Now(), Keys: []string{"ABCDEFGH-12345678-AbCdEf01"}})
-			require.NoError(t, err)
-			_, err = w.FinishRun(ctx, state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: time.Now()})
-			require.NoError(t, err)
-			require.NoError(t, w.Close())
-			a := app.App{Settings: config.Settings{StateDir: dir, RecheckInterval: time.Hour}, Validator: failedBackend{tc.err}, Clock: time.Now}
-			attempt, err := a.Check(ctx, 1)
-			require.Error(t, err)
-			require.Equal(t, state.Inconclusive, attempt.Outcome)
-			require.Equal(t, tc.reason, *attempt.ReasonCode)
-			r, err := store.OpenReader(ctx, dir)
-			require.NoError(t, err)
-			defer func() { require.NoError(t, r.Close()) }()
-			c, err := r.GetCandidate(ctx, 1, state.Evaluation{AsOf: time.Now(), MaxAge: time.Hour})
-			require.NoError(t, err)
-			require.Equal(t, attempt, *c.LatestAttempt)
-		})
+	}{
+		{"runtime", "validator_runtime_error", &validator.Error{Code: "validator_runtime_error"}},
+		{"cancelled", "cancelled", context.Canceled},
+	} {
+		t.Run(
+			tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				require.NoError(t, os.Chmod(dir, 0700))
+				ctx := context.Background()
+				w, err := store.OpenWriter(ctx, dir, time.Now)
+				require.NoError(t, err)
+				run, err := w.StartRun(ctx, state.RunInput{RequestID: "seed", Kind: state.Crawl, StartedAt: time.Now()})
+				require.NoError(t, err)
+				_, err = w.RecordMessage(
+					ctx,
+					state.MessageInput{
+						RunID: run.ID, SourceID: "fixture", MessageID: "1", ObservedAt: time.Now(),
+						Keys: []string{"ABCDEFGH-12345678-AbCdEf01"},
+					},
+				)
+				require.NoError(t, err)
+				_, err = w.FinishRun(
+					ctx,
+					state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: time.Now()},
+				)
+				require.NoError(t, err)
+				require.NoError(t, w.Close())
+				a := app.App{
+					Settings:  config.Settings{StateDir: dir, RecheckInterval: time.Hour},
+					Validator: failedBackend{tc.err}, Clock: time.Now,
+				}
+				attempt, err := a.Check(ctx, 1)
+				require.Error(t, err)
+				require.Equal(t, state.Inconclusive, attempt.Outcome)
+				require.Equal(t, tc.reason, *attempt.ReasonCode)
+				r, err := store.OpenReader(ctx, dir)
+				require.NoError(t, err)
+				defer func() { require.NoError(t, r.Close()) }()
+				c, err := r.GetCandidate(ctx, 1, state.Evaluation{AsOf: time.Now(), MaxAge: time.Hour})
+				require.NoError(t, err)
+				require.Equal(t, attempt, *c.LatestAttempt)
+			},
+		)
 	}
 }
 
@@ -98,17 +127,43 @@ func TestUnsupportedCheckPreservesDefinitiveEvidenceAndUnknownIDCreatesNoWork(t 
 	require.NoError(t, err)
 	run, err := w.StartRun(t.Context(), state.RunInput{RequestID: "seed", Kind: state.Crawl, StartedAt: crawlTime})
 	require.NoError(t, err)
-	_, err = w.RecordMessage(t.Context(), state.MessageInput{RunID: run.ID, SourceID: "fixture", MessageID: "1", ObservedAt: crawlTime, Keys: []string{crawlKey}})
+	_, err = w.RecordMessage(
+		t.Context(),
+		state.MessageInput{
+			RunID: run.ID, SourceID: "fixture", MessageID: "1", ObservedAt: crawlTime, Keys: []string{crawlKey},
+		},
+	)
 	require.NoError(t, err)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: crawlTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: crawlTime},
+	)
 	require.NoError(t, err)
-	run, err = w.StartRun(t.Context(), state.RunInput{RequestID: "validation", Kind: state.Validation, StartedAt: crawlTime})
+	run, err = w.StartRun(
+		t.Context(),
+		state.RunInput{RequestID: "validation", Kind: state.Validation, StartedAt: crawlTime},
+	)
 	require.NoError(t, err)
-	attempt, err := w.BeginAttempt(t.Context(), state.AttemptInput{RequestID: "confirmed", RunID: run.ID, CandidateID: 1, BackendID: "fixture", BackendVersion: "1", StartedAt: crawlTime})
+	attempt, err := w.BeginAttempt(
+		t.Context(),
+		state.AttemptInput{
+			RequestID: "confirmed", RunID: run.ID, CandidateID: 1, BackendID: "fixture", BackendVersion: "1",
+			StartedAt: crawlTime,
+		},
+	)
 	require.NoError(t, err)
-	confirmed, err := w.CompleteAttempt(t.Context(), state.AttemptCompletion{AttemptID: attempt.ID, Outcome: state.Confirmed, FinishedAt: crawlTime, Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: crawlTime}})
+	confirmed, err := w.CompleteAttempt(
+		t.Context(),
+		state.AttemptCompletion{
+			AttemptID: attempt.ID, Outcome: state.Confirmed, FinishedAt: crawlTime,
+			Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: crawlTime},
+		},
+	)
 	require.NoError(t, err)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: crawlTime})
+	_, err = w.FinishRun(
+		t.Context(),
+		state.RunCompletion{RunID: run.ID, Status: state.Completed, FinishedAt: crawlTime},
+	)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	a.Clock = func() time.Time { return crawlTime.Add(2 * time.Hour) }

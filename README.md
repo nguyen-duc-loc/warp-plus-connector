@@ -110,14 +110,24 @@ Results use stdout; fixed diagnostic reasons and structured run logs use stderr.
 
 ## Development checks
 
-The local gate uses Go `1.27.2`, `golangci-lint 2.14.0`, and `pre-commit 4.6.2`, the versions tested for this project. You can make these tools available on your `PATH`, then enable the hook in each checkout:
+The local gate uses Go `1.27.2`, `editorconfig-checker 4.0.2`, `golangci-lint 2.14.0`, and `pre-commit 4.6.2`, the versions tested for this project. You can make these tools available on your `PATH`, then enable the hook in each checkout:
 
 ```sh
 pre-commit install
 pre-commit run --all-files
 ```
 
-Each commit runs formatting, `go vet`, race tests, and lint across the module, stopping at the first failure. The formatting check reports files without changing them; you can apply `gofmt -w` to the listed files. The gate also runs when a commit changes only documentation. Local hooks use your installed tools and do not download separate hook environments.
+Each commit checks formatting, then runs `go vet`, race tests, and lint across the module, stopping at the first failure. The formatting check runs `gofmt` and `editorconfig-checker` on every Go file under `cmd`, `internal`, and `scripts`, including new files. It reads the 120-character limit from `.editorconfig` and reports violations without changing files. Go indentation is checked by `gofmt`, since a plain text indentation check would also flag whitespace inside raw string data. The gate also runs when a commit changes only documentation. Local hooks use your installed tools and do not download separate hook environments.
+
+To apply the GoLand rules in `.editorconfig`, then run `gofmt` and the formatting check:
+
+```sh
+rtk proxy sh scripts/format.sh
+```
+
+This command uses GoLand's synchronous command line formatter (tested with GoLand `2026.2.0.1`). It finds the standard macOS app locations or `goland.sh` on `PATH`. For another installation, set `GOLAND_BIN` to the native GoLand executable or Linux `bin/goland.sh`. Close other GoLand instances before using the command line formatter, or run Reformat Code from the open IDE. Long string literals and conditions that the formatter cannot wrap still fail the final check; split strings with concatenation to preserve their contents.
+
+GoLand applies the IDE-specific `ij_*` settings; the portable checker enforces the supported EditorConfig properties. See the [GoLand formatter documentation](https://www.jetbrains.com/help/go/command-line-formatter.html) and [editorconfig-checker documentation](https://github.com/editorconfig-checker/editorconfig-checker).
 
 You can run the same checks separately from the repository root:
 

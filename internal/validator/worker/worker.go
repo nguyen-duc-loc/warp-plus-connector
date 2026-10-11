@@ -118,7 +118,12 @@ func (e *Engine) Initialize(in protocol.Request) (protocol.Receipt, error) {
 	if _, err := os.Lstat(e.journal()); !errors.Is(err, os.ErrNotExist) {
 		return zero, ErrPending
 	}
-	s := protocol.Session{Receipt: protocol.Receipt{Version: protocol.Version, SessionID: in.SessionID, Result: protocol.Result{Outcome: state.Inconclusive, ReasonCode: "validation_interrupted"}}, Key: in.Key}
+	s := protocol.Session{
+		Receipt: protocol.Receipt{
+			Version: protocol.Version, SessionID: in.SessionID,
+			Result: protocol.Result{Outcome: state.Inconclusive, ReasonCode: "validation_interrupted"},
+		}, Key: in.Key,
+	}
 	if err := e.save(&s, "prepared"); err != nil {
 		return s.Receipt, err
 	}
@@ -228,7 +233,11 @@ func (e *Engine) observe(ctx context.Context, s *protocol.Session) error {
 			if r.Account.License == s.Key {
 				s.Result.ReasonCode = "not_unlimited"
 				if r.Account.Type == "unlimited" {
-					s.Result = protocol.Result{Outcome: state.Confirmed, Evidence: &state.Evidence{Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: e.Clock().UTC()}}
+					s.Result = protocol.Result{
+						Outcome: state.Confirmed, Evidence: &state.Evidence{
+							Kind: state.AccountType, AccountType: "Unlimited", ObservedAt: e.Clock().UTC(),
+						},
+					}
 				}
 				break
 			}
@@ -271,7 +280,11 @@ func (e *Engine) registration(ctx context.Context) (registration, error) {
 	if reply.Code != "" {
 		return r, ErrPending
 	}
-	if json.Unmarshal(reply.Data, &r) != nil || r.ID == "" || r.DeviceID == "" || r.Account.ID == "" || r.Account.Type == "" || r.Account.License == "" {
+	if json.Unmarshal(
+		reply.Data,
+		&r,
+	) != nil || r.ID == "" || r.DeviceID == "" || r.Account.ID == "" || r.Account.Type == "" ||
+		r.Account.License == "" {
 		return r, ErrPending
 	}
 	return r, nil
@@ -283,31 +296,33 @@ func (e *Engine) backup() error {
 		return err
 	}
 	var total int64
-	err := filepath.WalkDir(e.VendorDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return privatefs.ErrAccess
-		}
-		rel, err := filepath.Rel(e.VendorDir, path)
-		if err != nil {
-			return privatefs.ErrAccess
-		}
-		if d.IsDir() {
-			return privatefs.Directory(filepath.Join(target, rel))
-		}
-		info, err := d.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			return privatefs.ErrAccess
-		}
-		total += info.Size()
-		if total > 64*1024*1024 {
-			return privatefs.ErrAccess
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return privatefs.ErrAccess
-		}
-		return privatefs.WriteBytes(filepath.Join(target, rel), data)
-	})
+	err := filepath.WalkDir(
+		e.VendorDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return privatefs.ErrAccess
+			}
+			rel, err := filepath.Rel(e.VendorDir, path)
+			if err != nil {
+				return privatefs.ErrAccess
+			}
+			if d.IsDir() {
+				return privatefs.Directory(filepath.Join(target, rel))
+			}
+			info, err := d.Info()
+			if err != nil || !info.Mode().IsRegular() {
+				return privatefs.ErrAccess
+			}
+			total += info.Size()
+			if total > 64*1024*1024 {
+				return privatefs.ErrAccess
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return privatefs.ErrAccess
+			}
+			return privatefs.WriteBytes(filepath.Join(target, rel), data)
+		},
+	)
 	if err != nil {
 		return privatefs.ErrAccess
 	}
@@ -353,7 +368,11 @@ func (e *Engine) cleanup(ctx context.Context, s *protocol.Session) error {
 }
 
 func (e *Engine) rejectedRegistration(ctx context.Context) bool {
-	return e.Runner.Run(ctx, "registration", "creation-status").Code == "registration_rate_limited" && e.Runner.Run(ctx, "registration", "show").Code == "MissingRegistration"
+	return e.Runner.Run(ctx, "registration", "creation-status").Code == "registration_rate_limited" && e.Runner.Run(
+		ctx,
+		"registration",
+		"show",
+	).Code == "MissingRegistration"
 }
 
 // Recover reconciles the existing registration without ever creating or attaching.

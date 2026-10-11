@@ -21,7 +21,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 		return report, classified(err)
 	}
 	defer closeStore(&w.Reader, &err)
-	report, err = w.StartCrawlPlan(ctx, state.CrawlPlanInput{RequestID: rand.Text(), StartedAt: a.Clock(), Sources: plan})
+	report, err = w.StartCrawlPlan(
+		ctx,
+		state.CrawlPlanInput{RequestID: rand.Text(), StartedAt: a.Clock(), Sources: plan},
+	)
 	if err != nil {
 		return report, classified(err)
 	}
@@ -47,7 +50,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 			status = state.Cancelled
 			code = "cancelled"
 		}
-		_, finishErr := w.FinishCrawlPlan(cleanup, state.RunCompletion{RunID: id, Status: status, FinishedAt: a.Clock(), ReasonCode: code})
+		_, finishErr := w.FinishCrawlPlan(
+			cleanup,
+			state.RunCompletion{RunID: id, Status: status, FinishedAt: a.Clock(), ReasonCode: code},
+		)
 		if finishErr != nil {
 			return classified(finishErr)
 		}
@@ -62,7 +68,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 				return report, abort(err)
 			}
 			pageID := state.CrawlPageID{RunID: id, SourceID: sourceID, PageNumber: number}
-			request, writeErr := w.StartCrawlRequest(ctx, state.CrawlRequest{CrawlPageID: pageID, RequestedAt: a.Clock()})
+			request, writeErr := w.StartCrawlRequest(
+				ctx,
+				state.CrawlRequest{CrawlPageID: pageID, RequestedAt: a.Clock()},
+			)
 			if writeErr != nil {
 				return report, classified(writeErr)
 			}
@@ -81,10 +90,20 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 					return report, abort(ctx.Err())
 				}
 				code := classified(fetchErr).(*Error).Code
-				if _, writeErr = w.FinishCrawlPage(ctx, state.CrawlPageCompletion{CrawlPageID: pageID, Status: "failed", FinishedAt: a.Clock(), ReasonCode: code}); writeErr != nil {
+				if _, writeErr = w.FinishCrawlPage(
+					ctx,
+					state.CrawlPageCompletion{
+						CrawlPageID: pageID, Status: "failed", FinishedAt: a.Clock(), ReasonCode: code,
+					},
+				); writeErr != nil {
 					return report, classified(writeErr)
 				}
-				if _, writeErr = w.FinishCrawlSource(ctx, state.CrawlSourceCompletion{RunID: id, SourceID: sourceID, Status: "failed", FinishedAt: a.Clock(), StopReason: code}); writeErr != nil {
+				if _, writeErr = w.FinishCrawlSource(
+					ctx,
+					state.CrawlSourceCompletion{
+						RunID: id, SourceID: sourceID, Status: "failed", FinishedAt: a.Clock(), StopReason: code,
+					},
+				); writeErr != nil {
 					return report, classified(writeErr)
 				}
 				a.logPage(id, sourceID, number, code)
@@ -97,7 +116,11 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 			if err := ctx.Err(); err != nil {
 				return report, abort(err)
 			}
-			facts := state.CrawlParse{CrawlPageID: pageID, FetchedAt: page.Facts.FetchedAt, ParsedPostCount: page.Facts.ParsedPostCount, MinMessageID: page.Facts.MinMessageID, MaxMessageID: page.Facts.MaxMessageID, NextBeforeID: page.NextBeforeID}
+			facts := state.CrawlParse{
+				CrawlPageID: pageID, FetchedAt: page.Facts.FetchedAt, ParsedPostCount: page.Facts.ParsedPostCount,
+				MinMessageID: page.Facts.MinMessageID, MaxMessageID: page.Facts.MaxMessageID,
+				NextBeforeID: page.NextBeforeID,
+			}
 			if _, writeErr = w.RecordCrawlParse(ctx, facts); writeErr != nil {
 				return report, classified(writeErr)
 			}
@@ -116,7 +139,10 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 			if err := ctx.Err(); err != nil {
 				return report, abort(err)
 			}
-			if _, writeErr = w.FinishCrawlPage(ctx, state.CrawlPageCompletion{CrawlPageID: pageID, Status: "completed", FinishedAt: a.Clock()}); writeErr != nil {
+			if _, writeErr = w.FinishCrawlPage(
+				ctx,
+				state.CrawlPageCompletion{CrawlPageID: pageID, Status: "completed", FinishedAt: a.Clock()},
+			); writeErr != nil {
 				return report, classified(writeErr)
 			}
 			a.logPage(id, sourceID, number, "completed")
@@ -127,7 +153,12 @@ func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
 				reason = "page_limit"
 			}
 			if reason != "" {
-				if _, writeErr = w.FinishCrawlSource(ctx, state.CrawlSourceCompletion{RunID: id, SourceID: sourceID, Status: "completed", FinishedAt: a.Clock(), StopReason: reason}); writeErr != nil {
+				if _, writeErr = w.FinishCrawlSource(
+					ctx,
+					state.CrawlSourceCompletion{
+						RunID: id, SourceID: sourceID, Status: "completed", FinishedAt: a.Clock(), StopReason: reason,
+					},
+				); writeErr != nil {
 					return report, classified(writeErr)
 				}
 				break

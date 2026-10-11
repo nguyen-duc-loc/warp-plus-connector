@@ -65,10 +65,12 @@ func New(version string, clock func() time.Time, transport http.RoundTripper) *A
 		dedicated.DisableKeepAlives = true
 		transport = dedicated
 	}
-	return &Adapter{clock: clock, version: version, client: &http.Client{
-		Transport: transport, Timeout: 20 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}}
+	return &Adapter{
+		clock: clock, version: version, client: &http.Client{
+			Transport: transport, Timeout: 20 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+	}
 }
 
 // Fetch retrieves the default channel for callers of the original adapter.
@@ -173,13 +175,15 @@ func parsePage(body []byte, at time.Time, channel string, before *int64) (Page, 
 	// Only direct feed entries are source posts. Nested quoted widgets cannot
 	// acquire source provenance merely through a data-post attribute.
 	posts := feed.ChildrenFiltered(".tgme_widget_message")
-	feed.ChildrenFiltered(".tgme_widget_message_wrap").Each(func(_ int, wrap *goquery.Selection) {
-		entry := wrap.ChildrenFiltered(".tgme_widget_message")
-		if entry.Length() != 1 {
-			parseErr = bad
-		}
-		posts = posts.AddSelection(entry)
-	})
+	feed.ChildrenFiltered(".tgme_widget_message_wrap").Each(
+		func(_ int, wrap *goquery.Selection) {
+			entry := wrap.ChildrenFiltered(".tgme_widget_message")
+			if entry.Length() != 1 {
+				parseErr = bad
+			}
+			posts = posts.AddSelection(entry)
+		},
+	)
 	if parseErr != nil {
 		return Page{}, parseErr
 	}
@@ -188,54 +192,64 @@ func parsePage(body []byte, at time.Time, channel string, before *int64) (Page, 
 	if posts.Length() == 0 && (emptyContent.Children().Length() != 0 || strings.TrimSpace(emptyContent.Text()) != "") {
 		return Page{}, bad
 	}
-	posts.Each(func(_ int, s *goquery.Selection) {
-		if parseErr != nil {
-			return
-		}
-		match := postPattern.FindStringSubmatch(s.AttrOr("data-post", ""))
-		if len(match) != 3 || !strings.EqualFold(match[1], channel) {
-			parseErr = bad
-			return
-		}
-		id, err := strconv.ParseInt(match[2], 10, 64)
-		if err != nil || id <= 0 || seen[id] {
-			parseErr = bad
-			return
-		}
-		seen[id] = true
-		messageID := strconv.FormatInt(id, 10)
-		url := "https://t.me/" + channel + "/" + messageID
-		message := state.MessageInput{SourceID: "telegram:" + channel, MessageID: messageID, MessageURL: &url, ObservedAt: at}
-		text := strings.Builder{}
-		s.Find(".tgme_widget_message_text").Each(func(_ int, part *goquery.Selection) {
-			if part.Closest(".tgme_widget_message").Get(0) != s.Get(0) || hiddenAncestors(part.Get(0)) {
+	posts.Each(
+		func(_ int, s *goquery.Selection) {
+			if parseErr != nil {
 				return
 			}
-			text.WriteByte(' ')
-			visibleText(&text, part.Get(0))
-			text.WriteByte(' ')
-		})
-		message.Keys = extract(text.String())
-		s.Find(".tgme_widget_message_date time[datetime]").EachWithBreak(func(_ int, date *goquery.Selection) bool {
-			if date.Closest(".tgme_widget_message").Get(0) != s.Get(0) {
-				return true
+			match := postPattern.FindStringSubmatch(s.AttrOr("data-post", ""))
+			if len(match) != 3 || !strings.EqualFold(match[1], channel) {
+				parseErr = bad
+				return
 			}
-			if t, err := time.Parse(time.RFC3339Nano, date.AttrOr("datetime", "")); err == nil {
-				t = t.UTC().Truncate(time.Microsecond)
-				message.PublishedAt = &t
+			id, err := strconv.ParseInt(match[2], 10, 64)
+			if err != nil || id <= 0 || seen[id] {
+				parseErr = bad
+				return
 			}
-			return false
-		})
-		out.Messages = append(out.Messages, message)
-	})
+			seen[id] = true
+			messageID := strconv.FormatInt(id, 10)
+			url := "https://t.me/" + channel + "/" + messageID
+			message := state.MessageInput{
+				SourceID: "telegram:" + channel, MessageID: messageID, MessageURL: &url, ObservedAt: at,
+			}
+			text := strings.Builder{}
+			s.Find(".tgme_widget_message_text").Each(
+				func(_ int, part *goquery.Selection) {
+					if part.Closest(".tgme_widget_message").Get(0) != s.Get(0) || hiddenAncestors(part.Get(0)) {
+						return
+					}
+					text.WriteByte(' ')
+					visibleText(&text, part.Get(0))
+					text.WriteByte(' ')
+				},
+			)
+			message.Keys = extract(text.String())
+			s.Find(".tgme_widget_message_date time[datetime]").EachWithBreak(
+				func(_ int, date *goquery.Selection) bool {
+					if date.Closest(".tgme_widget_message").Get(0) != s.Get(0) {
+						return true
+					}
+					if t, err := time.Parse(time.RFC3339Nano, date.AttrOr("datetime", "")); err == nil {
+						t = t.UTC().Truncate(time.Microsecond)
+						message.PublishedAt = &t
+					}
+					return false
+				},
+			)
+			out.Messages = append(out.Messages, message)
+		},
+	)
 	if parseErr != nil {
 		return Page{}, parseErr
 	}
-	sort.Slice(out.Messages, func(i, j int) bool {
-		a, _ := strconv.ParseInt(out.Messages[i].MessageID, 10, 64)
-		b, _ := strconv.ParseInt(out.Messages[j].MessageID, 10, 64)
-		return a < b
-	})
+	sort.Slice(
+		out.Messages, func(i, j int) bool {
+			a, _ := strconv.ParseInt(out.Messages[i].MessageID, 10, 64)
+			b, _ := strconv.ParseInt(out.Messages[j].MessageID, 10, 64)
+			return a < b
+		},
+	)
 	out.Facts.ParsedPostCount = len(out.Messages)
 	if len(out.Messages) > 0 {
 		minID, _ := strconv.ParseInt(out.Messages[0].MessageID, 10, 64)
@@ -268,60 +282,71 @@ func pagination(feed *goquery.Selection, channel string, before, minID *int64) (
 	bad := &Error{Reason: "source_pagination_error"}
 	var next *int64
 	var parseErr error
-	feed.ChildrenFiltered(".js-messages_more_wrap").Each(func(_ int, wrap *goquery.Selection) {
-		controls := wrap.ChildrenFiltered("a.tme_messages_more.js-messages_more")
-		if controls.Length() == 0 || wrap.Children().Length() != controls.Length() {
-			parseErr = bad
-			return
-		}
-		controls.Each(func(_ int, control *goquery.Selection) {
-			// Live older pages also include a dedicated newer control. It
-			// contributes no older cursor and is never followed.
-			_, newer := control.Attr("data-after")
-			_, older := control.Attr("data-before")
-			if newer && !older {
-				return
-			}
-			if newer && older {
+	feed.ChildrenFiltered(".js-messages_more_wrap").Each(
+		func(_ int, wrap *goquery.Selection) {
+			controls := wrap.ChildrenFiltered("a.tme_messages_more.js-messages_more")
+			if controls.Length() == 0 || wrap.Children().Length() != controls.Length() {
 				parseErr = bad
 				return
 			}
-			base, _ := url.Parse("https://t.me/s/" + channel)
-			raw, ok := control.Attr("href")
-			if !ok || raw == "" {
-				parseErr = bad
-				return
-			}
-			link, err := url.Parse(raw)
-			if err != nil {
-				parseErr = bad
-				return
-			}
-			link = base.ResolveReference(link)
-			query, err := url.ParseQuery(link.RawQuery)
-			if err != nil || link.Scheme != "https" || link.Host != "t.me" || link.User != nil || link.Fragment != "" || strings.Contains(raw, "#") || !strings.EqualFold(link.EscapedPath(), "/s/"+channel) || len(query) != 1 || len(query["before"]) != 1 {
-				parseErr = bad
-				return
-			}
-			n, ok := decimalID(query.Get("before"))
-			if !ok || minID == nil || n > *minID || before != nil && n >= *before {
-				parseErr = bad
-				return
-			}
-			if attr, exists := control.Attr("data-before"); exists {
-				m, ok := decimalID(attr)
-				if !ok || m != n {
-					parseErr = bad
-					return
-				}
-			}
-			if next != nil && *next != n {
-				parseErr = bad
-				return
-			}
-			next = &n
-		})
-	})
+			controls.Each(
+				func(_ int, control *goquery.Selection) {
+					// Live older pages also include a dedicated newer control. It
+					// contributes no older cursor and is never followed.
+					_, newer := control.Attr("data-after")
+					_, older := control.Attr("data-before")
+					if newer && !older {
+						return
+					}
+					if newer && older {
+						parseErr = bad
+						return
+					}
+					base, _ := url.Parse("https://t.me/s/" + channel)
+					raw, ok := control.Attr("href")
+					if !ok || raw == "" {
+						parseErr = bad
+						return
+					}
+					link, err := url.Parse(raw)
+					if err != nil {
+						parseErr = bad
+						return
+					}
+					link = base.ResolveReference(link)
+					query, err := url.ParseQuery(link.RawQuery)
+					if err != nil || link.Scheme != "https" || link.Host != "t.me" ||
+						link.User != nil || link.Fragment != "" || strings.Contains(
+						raw,
+						"#",
+					) || !strings.EqualFold(
+						link.EscapedPath(),
+						"/s/"+channel,
+					) || len(query) != 1 || len(query["before"]) != 1 {
+						parseErr = bad
+						return
+					}
+					n, ok := decimalID(query.Get("before"))
+					if !ok || minID == nil || n > *minID || before != nil && n >= *before {
+						parseErr = bad
+						return
+					}
+					if attr, exists := control.Attr("data-before"); exists {
+						m, ok := decimalID(attr)
+						if !ok || m != n {
+							parseErr = bad
+							return
+						}
+					}
+					if next != nil && *next != n {
+						parseErr = bad
+						return
+					}
+					next = &n
+				},
+			)
+		},
+	)
 	return next, parseErr
 }
 
@@ -341,7 +366,8 @@ func hidden(n *html.Node) bool {
 			for _, declaration := range strings.Split(strings.ToLower(a.Val), ";") {
 				name, value, ok := strings.Cut(declaration, ":")
 				value = strings.TrimSpace(strings.Split(value, "!")[0])
-				if ok && ((strings.TrimSpace(name) == "display" && value == "none") || (strings.TrimSpace(name) == "visibility" && (value == "hidden" || value == "collapse"))) {
+				if ok && ((strings.TrimSpace(name) == "display" && value == "none") ||
+					(strings.TrimSpace(name) == "visibility" && (value == "hidden" || value == "collapse"))) {
 					return true
 				}
 			}
@@ -379,7 +405,9 @@ func visibleText(b *strings.Builder, n *html.Node) {
 	block := false
 	if n.Type == html.ElementNode {
 		switch n.Data {
-		case "address", "article", "aside", "blockquote", "br", "div", "dl", "dt", "dd", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "tr", "ul":
+		case "address", "article", "aside", "blockquote", "br", "div", "dl", "dt", "dd", "fieldset",
+			"figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+			"hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "tr", "ul":
 			block = true
 		}
 	}

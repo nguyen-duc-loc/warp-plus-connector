@@ -17,9 +17,28 @@ func TestSourcesConfigurationAndSelection(t *testing.T) {
 	dir := isolatedConfig(t)
 	defaults, err := config.Resolve(config.Overrides{})
 	require.NoError(t, err)
-	require.Equal(t, []config.Source{{Channel: "warpplus", Enabled: true, PageLimit: 1}, {Channel: "warppluscn", Enabled: true, PageLimit: 1}, {Channel: "warpplushome", Enabled: true, PageLimit: 1}, {Channel: "warp_veyke", Enabled: true, PageLimit: 1}}, defaults.Sources)
+	require.Equal(
+		t,
+		[]config.Source{
+			{Channel: "warpplus", Enabled: true, PageLimit: 1}, {Channel: "warppluscn", Enabled: true, PageLimit: 1},
+			{Channel: "warpplushome", Enabled: true, PageLimit: 1}, {
+				Channel: "warp_veyke",
+				Enabled: true, PageLimit: 1,
+			},
+		},
+		defaults.Sources,
+	)
 	path := filepath.Join(dir, "settings.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{"crawl_page_limit":3,"sources":[{"channel":"First"},{"channel":"Second","page_limit":5},{"channel":"Off","enabled":false}]}`), 0600))
+	require.NoError(
+		t,
+		os.WriteFile(
+			path,
+			[]byte(`{"crawl_page_limit":3,"sources":[{"channel":"First"},`+
+				`{"channel":"Second","page_limit":5},{"channel":"Off",`+
+				`"enabled":false}]}`),
+			0600,
+		),
+	)
 	settings, err := config.Resolve(config.Overrides{ConfigPath: &path})
 	require.NoError(t, err)
 	plan, err := settings.SelectSources([]string{"SECOND", "first"}, nil)
@@ -35,9 +54,11 @@ func TestSourcesConfigurationAndSelection(t *testing.T) {
 		require.ErrorIs(t, err, config.ErrSelectionInvalid)
 	}
 	for _, body := range []string{
-		`{"sources":null}`, `{"sources":[null]}`, `{"sources":[{"channel":"x","enabled":null}]}`, `{"sources":[{"channel":"x","page_limit":null}]}`,
+		`{"sources":null}`, `{"sources":[null]}`, `{"sources":[{"channel":"x","enabled":null}]}`,
+		`{"sources":[{"channel":"x","page_limit":null}]}`,
 		`{"sources":[{"channel":"x","channel":"y"}]}`, `{"sources":[{"channel":"X"},{"channel":"x","enabled":false}]}`,
-		`{"sources":[{"channel":"@x"}]}`, `{"sources":[{"channel":"x","unknown":true}]}`, `{"crawl_page_limit":null}`, `{"crawl_page_limit":1.5}`, `{"crawl_page_limit":"2"}`, `{"crawl_page_limit":101}`,
+		`{"sources":[{"channel":"@x"}]}`, `{"sources":[{"channel":"x","unknown":true}]}`, `{"crawl_page_limit":null}`,
+		`{"crawl_page_limit":1.5}`, `{"crawl_page_limit":"2"}`, `{"crawl_page_limit":101}`,
 	} {
 		require.NoError(t, os.WriteFile(path, []byte(body), 0600))
 		_, err := config.Resolve(config.Overrides{ConfigPath: &path})
@@ -64,7 +85,10 @@ func TestResolve_SourceBoundaries(t *testing.T) {
 		valid      bool
 	}{
 		{"maximum channels", `{"sources":[` + strings.Join(entries, ",") + `]}`, true},
-		{"too many disabled channels", `{"sources":[` + strings.Join(entries, ",") + `,{"channel":"extra","enabled":false}]}`, false},
+		{
+			"too many disabled channels",
+			`{"sources":[` + strings.Join(entries, ",") + `,{"channel":"extra","enabled":false}]}`, false,
+		},
 		{"maximum channel length", `{"sources":[{"channel":"` + strings.Repeat("A", 64) + `"}]}`, true},
 		{"excessive channel length", `{"sources":[{"channel":"` + strings.Repeat("a", 65) + `"}]}`, false},
 		{"empty channel", `{"sources":[{"channel":""}]}`, false},
@@ -83,46 +107,54 @@ func TestResolve_SourceBoundaries(t *testing.T) {
 		{"wrong collection type", `{"sources":{}}`, false},
 		{"trailing document", `{"sources":[]} {}`, false},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.NoError(t, os.WriteFile(path, []byte(tc.body), 0600))
-			settings, err := config.Resolve(config.Overrides{ConfigPath: &path})
-			if !tc.valid {
-				require.ErrorIs(t, err, config.ErrInvalid)
-				return
-			}
-			require.NoError(t, err)
-			if tc.name == "maximum channels" {
-				require.Len(t, settings.Sources, 32)
-				_, err = settings.SelectSources(nil, nil)
-				require.ErrorIs(t, err, config.ErrSelectionEmpty)
-			}
-			if tc.name == "maximum channel length" {
-				require.Equal(t, strings.Repeat("a", 64), settings.Sources[0].Channel)
-			}
-			if strings.HasSuffix(tc.name, "limit") {
-				for _, source := range settings.Sources {
-					require.Equal(t, settings.CrawlPageLimit, source.PageLimit)
+		t.Run(
+			tc.name, func(t *testing.T) {
+				require.NoError(t, os.WriteFile(path, []byte(tc.body), 0600))
+				settings, err := config.Resolve(config.Overrides{ConfigPath: &path})
+				if !tc.valid {
+					require.ErrorIs(t, err, config.ErrInvalid)
+					return
 				}
-			}
-		})
+				require.NoError(t, err)
+				if tc.name == "maximum channels" {
+					require.Len(t, settings.Sources, 32)
+					_, err = settings.SelectSources(nil, nil)
+					require.ErrorIs(t, err, config.ErrSelectionEmpty)
+				}
+				if tc.name == "maximum channel length" {
+					require.Equal(t, strings.Repeat("a", 64), settings.Sources[0].Channel)
+				}
+				if strings.HasSuffix(tc.name, "limit") {
+					for _, source := range settings.Sources {
+						require.Equal(t, settings.CrawlPageLimit, source.PageLimit)
+					}
+				}
+			},
+		)
 	}
 }
 
 // covers: spec 0004 AC-2, AC-3. Explicit limits do not mutate later invocations.
 func TestSelectSources_LimitOverridesAreBoundedAndDoNotMutateSettings(t *testing.T) {
-	settings := config.Settings{Sources: []config.Source{{Channel: "first", Enabled: true, PageLimit: 5}, {Channel: "off", Enabled: false, PageLimit: 2}}}
+	settings := config.Settings{
+		Sources: []config.Source{
+			{Channel: "first", Enabled: true, PageLimit: 5}, {Channel: "off", Enabled: false, PageLimit: 2},
+		},
+	}
 	for _, limit := range []int{-1, 0, 1, 100, 101} {
-		t.Run(fmt.Sprint(limit), func(t *testing.T) {
-			plan, err := settings.SelectSources(nil, &limit)
-			if limit < 1 || limit > 100 {
-				require.ErrorIs(t, err, config.ErrSelectionInvalid)
-			} else {
+		t.Run(
+			fmt.Sprint(limit), func(t *testing.T) {
+				plan, err := settings.SelectSources(nil, &limit)
+				if limit < 1 || limit > 100 {
+					require.ErrorIs(t, err, config.ErrSelectionInvalid)
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, []state.SourcePlan{{Channel: "first", PageLimit: limit}}, plan)
+				}
+				plan, err = settings.SelectSources(nil, nil)
 				require.NoError(t, err)
-				require.Equal(t, []state.SourcePlan{{Channel: "first", PageLimit: limit}}, plan)
-			}
-			plan, err = settings.SelectSources(nil, nil)
-			require.NoError(t, err)
-			require.Equal(t, []state.SourcePlan{{Channel: "first", PageLimit: 5}}, plan)
-		})
+				require.Equal(t, []state.SourcePlan{{Channel: "first", PageLimit: 5}}, plan)
+			},
+		)
 	}
 }

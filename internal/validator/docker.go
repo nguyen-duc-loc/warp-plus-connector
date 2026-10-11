@@ -127,7 +127,8 @@ func dockerCommand(ctx context.Context, input []byte, args ...string) ([]byte, e
 		}
 		if json.Unmarshal(diagnostic.Bytes(), &code) == nil {
 			switch code.Code {
-			case "validator_busy", "validation_cleanup_pending", "validator_state_error", "validator_not_ready", "validator_version_mismatch":
+			case "validator_busy", "validation_cleanup_pending", "validator_state_error",
+				"validator_not_ready", "validator_version_mismatch":
 				return nil, &Error{Code: code.Code}
 			}
 		}
@@ -160,7 +161,8 @@ func (d *Docker) endpoint(ctx context.Context) (string, error) {
 		endpoint = contexts[0].Endpoints["docker"].Host
 	}
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Scheme != "unix" || u.Host != "" || !filepath.IsAbs(u.Path) || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.Scheme != "unix" || u.Host != "" || !filepath.IsAbs(u.Path) ||
+		u.RawQuery != "" || u.Fragment != "" {
 		return "", &Error{Code: "validator_local_socket_required"}
 	}
 	return "unix://" + filepath.Clean(u.Path), nil
@@ -176,7 +178,11 @@ func (d *Docker) runtime(ctx context.Context, endpoint string) (string, error) {
 		return "", err
 	}
 	var info struct{ ID, OSType, Architecture string }
-	if json.Unmarshal(data, &info) != nil || info.ID == "" || info.OSType != "linux" || (info.Architecture != "aarch64" && info.Architecture != "arm64") {
+	if json.Unmarshal(
+		data,
+		&info,
+	) != nil || info.ID == "" || info.OSType != "linux" || (info.Architecture != "aarch64" &&
+		info.Architecture != "arm64") {
 		return "", &Error{Code: "validator_platform_unsupported"}
 	}
 	return info.ID, nil
@@ -199,7 +205,9 @@ func (d *Docker) image(ctx context.Context, endpoint string) error {
 		return &Error{Code: "validator_image_unavailable"}
 	}
 	i := images[0]
-	if i.ID != d.Options.Image || i.Architecture != "arm64" || i.Os != "linux" || i.Config.Labels[containerLabel+".protocol"] != "1" || i.Config.Labels[containerLabel+".warp"] != protocol.WARPVersion {
+	if i.ID != d.Options.Image || i.Architecture != "arm64" || i.Os != "linux" ||
+		i.Config.Labels[containerLabel+".protocol"] != "1" || i.Config.Labels[containerLabel+
+		".warp"] != protocol.WARPVersion {
 		return &Error{Code: "validator_version_mismatch"}
 	}
 	return nil
@@ -234,7 +242,10 @@ func (d *Docker) read() (*manifest, error) {
 	if err != nil {
 		return nil, &Error{Code: "validator_state_error"}
 	}
-	if m.Version != 1 || !tokenPattern.MatchString(m.SessionID) || m.Name != "wpc-validator-"+strings.ToLower(m.SessionID) || !ValidImage(m.Image) || (m.ContainerID != "" && !idPattern.MatchString(m.ContainerID)) || ((m.Submitted || m.Cleaned) && m.ContainerID == "") || m.Endpoint == "" || m.DaemonID == "" {
+	if m.Version != 1 || !tokenPattern.MatchString(m.SessionID) || m.Name != "wpc-validator-"+
+		strings.ToLower(m.SessionID) || !ValidImage(m.Image) || (m.ContainerID != "" &&
+		!idPattern.MatchString(m.ContainerID)) || ((m.Submitted || m.Cleaned) &&
+		m.ContainerID == "") || m.Endpoint == "" || m.DaemonID == "" {
 		return nil, &Error{Code: "validator_state_error"}
 	}
 	return &m, nil
@@ -255,14 +266,29 @@ func (d *Docker) inspect(ctx context.Context, m *manifest) (containerInfo, error
 		return zero, &Error{Code: "validator_identity_mismatch"}
 	}
 	i := values[0]
-	if !idPattern.MatchString(i.ID) || (m.ContainerID != "" && i.ID != m.ContainerID) || i.Image != m.Image || i.Config.Labels[containerLabel] != "1" || i.Config.Labels[containerLabel+".session"] != m.SessionID || i.HostConfig.Privileged || i.HostConfig.NetworkMode != "bridge" || i.HostConfig.PidMode != "" || len(i.HostConfig.CapAdd) != 0 || len(i.Mounts) != 0 {
+	if !idPattern.MatchString(i.ID) || (m.ContainerID != "" && i.ID != m.ContainerID) ||
+		i.Image != m.Image || i.Config.Labels[containerLabel] != "1" ||
+		i.Config.Labels[containerLabel+".session"] != m.SessionID || i.HostConfig.Privileged ||
+		i.HostConfig.NetworkMode != "bridge" || i.HostConfig.PidMode != "" ||
+		len(i.HostConfig.CapAdd) != 0 || len(i.Mounts) != 0 {
 		return zero, &Error{Code: "validator_identity_mismatch"}
 	}
 	return i, nil
 }
 
 func (d *Docker) containers(ctx context.Context, endpoint string) ([]string, error) {
-	data, err := d.at(ctx, endpoint, nil, "ps", "-a", "--no-trunc", "--filter", "label="+containerLabel+"=1", "--format", "{{.ID}}")
+	data, err := d.at(
+		ctx,
+		endpoint,
+		nil,
+		"ps",
+		"-a",
+		"--no-trunc",
+		"--filter",
+		"label="+containerLabel+"=1",
+		"--format",
+		"{{.ID}}",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +301,10 @@ func (d *Docker) worker(ctx context.Context, m *manifest, operation string, inpu
 	if err != nil {
 		return receipt, err
 	}
-	if json.Unmarshal(data, &receipt) != nil || receipt.Version != protocol.Version || receipt.SessionID != m.SessionID {
+	if json.Unmarshal(
+		data,
+		&receipt,
+	) != nil || receipt.Version != protocol.Version || receipt.SessionID != m.SessionID {
 		return receipt, &Error{Code: "validator_protocol_error"}
 	}
 	return receipt, nil
@@ -463,11 +492,39 @@ func (d *Docker) Check(parent context.Context, in Input) (Result, error) {
 		return zero, err
 	}
 	token := rand.Text()
-	m := &manifest{Version: 1, SessionID: token, Name: "wpc-validator-" + strings.ToLower(token), Endpoint: endpoint, DaemonID: daemonID, Image: d.Options.Image, Profile: in.StateDir, CandidateID: in.CandidateID, RunID: in.RunID, AttemptID: in.AttemptID, CreatedAt: time.Now().UTC()}
+	m := &manifest{
+		Version: 1, SessionID: token, Name: "wpc-validator-" + strings.ToLower(token), Endpoint: endpoint,
+		DaemonID: daemonID, Image: d.Options.Image, Profile: in.StateDir, CandidateID: in.CandidateID, RunID: in.RunID,
+		AttemptID: in.AttemptID, CreatedAt: time.Now().UTC(),
+	}
 	if err := d.save(m); err != nil {
 		return zero, err
 	}
-	data, err := d.at(ctx, endpoint, nil, "create", "--name", m.Name, "--platform", "linux/arm64", "--network", "bridge", "--memory", "512m", "--cpus", "1", "--pids-limit", "256", "--security-opt", "no-new-privileges", "--label", containerLabel+"=1", "--label", containerLabel+".session="+m.SessionID, m.Image)
+	data, err := d.at(
+		ctx,
+		endpoint,
+		nil,
+		"create",
+		"--name",
+		m.Name,
+		"--platform",
+		"linux/arm64",
+		"--network",
+		"bridge",
+		"--memory",
+		"512m",
+		"--cpus",
+		"1",
+		"--pids-limit",
+		"256",
+		"--security-opt",
+		"no-new-privileges",
+		"--label",
+		containerLabel+"=1",
+		"--label",
+		containerLabel+".session="+m.SessionID,
+		m.Image,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -518,7 +575,9 @@ func (d *Docker) Check(parent context.Context, in Input) (Result, error) {
 	if receipt.Result.Outcome != state.Confirmed && receipt.Result.Outcome != state.Inconclusive {
 		return zero, &Error{Code: "validator_protocol_error"}
 	}
-	if receipt.Result.Outcome == state.Confirmed && (receipt.Result.Evidence == nil || receipt.Result.Evidence.Kind != state.AccountType || receipt.Result.Evidence.AccountType != "Unlimited" || receipt.RegistrationID == "" || receipt.DeviceID == "") {
+	if receipt.Result.Outcome == state.Confirmed && (receipt.Result.Evidence == nil ||
+		receipt.Result.Evidence.Kind != state.AccountType ||
+		receipt.Result.Evidence.AccountType != "Unlimited" || receipt.RegistrationID == "" || receipt.DeviceID == "") {
 		return zero, &Error{Code: "validator_protocol_error"}
 	}
 	m.Cleaned = true
@@ -528,5 +587,7 @@ func (d *Docker) Check(parent context.Context, in Input) (Result, error) {
 	if err := d.remove(ctx, m); err != nil {
 		return zero, err
 	}
-	return Result{Outcome: receipt.Result.Outcome, ReasonCode: receipt.Result.ReasonCode, Evidence: receipt.Result.Evidence}, nil
+	return Result{
+		Outcome: receipt.Result.Outcome, ReasonCode: receipt.Result.ReasonCode, Evidence: receipt.Result.Evidence,
+	}, nil
 }

@@ -32,11 +32,13 @@ type handle struct {
 // OpenWriter initializes, migrates, and recovers private state while holding the
 // exclusive writer lock. The clock supplies one recovery timestamp.
 func OpenWriter(ctx context.Context, stateDir string, clock func() time.Time) (*Writer, error) {
-	return awaitContext(ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock) }, func(w *Writer) {
-		if w != nil {
-			_ = w.Close()
-		}
-	})
+	return awaitContext(
+		ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock) }, func(w *Writer) {
+			if w != nil {
+				_ = w.Close()
+			}
+		},
+	)
 }
 
 func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*Writer, error) {
@@ -119,11 +121,13 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 // OpenReader requires initialized state at the current schema version. It never
 // initializes, migrates, recovers, or changes journal mode.
 func OpenReader(ctx context.Context, stateDir string) (*Reader, error) {
-	return awaitContext(ctx, func() (*Reader, error) { return openReader(ctx, stateDir) }, func(r *Reader) {
-		if r != nil {
-			_ = r.Close()
-		}
-	})
+	return awaitContext(
+		ctx, func() (*Reader, error) { return openReader(ctx, stateDir) }, func(r *Reader) {
+			if r != nil {
+				_ = r.Close()
+			}
+		},
+	)
 }
 
 func openReader(ctx context.Context, stateDir string) (*Reader, error) {
@@ -229,7 +233,12 @@ func checkPrivate(path string, directory bool) error {
 		mode = "0700"
 	}
 	if !ok || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0077 != 0 || !validType {
-		return fmt.Errorf("state path %q requires account ownership and private mode %s: %w", path, mode, ErrStateAccess)
+		return fmt.Errorf(
+			"state path %q requires account ownership and private mode %s: %w",
+			path,
+			mode,
+			ErrStateAccess,
+		)
 	}
 	return nil
 }
@@ -316,46 +325,48 @@ func transact[T any](ctx context.Context, r *Reader, write bool, op string, fn f
 		h.mu.RUnlock()
 		return zero, ErrClosed
 	}
-	return awaitContext(ctx, func() (T, error) {
-		defer h.mu.RUnlock()
-		conn, err := db.Conn(ctx)
-		if err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		defer func() { _ = conn.Close() }()
-		// Bound SQLite's native wait by a known earlier deadline. Explicit
-		// cancellation is handled by awaitContext without releasing ownership early.
-		timeout := 5000
-		if deadline, ok := ctx.Deadline(); ok {
-			remaining := time.Until(deadline)
-			if remaining <= 0 {
-				return zero, safeError(ctx, op, context.DeadlineExceeded)
+	return awaitContext(
+		ctx, func() (T, error) {
+			defer h.mu.RUnlock()
+			conn, err := db.Conn(ctx)
+			if err != nil {
+				return zero, safeError(ctx, op, err)
 			}
-			if remaining < 5*time.Second {
-				timeout = int((remaining + time.Millisecond - 1) / time.Millisecond)
+			defer func() { _ = conn.Close() }()
+			// Bound SQLite's native wait by a known earlier deadline. Explicit
+			// cancellation is handled by awaitContext without releasing ownership early.
+			timeout := 5000
+			if deadline, ok := ctx.Deadline(); ok {
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					return zero, safeError(ctx, op, context.DeadlineExceeded)
+				}
+				if remaining < 5*time.Second {
+					timeout = int((remaining + time.Millisecond - 1) / time.Millisecond)
+				}
 			}
-		}
-		if _, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", timeout)); err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		defer func() { _, _ = conn.ExecContext(context.Background(), "PRAGMA busy_timeout=5000") }()
-		tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: !write})
-		if err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		defer func() { _ = tx.Rollback() }()
-		if err = ctx.Err(); err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		result, err := fn(tx)
-		if err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		if err = tx.Commit(); err != nil {
-			return zero, safeError(ctx, op, err)
-		}
-		return result, nil
-	}, nil)
+			if _, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", timeout)); err != nil {
+				return zero, safeError(ctx, op, err)
+			}
+			defer func() { _, _ = conn.ExecContext(context.Background(), "PRAGMA busy_timeout=5000") }()
+			tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: !write})
+			if err != nil {
+				return zero, safeError(ctx, op, err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if err = ctx.Err(); err != nil {
+				return zero, safeError(ctx, op, err)
+			}
+			result, err := fn(tx)
+			if err != nil {
+				return zero, safeError(ctx, op, err)
+			}
+			if err = tx.Commit(); err != nil {
+				return zero, safeError(ctx, op, err)
+			}
+			return result, nil
+		}, nil,
+	)
 }
 
 func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
@@ -364,19 +375,36 @@ func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, "UPDATE validation_attempts SET outcome='inconclusive', reason_code='interrupted', recovered_at=? WHERE outcome IS NULL", at.UnixMicro()); err != nil {
+	if _, err = tx.ExecContext(
+		ctx,
+		"UPDATE validation_attempts SET outcome='inconclusive', "+
+			"reason_code='interrupted', recovered_at=? WHERE outcome IS NULL",
+		at.UnixMicro(),
+	); err != nil {
 		return err
 	}
 	for _, query := range []string{
-		"UPDATE crawl_pages SET status='interrupted',reason_code='interrupted',recovered_at=? WHERE status IN ('requested','parsed') AND run_id IN (SELECT id FROM runs WHERE status='running')",
-		"UPDATE crawl_sources SET status='interrupted',stop_reason='interrupted',recovered_at=? WHERE status='running' AND run_id IN (SELECT id FROM runs WHERE status='running')",
-		"UPDATE crawl_sources SET status='skipped',stop_reason='interrupted_before_start',recovered_at=? WHERE status='pending' AND run_id IN (SELECT id FROM runs WHERE status='running')",
+		"UPDATE crawl_pages SET status='interrupted'," +
+			"reason_code='interrupted',recovered_at=? WHERE status IN " +
+			"('requested','parsed') AND run_id IN (SELECT id FROM runs WHERE " +
+			"status='running')",
+		"UPDATE crawl_sources SET status='interrupted'," +
+			"stop_reason='interrupted',recovered_at=? WHERE status='running' AND " +
+			"run_id IN (SELECT id FROM runs WHERE status='running')",
+		"UPDATE crawl_sources SET status='skipped'," +
+			"stop_reason='interrupted_before_start',recovered_at=? WHERE " +
+			"status='pending' AND run_id IN (SELECT id FROM runs WHERE " +
+			"status='running')",
 	} {
 		if _, err = tx.ExecContext(ctx, query, at.UnixMicro()); err != nil {
 			return err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE runs SET status='interrupted', reason_code='interrupted', recovered_at=? WHERE status='running'", at.UnixMicro()); err != nil {
+	if _, err = tx.ExecContext(
+		ctx,
+		"UPDATE runs SET status='interrupted', reason_code='interrupted', recovered_at=? WHERE status='running'",
+		at.UnixMicro(),
+	); err != nil {
 		return err
 	}
 	return tx.Commit()

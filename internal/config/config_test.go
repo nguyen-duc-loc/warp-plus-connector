@@ -55,16 +55,22 @@ func TestResolve_RejectsInvalidPrivateJSON(t *testing.T) {
 		`{"state_dir":""}`, `{"recheck_interval":"0s"}`, `{"recheck_interval":"-1h"}`,
 		`{"recheck_interval":"tomorrow"}`, `{"validator":"secret"}`, strings.Repeat(" ", 64*1024+1),
 	} {
-		t.Run(strings.TrimSpace(body[:min(len(body), 80)]), func(t *testing.T) {
-			path := filepath.Join(dir, "settings.json")
-			require.NoError(t, os.WriteFile(path, []byte(body), 0600))
-			profile, backend, interval := filepath.Join(dir, "uncreated"), "unsupported", "1h"
-			_, err := config.Resolve(config.Overrides{ConfigPath: &path, StateDir: &profile, Validator: &backend, RecheckInterval: &interval})
-			require.ErrorIs(t, err, config.ErrInvalid)
-			require.NotContains(t, err.Error(), "secret")
-			_, err = os.Stat(profile)
-			require.ErrorIs(t, err, os.ErrNotExist)
-		})
+		t.Run(
+			strings.TrimSpace(body[:min(len(body), 80)]), func(t *testing.T) {
+				path := filepath.Join(dir, "settings.json")
+				require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+				profile, backend, interval := filepath.Join(dir, "uncreated"), "unsupported", "1h"
+				_, err := config.Resolve(
+					config.Overrides{
+						ConfigPath: &path, StateDir: &profile, Validator: &backend, RecheckInterval: &interval,
+					},
+				)
+				require.ErrorIs(t, err, config.ErrInvalid)
+				require.NotContains(t, err.Error(), "secret")
+				_, err = os.Stat(profile)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			},
+		)
 	}
 }
 

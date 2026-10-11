@@ -27,7 +27,9 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	e := worker.Engine{Dir: "/var/lib/wpc", VendorDir: "/var/lib/cloudflare-warp", Runner: worker.ProcessRunner{}, Clock: time.Now}
+	e := worker.Engine{
+		Dir: "/var/lib/wpc", VendorDir: "/var/lib/cloudflare-warp", Runner: worker.ProcessRunner{}, Clock: time.Now,
+	}
 	if os.Args[1] == "serve" {
 		return serve(ctx)
 	}
@@ -72,7 +74,11 @@ func run() int {
 
 func fail(code string) int {
 	// Only fixed internal codes are accepted, never arbitrary OS or vendor errors.
-	allowed := map[string]bool{"validator_worker_unsupported": true, "validation_invalid_input": true, "validation_cleanup_pending": true, "validator_state_error": true, "validator_busy": true, "validator_version_mismatch": true, "validator_not_ready": true}
+	allowed := map[string]bool{
+		"validator_worker_unsupported": true, "validation_invalid_input": true, "validation_cleanup_pending": true,
+		"validator_state_error": true, "validator_busy": true, "validator_version_mismatch": true,
+		"validator_not_ready": true,
+	}
 	if !allowed[code] {
 		code = "validation_cleanup_pending"
 	}

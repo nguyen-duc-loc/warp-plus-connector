@@ -11,7 +11,9 @@ import (
 type scanner interface{ Scan(...any) error }
 
 const runColumns = "id,request_id,kind,status,started_at,finished_at,recovered_at,reason_code"
-const attemptColumns = "id,request_id,run_id,candidate_id,backend_id,backend_version,started_at,finished_at,recovered_at,outcome,reason_code,evidence_json"
+const attemptColumns = "id,request_id,run_id,candidate_id,backend_id,backend_version," +
+	"started_at,finished_at,recovered_at,outcome,reason_code," +
+	"evidence_json"
 
 func nullTime(n sql.NullInt64) *time.Time {
 	if !n.Valid {
@@ -49,7 +51,20 @@ func scanAttempt(row scanner) (state.Attempt, error) {
 	var start int64
 	var finish, recovered sql.NullInt64
 	var outcome, reason, evidence sql.NullString
-	err := row.Scan(&a.ID, &a.RequestID, &a.RunID, &a.CandidateID, &a.BackendID, &a.BackendVersion, &start, &finish, &recovered, &outcome, &reason, &evidence)
+	err := row.Scan(
+		&a.ID,
+		&a.RequestID,
+		&a.RunID,
+		&a.CandidateID,
+		&a.BackendID,
+		&a.BackendVersion,
+		&start,
+		&finish,
+		&recovered,
+		&outcome,
+		&reason,
+		&evidence,
+	)
 	if err != nil {
 		return a, err
 	}

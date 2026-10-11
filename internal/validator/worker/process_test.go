@@ -21,22 +21,28 @@ func TestProcessRunner_ClassifiesVendorProcessResponses(t *testing.T) {
 		{"unknown acknowledgement", `printf '%s' '{"status":"Unknown"}'`, "validation_provider_error", ""},
 		{"empty object", `printf '%s' '{}'`, "validation_provider_error", ""},
 		{"malformed JSON", `printf '%s' 'private-secret'`, "validation_provider_error", ""},
-		{"structured failure", `printf '%s' '{"code":"ApiErrorTooManyDevices"}' >&2; exit 1`, "ApiErrorTooManyDevices", ""},
+		{
+			"structured failure", `printf '%s' '{"code":"ApiErrorTooManyDevices"}' >&2; exit 1`,
+			"ApiErrorTooManyDevices", "",
+		},
 		{"stdout failure", `printf '%s' '{"code":"MissingRegistration"}'; exit 1`, "MissingRegistration", ""},
 		{"raw failure", `printf '%s' 'private-secret' >&2; exit 1`, "validation_provider_error", ""},
 		{"oversized stdout", `/usr/bin/head -c 262145 /dev/zero`, "validation_provider_error", ""},
 		{"oversized stderr", `/usr/bin/head -c 262145 /dev/zero >&2`, "validation_provider_error", ""},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			// PATH contains only the fixture, so the installed host WARP is unreachable.
-			t.Setenv("PATH", dir)
-			script := "#!/bin/sh\n[ \"$1\" = --accept-tos ] && [ \"$2\" = --json ] && [ \"$3\" = registration ] && [ \"$4\" = delete ] || exit 7\n" + tc.script + "\n"
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "warp-cli"), []byte(script), 0700))
-			reply := (worker.ProcessRunner{}).Run(t.Context(), "registration", "delete")
-			require.Equal(t, tc.code, reply.Code)
-			require.Equal(t, tc.data, string(reply.Data))
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				// PATH contains only the fixture, so the installed host WARP is unreachable.
+				t.Setenv("PATH", dir)
+				script := "#!/bin/sh\n[ \"$1\" = --accept-tos ] && [ \"$2\" = --json ] && [ " +
+					"\"$3\" = registration ] && [ \"$4\" = delete ] || exit 7\n" + tc.script + "\n"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "warp-cli"), []byte(script), 0700))
+				reply := (worker.ProcessRunner{}).Run(t.Context(), "registration", "delete")
+				require.Equal(t, tc.code, reply.Code)
+				require.Equal(t, tc.data, string(reply.Data))
+			},
+		)
 	}
 }
 

@@ -19,7 +19,10 @@ import (
 // Stable configuration errors never include supplied values or file contents.
 var (
 	ErrInvalid = errors.New("invalid configuration")
-	ErrAccess  = errors.New("configuration requires a readable regular file owned by your account with private permissions and no symlink")
+	ErrAccess  = errors.New(
+		"configuration requires a readable regular file owned by your " +
+			"account with private permissions and no symlink",
+	)
 )
 
 // Settings are fully validated runtime inputs.
@@ -61,7 +64,10 @@ func Resolve(in Overrides) (Settings, error) {
 	} else if xdg := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(xdg) {
 		stateDir = filepath.Join(xdg, "warp-plus-connector")
 	}
-	out := Settings{Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour, Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator")}
+	out := Settings{
+		Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
+		Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator"),
+	}
 	path := filepath.Join(base, "warp-plus-connector", "config.json")
 	if in.ConfigPath != nil {
 		if *in.ConfigPath == "" {

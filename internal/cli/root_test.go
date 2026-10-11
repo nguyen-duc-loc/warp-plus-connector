@@ -23,16 +23,18 @@ func TestNewRootCommand_ReportsVersion(t *testing.T) {
 		{"release with commit", "1.2.3", "abc1234", "wpc 1.2.3 (abc1234)\n"},
 		{"commit with fallback version", "", "abc1234", "wpc dev (abc1234)\n"},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var stdout, stderr bytes.Buffer
-			cmd := cli.NewRootCommand(tt.version, tt.commit)
-			cmd.SetOut(&stdout)
-			cmd.SetErr(&stderr)
-			cmd.SetArgs([]string{"version"})
-			require.NoError(t, cmd.Execute())
-			assert.Equal(t, tt.want, stdout.String())
-			assert.Empty(t, stderr.String())
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				var stdout, stderr bytes.Buffer
+				cmd := cli.NewRootCommand(tt.version, tt.commit)
+				cmd.SetOut(&stdout)
+				cmd.SetErr(&stderr)
+				cmd.SetArgs([]string{"version"})
+				require.NoError(t, cmd.Execute())
+				assert.Equal(t, tt.want, stdout.String())
+				assert.Empty(t, stderr.String())
+			},
+		)
 	}
 }
 

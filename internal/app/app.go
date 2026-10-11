@@ -109,11 +109,22 @@ func (a *App) Check(ctx context.Context, id int64) (attempt state.Attempt, err e
 		a.log(run.ID, string(attempt.Outcome))
 	}()
 	backend, version := a.Validator.Identity()
-	attempt, err = w.BeginAttempt(ctx, state.AttemptInput{RequestID: rand.Text(), RunID: run.ID, CandidateID: id, BackendID: backend, BackendVersion: version, StartedAt: a.Clock()})
+	attempt, err = w.BeginAttempt(
+		ctx,
+		state.AttemptInput{
+			RequestID: rand.Text(), RunID: run.ID, CandidateID: id, BackendID: backend, BackendVersion: version,
+			StartedAt: a.Clock(),
+		},
+	)
 	if err != nil {
 		return attempt, classified(err)
 	}
-	result, err := a.Validator.Check(ctx, validator.Input{Key: candidate.Key, StateDir: a.Settings.StateDir, CandidateID: id, RunID: run.ID, AttemptID: attempt.ID})
+	result, err := a.Validator.Check(
+		ctx,
+		validator.Input{
+			Key: candidate.Key, StateDir: a.Settings.StateDir, CandidateID: id, RunID: run.ID, AttemptID: attempt.ID,
+		},
+	)
 	if err != nil {
 		return attempt, classified(err)
 	}
@@ -123,7 +134,13 @@ func (a *App) Check(ctx context.Context, id int64) (attempt state.Attempt, err e
 	// Once completion begins, an uncertain commit is left for recovery. Never
 	// replace it with a conflicting cancellation payload.
 	completionStarted = true
-	attempt, err = w.CompleteAttempt(ctx, state.AttemptCompletion{AttemptID: attempt.ID, FinishedAt: a.Clock(), Outcome: result.Outcome, ReasonCode: result.ReasonCode, Evidence: result.Evidence})
+	attempt, err = w.CompleteAttempt(
+		ctx,
+		state.AttemptCompletion{
+			AttemptID: attempt.ID, FinishedAt: a.Clock(), Outcome: result.Outcome, ReasonCode: result.ReasonCode,
+			Evidence: result.Evidence,
+		},
+	)
 	if err != nil {
 		return attempt, classified(err)
 	}
@@ -147,7 +164,12 @@ func (a *App) cleanup(w *store.Writer, runID, attemptID int64, cause error) *sta
 	}
 	var saved *state.Attempt
 	if attemptID != 0 {
-		completed, err := w.CompleteAttempt(ctx, state.AttemptCompletion{AttemptID: attemptID, FinishedAt: a.Clock(), Outcome: state.Inconclusive, ReasonCode: code})
+		completed, err := w.CompleteAttempt(
+			ctx,
+			state.AttemptCompletion{
+				AttemptID: attemptID, FinishedAt: a.Clock(), Outcome: state.Inconclusive, ReasonCode: code,
+			},
+		)
 		if err != nil {
 			return nil
 		}

@@ -33,14 +33,25 @@ func TestSourcesAndSelectionHaveNoStateEffects(t *testing.T) {
 		err := root.ExecuteContext(t.Context())
 		return out.String(), err
 	}
-	require.NoError(t, os.WriteFile(path, []byte(`{"crawl_page_limit":3,"sources":[{"channel":"Enabled"},{"channel":"Disabled","enabled":false,"page_limit":4}]}`), 0600))
+	require.NoError(
+		t,
+		os.WriteFile(
+			path,
+			[]byte(`{"crawl_page_limit":3,"sources":[{"channel":"Enabled"},`+
+				`{"channel":"Disabled","enabled":false,"page_limit":4}]}`),
+			0600,
+		),
+	)
 	out, err := execute([]string{"sources"}, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "enabled\ttelegram:enabled\ttrue\t3")
 	require.Contains(t, out, "disabled\ttelegram:disabled\tfalse\t4")
 	_, err = execute([]string{"sources"}, true)
 	require.EqualError(t, err, "output_error")
-	for _, args := range [][]string{{"crawl", "--source", "disabled"}, {"crawl", "--source", "unknown"}, {"crawl", "--source", ""}, {"crawl", "--page-limit", "0"}, {"crawl", "--source", "enabled", "--source", "ENABLED"}} {
+	for _, args := range [][]string{
+		{"crawl", "--source", "disabled"}, {"crawl", "--source", "unknown"}, {"crawl", "--source", ""},
+		{"crawl", "--page-limit", "0"}, {"crawl", "--source", "enabled", "--source", "ENABLED"},
+	} {
 		_, err := execute(args, false)
 		require.Equal(t, "source_selection_invalid", cli.Diagnostic(err))
 	}
@@ -65,18 +76,36 @@ func TestCrawlShow_SavedCoverageAndOutputFailure(t *testing.T) {
 	at := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
 	w, err := store.OpenWriter(t.Context(), stateDir, func() time.Time { return at })
 	require.NoError(t, err)
-	plan, err := w.StartCrawlPlan(t.Context(), state.CrawlPlanInput{RequestID: "saved", StartedAt: at, Sources: []state.SourcePlan{{Channel: "first", PageLimit: 2}, {Channel: "unattempted", PageLimit: 1}}})
+	plan, err := w.StartCrawlPlan(
+		t.Context(),
+		state.CrawlPlanInput{
+			RequestID: "saved", StartedAt: at,
+			Sources: []state.SourcePlan{{Channel: "first", PageLimit: 2}, {Channel: "unattempted", PageLimit: 1}},
+		},
+	)
 	require.NoError(t, err)
 	id := state.CrawlPageID{RunID: plan.Run.ID, SourceID: "telegram:first", PageNumber: 1}
 	_, err = w.StartCrawlRequest(t.Context(), state.CrawlRequest{CrawlPageID: id, RequestedAt: at})
 	require.NoError(t, err)
 	n := int64(7)
-	_, err = w.RecordCrawlParse(t.Context(), state.CrawlParse{CrawlPageID: id, FetchedAt: at, ParsedPostCount: 2, MinMessageID: &n, MaxMessageID: &n, NextBeforeID: &n})
+	_, err = w.RecordCrawlParse(
+		t.Context(),
+		state.CrawlParse{
+			CrawlPageID: id, FetchedAt: at, ParsedPostCount: 2, MinMessageID: &n, MaxMessageID: &n, NextBeforeID: &n,
+		},
+	)
 	require.NoError(t, err)
 	key := "ABCDEFGH-12345678-AbCdEf01"
-	_, err = w.RecordCrawlMessage(t.Context(), id, state.MessageInput{RunID: id.RunID, SourceID: id.SourceID, MessageID: "7", ObservedAt: at, Keys: []string{key}})
+	_, err = w.RecordCrawlMessage(
+		t.Context(),
+		id,
+		state.MessageInput{RunID: id.RunID, SourceID: id.SourceID, MessageID: "7", ObservedAt: at, Keys: []string{key}},
+	)
 	require.NoError(t, err)
-	_, err = w.FinishCrawlPage(t.Context(), state.CrawlPageCompletion{CrawlPageID: id, Status: "completed", FinishedAt: at})
+	_, err = w.FinishCrawlPage(
+		t.Context(),
+		state.CrawlPageCompletion{CrawlPageID: id, Status: "completed", FinishedAt: at},
+	)
 	require.NoError(t, err)
 	id.PageNumber = 2
 	_, err = w.StartCrawlRequest(t.Context(), state.CrawlRequest{CrawlPageID: id, RequestedAt: at})
@@ -96,7 +125,11 @@ func TestCrawlShow_SavedCoverageAndOutputFailure(t *testing.T) {
 	}
 	out, err := execute(false)
 	require.NoError(t, err)
-	require.Contains(t, out, "status=running reason=none counts_current=true selected_sources=2 saved_candidates=1 saved_sightings=1")
+	require.Contains(
+		t,
+		out,
+		"status=running reason=none counts_current=true selected_sources=2 saved_candidates=1 saved_sightings=1",
+	)
 	require.Contains(t, out, "source=telegram:first channel=first url=https://t.me/s/first page_limit=2")
 	require.Contains(t, out, "pages_requested=2 pages_parsed=1 pages_completed=1 parsed_post_occurrences=2")
 	require.Contains(t, out, "more_available=unknown history_complete=false")
@@ -110,7 +143,10 @@ func TestCrawlShow_SavedCoverageAndOutputFailure(t *testing.T) {
 	after, err := w.GetCrawlReport(t.Context(), id.RunID)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
-	_, err = w.FinishCrawlPlan(t.Context(), state.RunCompletion{RunID: id.RunID, Status: state.Cancelled, ReasonCode: "cancelled", FinishedAt: at})
+	_, err = w.FinishCrawlPlan(
+		t.Context(),
+		state.RunCompletion{RunID: id.RunID, Status: state.Cancelled, ReasonCode: "cancelled", FinishedAt: at},
+	)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	out, err = execute(false)
@@ -124,7 +160,14 @@ func TestCrawlShow_SavedCoverageAndOutputFailure(t *testing.T) {
 func TestCrawl_InvalidConfigCannotBeRescuedBySelection(t *testing.T) {
 	dir := t.TempDir()
 	path, stateDir := filepath.Join(dir, "config.json"), filepath.Join(dir, "state")
-	require.NoError(t, os.WriteFile(path, []byte(`{"sources":[{"channel":"good"},{"channel":"bad","enabled":false,"page_limit":0}]}`), 0600))
+	require.NoError(
+		t,
+		os.WriteFile(
+			path,
+			[]byte(`{"sources":[{"channel":"good"},{"channel":"bad","enabled":false,"page_limit":0}]}`),
+			0600,
+		),
+	)
 	cmd := cli.NewRootCommand("test", "")
 	var out, diagnostic bytes.Buffer
 	cmd.SetOut(&out)

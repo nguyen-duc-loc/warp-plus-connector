@@ -38,16 +38,18 @@ func TestOwnershipAndPrivateFiles(t *testing.T) {
 // covers: spec 0003 AC-7. Damaged journals are rejected without changing bytes.
 func TestReadRejectsMalformedAndUnknownJournalFields(t *testing.T) {
 	for _, body := range []string{`{`, `{"phase":"prepared","unknown":"secret"}`, `{"phase":"prepared"} {}`} {
-		t.Run(body, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "session.json")
-			require.NoError(t, os.WriteFile(path, []byte(body), 0600))
-			var value struct {
-				Phase string `json:"phase"`
-			}
-			require.ErrorIs(t, privatefs.Read(path, &value), privatefs.ErrAccess)
-			after, err := os.ReadFile(path)
-			require.NoError(t, err)
-			require.Equal(t, body, string(after))
-		})
+		t.Run(
+			body, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "session.json")
+				require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+				var value struct {
+					Phase string `json:"phase"`
+				}
+				require.ErrorIs(t, privatefs.Read(path, &value), privatefs.ErrAccess)
+				after, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, body, string(after))
+			},
+		)
 	}
 }
