@@ -63,3 +63,7 @@ You requested an independent model critique and authorized all eleven recommende
 11. Observation writes have explicit deadlines and retained ownership for unresolved operations. Managed shutdown has an outer watchdog even when no native stop request initiated it.
 
 The changes preserve the 20 MiB archive, 15 second heartbeat, 60 second stale boundary, existing scheduler and validator contracts, and absence of a database migration. You separately accepted the revised spec on 2026-10-11. The design is confirmed and linked to scope feature 9; implementation remains pending and the spec retains `Proposed` status.
+
+## Linux uninstall correction, 2026-10-11
+
+You approved the correction during development. systemd can load an existing unit file whenever it is referenced. It has no explicit unit unload operation, so absence from memory before file removal is not a durable checkpoint. Linux removal therefore disables startup and confirms a stopped unit, removes the owned definition, reloads the manager, and confirms absence before publishing the removal receipt. The added `manager_removed` phase retains a safe retry point after definition removal. macOS keeps its separate registration removal order.

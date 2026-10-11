@@ -72,13 +72,33 @@ func Resolve(in Overrides) (Settings, error) {
 	} else if xdg := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(xdg) {
 		stateDir = filepath.Join(xdg, "warp-plus-connector")
 	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return zero, ErrAccess
+	}
+	return ResolveAt(in, ResolutionContext{ConfigHome: base, DefaultStateDir: stateDir, WorkingDir: wd})
+}
+
+// ResolutionContext binds default paths without changing the process environment.
+type ResolutionContext struct {
+	ConfigHome, DefaultStateDir, WorkingDir string
+}
+
+// ResolveAt resolves a file under a saved service installation context.
+func ResolveAt(in Overrides, location ResolutionContext) (Settings, error) {
+	var zero Settings
+	if !filepath.IsAbs(location.ConfigHome) || !filepath.IsAbs(location.DefaultStateDir) ||
+		!filepath.IsAbs(location.WorkingDir) {
+		return zero, ErrInvalid
+	}
+	stateDir := location.DefaultStateDir
 	out := Settings{
 		CheckPolicy:  state.DefaultCheckPolicy(),
 		CrawlEnabled: true, ValidationEnabled: true, CrawlInterval: time.Hour, FailureInterval: time.Hour,
 		Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour,
 		Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator"),
 	}
-	path := filepath.Join(base, "warp-plus-connector", "config.json")
+	path := filepath.Join(location.ConfigHome, "warp-plus-connector", "config.json")
 	if in.ConfigPath != nil {
 		if *in.ConfigPath == "" {
 			return zero, ErrInvalid
@@ -123,10 +143,10 @@ func Resolve(in Overrides) (Settings, error) {
 	if in.ValidationEnabled != nil {
 		out.ValidationEnabled = *in.ValidationEnabled
 	}
-	out.StateDir, err = filepath.Abs(out.StateDir)
-	if err != nil {
-		return zero, ErrInvalid
+	if !filepath.IsAbs(out.StateDir) {
+		out.StateDir = filepath.Join(location.WorkingDir, out.StateDir)
 	}
+	out.StateDir = filepath.Clean(out.StateDir)
 	if out.Validator == "docker" && !validator.ValidImage(out.ValidatorImage) {
 		return zero, ErrInvalid
 	}

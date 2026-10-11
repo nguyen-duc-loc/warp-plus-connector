@@ -42,6 +42,10 @@ type App struct {
 	Monotonic    func() time.Time
 	RetryDraw    func(time.Duration, time.Duration) time.Duration
 	Logger       *slog.Logger
+	// Observe runs only in the scheduler coordinator.
+	Observe func(RunnerState) error
+	// Finalize runs after entered work closes, under the shared local cleanup deadline.
+	Finalize func(context.Context, error) error
 }
 
 func (a *App) evaluation() state.Evaluation {

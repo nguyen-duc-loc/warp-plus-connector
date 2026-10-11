@@ -12,6 +12,7 @@ import (
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
@@ -382,6 +383,14 @@ func renderCandidate(w io.Writer, c state.Candidate, showKeys bool) error {
 
 // Diagnostic sanitizes parser and output errors before they reach stderr.
 func Diagnostic(err error) string {
+	var control *controlDeliveryError
+	if errors.As(err, &control) {
+		return control.Error()
+	}
+	var native *service.Error
+	if errors.As(err, &native) {
+		return native.Error()
+	}
 	var output *deliveryError
 	if errors.As(err, &output) {
 		return output.diagnostic()

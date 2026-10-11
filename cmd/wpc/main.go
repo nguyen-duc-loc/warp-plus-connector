@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/cli"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
 )
 
 // Release builds supply these values through the Go linker.
@@ -31,6 +34,13 @@ func run() int {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 	var exitCode atomic.Int32
+	var managed atomic.Bool
+	var watchdog sync.Once
+	ctx = service.WithLifecycle(
+		ctx, func() { managed.Store(true) }, func() {
+			watchdog.Do(func() { go func() { time.Sleep(75 * time.Second); os.Exit(0) }() })
+		}, func() int { return int(exitCode.Load()) },
+	)
 	go func() {
 		select {
 		case sig := <-signals:
@@ -47,6 +57,9 @@ func run() int {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 	err := cmd.ExecuteContext(ctx)
+	if managed.Load() {
+		return 0
+	}
 	var failed interface{ DiagnosticFailed() bool }
 	diagnosticOK := !errors.As(err, &failed) || !failed.DiagnosticFailed()
 	if code := exitCode.Load(); code != 0 {

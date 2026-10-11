@@ -134,7 +134,28 @@ Both lanes are enabled by default. `--crawl-enabled=false` runs validation alone
 
 `run` owns the profile writer until it stops. Saved reports, listing, export, and schedule inspection remain available, while other writers report busy. `schedule show` reads saved facts without applying current intervals or contacting Docker. A backward clock pauses automatic admission until the saved checkpoint is reached. Shared Docker throttling survives changes of profile and requires one successful, cleaned, durably saved probe before normal capacity resumes.
 
-The first writer upgrades SQLite to schema 5. Docker acquisition converts clean recovery state to registry 3; both versions reject older executables. Existing history is retained. Service installation and process management remain separate work.
+The first writer upgrades SQLite to schema 5. Docker acquisition converts clean recovery state to registry 3; both versions reject older executables. Existing history is retained.
+
+## Background operation and diagnostics
+
+The service commands manage one login service for your account. You can select an existing private configuration file at installation, then start work separately:
+
+```sh
+bin/wpc service install --config /absolute/path/config.json
+bin/wpc service start
+bin/wpc service status --format json
+bin/wpc service logs --lines 100 --follow
+bin/wpc service doctor --format json
+bin/wpc service stop
+```
+
+Installation enables startup at the next login. Stop preserves that setting. `service disable` changes future startup without stopping current work, and `service enable` restores it. `service restart` confirms stop before starting again. `service uninstall` requires a stopped service and retains your configuration, saved work, logs, and validator recovery state.
+
+The installation binds executable, configuration, state, and validator paths. A validation service also binds the local Docker executable and socket. Settings are reread on start; changing bound paths requires a stopped uninstall and new installation. For collection alone, your file can set `validation_enabled` to `false`.
+
+Status combines separately timed manager and runner observations with one snapshot of saved work. Due times describe eligibility. They do not promise execution while a lane is disabled or blocked. Status exits 0 when its report is delivered, including when the service is unhealthy. Doctor performs local inspection without repairs or container creation and exits 1 after delivering failed checks. Both support text and JSON. Logs retain at most 20 MiB across five private files and report gaps when following crosses lost or uncertain history.
+
+The native lifecycle still needs verification in a macOS GUI login session and a real Linux arm64 systemd user session. A macOS Background bootstrap context cannot establish GUI job identity. A preexisting inactive macOS registration also needs native inspection and removal before the CLI can safely control that slot. The full procedure is in [spec 0008 verification](docs/specs/0008-background-operation-diagnostics/verify.md).
 
 ## Development checks
 

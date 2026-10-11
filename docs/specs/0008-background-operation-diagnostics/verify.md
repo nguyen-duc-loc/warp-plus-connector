@@ -40,3 +40,8 @@ This is the acceptance procedure for the proposed feature. No item is marked pas
 Runtime proof precedes the separate test pass under the Beta workflow. Native supervision needs real user managers on both targets; mocked command tests and ordinary Docker containers do not close AC-16. Existing real provider behavior is reused where this feature does not alter it. Any new experiment that attaches a real candidate uses separately authorized keys and preserves host registration.
 
 After runtime verification, run the meaningful regression suite, formatting, vet, race tests, lint, and macOS and Linux arm64 builds. Record unavailable target evidence as an unmet acceptance criterion rather than declaring the feature complete.
+
+## Linux removal checkpoint correction
+
+1. Stop and disable the owned unit, then query it while its definition still exists. A loaded inactive unit is expected and does not prevent removal. Covers AC-4 and AC-14.
+2. Interrupt removal after definition deletion before its phase acknowledgement, after that acknowledgement before manager reload, and after reload before acknowledgement. Retry under both locks, confirm file absence and no foreign replacement, reload, and prove `LoadState=not-found`, no main PID, and no pending job before the receipt and manifest deletion. Covers AC-4, AC-6, AC-14, and AC-16.

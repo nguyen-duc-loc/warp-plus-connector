@@ -206,14 +206,14 @@ Run unattended on the selected platforms and let you inspect progress, stop clea
 
 **Done when:** you can start background operation, inspect status, and stop it; duplicate instances sharing state are prevented; shutdown saves completed work within a bounded time; restart recovers interrupted work; status reports last and next runs, queue depth, outcome counts, and source or validator failures; routine logs mask key values.
 
-**Spec:** [0008. Background operation and diagnostics](../specs/0008-background-operation-diagnostics/index.md), confirmed on 2026-10-11 after independent review and all eleven approved fixes. One native user service starts at login and runs the existing scheduler. Private observations, bounded logs, complete status, and local diagnostic checks explain operation without a database migration. Implementation remains pending.
+**Spec:** [0008. Background operation and diagnostics](../specs/0008-background-operation-diagnostics/index.md), confirmed on 2026-10-11, including the approved Linux removal correction. Code in `internal/service`, `internal/cli/service.go`, `internal/app/run.go`, and `internal/store/operational.go` adds controls, observations, logs, status, and doctor without a database migration. Local checks cover complete snapshots, ownership, log rotation and following, and observation failure. Native lifecycle proof remains pending at your request on 2026-10-11; this session has a macOS Background context and no configured Linux user manager.
 
 - [x] Design it (spec): `/architect background operation and diagnostics`
 - [ ] Build it: `/develop background operation and diagnostics`
   - [ ] Prove a macOS collection service through installation, explicit start, saved observation, status, stop, and inspection after restart (AC-1, AC-2, AC-3, AC-6, AC-8, AC-15).
   - [ ] Prove the same path under a real Linux user manager, then complete login activation, repeatable controls, bound paths, stopped uninstall, and native supervision (AC-1, AC-2, AC-3, AC-4, AC-5, AC-16).
-  - [ ] Complete snapshot status across all 338 controlled candidates, preserving complete terminal summaries during active work and explicit unavailable components (AC-8, AC-9, AC-10, AC-11, AC-15).
-  - [ ] Add bounded logs, recent and following inspection, local doctor checks, and diagnostic failure handling (AC-11, AC-12, AC-13, AC-14, AC-15).
+  - [x] Complete snapshot status across all 338 controlled candidates, preserving complete terminal summaries during active work and explicit unavailable components (AC-8, AC-9, AC-10, AC-11, AC-15).
+  - [x] Add bounded logs, recent and following inspection, local doctor checks, and diagnostic failure handling (AC-11, AC-12, AC-13, AC-14, AC-15).
   - [ ] Complete crash recovery, service identity checks, ownership races, interrupted controls, and bounded shutdown on both platforms (AC-3, AC-4, AC-5, AC-6, AC-7, AC-14, AC-16).
 - [ ] Verify it: `/check verify background operation and diagnostics`
 - [ ] Test it: `/test background operation and diagnostics`

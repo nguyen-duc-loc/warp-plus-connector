@@ -17,6 +17,11 @@ type RunSummary struct {
 	Validation *state.ValidationReport
 }
 
+// RunnerState describes current admission and lanes after schedule preparation.
+type RunnerState struct {
+	Phase, CrawlPhase, ValidationPhase string
+}
+
 type laneResult struct {
 	acknowledged bool
 	summary      RunSummary
@@ -61,6 +66,13 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 	defer cancel(nil)
 	a.shutdown = newShutdownWindow(ctx)
 	defer a.shutdown.cancelCleanup()
+	defer func() {
+		if a.Finalize != nil {
+			final, release := a.shutdown.localContext()
+			defer release()
+			err = errors.Join(err, a.Finalize(final, err))
+		}
+	}()
 	watchDone := make(chan struct{})
 	defer close(watchDone)
 	go func() {
@@ -104,6 +116,29 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 	laneCtx, laneCancel := context.WithCancel(ctx)
 	defer func() { laneCancel() }()
 	paused := !reconciled
+	validationPhase := "idle"
+	observe := func() error {
+		if a.Observe == nil {
+			return nil
+		}
+		s := RunnerState{Phase: "running", CrawlPhase: "idle", ValidationPhase: validationPhase}
+		if activeCrawl {
+			s.CrawlPhase = "crawling"
+		}
+		if paused {
+			s.Phase, s.CrawlPhase, s.ValidationPhase = "clock_paused", "clock_paused", "clock_paused"
+		}
+		if ctx.Err() != nil {
+			s.Phase, s.CrawlPhase, s.ValidationPhase = "stopping", "stopping", "stopping"
+		}
+		if !a.Settings.CrawlEnabled {
+			s.CrawlPhase = "disabled"
+		}
+		if !a.Settings.ValidationEnabled {
+			s.ValidationPhase = "disabled"
+		}
+		return a.Observe(s)
+	}
 	outputOK := true
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -147,6 +182,9 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 	}
 	log("schedule_starting")
 	for {
+		if e := observe(); e != nil && ctx.Err() == nil {
+			stop(e)
+		}
 		if ctx.Err() != nil && !activeCrawl && !activeValidation {
 			if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				err = classified(context.Cause(ctx))
@@ -189,6 +227,11 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 						continue
 					}
 					activeCrawl = true
+					if e := observe(); e != nil {
+						activeCrawl = false
+						stop(e)
+						continue
+					}
 					go func(task context.Context) {
 						taskWriter := &operationWriter{Writer: w.Writer, mutations: w.mutations}
 						r, e := a.crawlOwned(task, taskWriter, coverage, "scheduled")
@@ -198,6 +241,12 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 					}(laneCtx)
 				}
 				wait := snapshot.ValidationWait
+				if !activeValidation {
+					validationPhase = "idle"
+					if wait != nil && wait.RetryAt.After(snapshot.AsOf) {
+						validationPhase = "waiting"
+					}
+				}
 				needsValidation := snapshot.Candidates.Due > 0 || snapshot.ValidationRecoveryPending
 				if a.Settings.ValidationEnabled && !activeValidation && needsValidation &&
 					(wait == nil || !wait.RetryAt.After(snapshot.AsOf)) {
@@ -221,6 +270,12 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 						continue
 					}
 					activeValidation = true
+					validationPhase = "acquiring"
+					if e := observe(); e != nil {
+						activeValidation = false
+						stop(e)
+						continue
+					}
 					a.shutdown.startRemote()
 					go func(task context.Context) {
 						acq, e := acquireValidator(task, backend, a, m)
@@ -246,6 +301,10 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 						consider(*snapshot.Candidates.NextDueAt)
 					}
 				}
+			}
+			if e := observe(); e != nil {
+				stop(e)
+				continue
 			}
 			wake.Reset(delay)
 		}
@@ -278,6 +337,9 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 			}
 		case <-wake.C:
 		case result := <-events:
+			if result.acquisition != nil {
+				validationPhase = "checking"
+			}
 			a.handleLaneResult(
 				ctx,
 				laneCtx,

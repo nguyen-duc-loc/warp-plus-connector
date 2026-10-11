@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator/privatefs"
@@ -29,10 +30,13 @@ type DockerOptions struct {
 	Image    string
 	Socket   string
 	StateDir string
+	// Executable is the optional absolute Docker path bound by a service install.
+	Executable string
 }
 
 // Docker checks one candidate at a time with a retained isolated container.
 type Docker struct {
+	probe        bool
 	mutation     func(func() error) error
 	Options      DockerOptions
 	run          func(context.Context, []byte, ...string) ([]byte, error)
@@ -88,16 +92,20 @@ func (d *Docker) command(ctx context.Context, input []byte, args ...string) ([]b
 	if d.run != nil {
 		return d.run(ctx, input, args...)
 	}
+	if d.Options.Executable != "" {
+		return dockerCommandAtLimit(ctx, d.Options.Executable, input, d.probe, args...)
+	}
 	return dockerCommand(ctx, input, args...)
 }
 
 type limitedOutput struct {
 	bytes.Buffer
 	overflow bool
+	shared   *atomic.Int64
 }
 
 func (b *limitedOutput) Write(p []byte) (int, error) {
-	if b.Len()+len(p) > 2*1024*1024 {
+	if b.Len()+len(p) > 2*1024*1024 || (b.shared != nil && b.shared.Add(int64(len(p))) > 1024*1024) {
 		b.overflow = true
 		return 0, errors.New("output limit")
 	}
@@ -105,7 +113,23 @@ func (b *limitedOutput) Write(p []byte) (int, error) {
 }
 
 func dockerCommand(ctx context.Context, input []byte, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	return dockerCommandAt(ctx, "docker", input, args...)
+}
+
+func dockerCommandAt(ctx context.Context, executable string, input []byte, args ...string) ([]byte, error) {
+	return dockerCommandAtLimit(ctx, executable, input, false, args...)
+}
+
+func dockerCommandAtLimit(ctx context.Context, executable string, input []byte, probe bool, args ...string) (
+	[]byte,
+	error,
+) {
+	if probe {
+		bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		ctx = bounded
+	}
+	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.WaitDelay = 2 * time.Second
 	// Endpoint selection is explicit after inspection; environment cannot redirect it.
 	for _, entry := range os.Environ() {
@@ -115,6 +139,10 @@ func dockerCommand(ctx context.Context, input []byte, args ...string) ([]byte, e
 	}
 	cmd.Stdin = bytes.NewReader(input)
 	var out, diagnostic limitedOutput
+	if probe {
+		shared := &atomic.Int64{}
+		out.shared, diagnostic.shared = shared, shared
+	}
 	cmd.Stdout, cmd.Stderr = &out, &diagnostic
 	err := cmd.Run()
 	if ctx.Err() != nil {
@@ -143,6 +171,27 @@ func dockerCommand(ctx context.Context, input []byte, args ...string) ([]byte, e
 		return nil, &Error{Code: "validator_runtime_error"}
 	}
 	return out.Bytes(), nil
+}
+
+// LocalSocket resolves the local endpoint without contacting the daemon.
+func (d *Docker) LocalSocket(ctx context.Context) (string, error) {
+	endpoint, err := d.endpoint(ctx)
+	return strings.TrimPrefix(endpoint, "unix://"), err
+}
+
+// InspectLocal checks the daemon and immutable image without acquiring ownership.
+func (d *Docker) InspectLocal(ctx context.Context) error {
+	copy := *d
+	d = &copy
+	d.probe = true
+	endpoint, err := d.endpoint(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := d.runtime(ctx, endpoint); err != nil {
+		return err
+	}
+	return d.image(ctx, endpoint)
 }
 
 func (d *Docker) endpoint(ctx context.Context) (string, error) {

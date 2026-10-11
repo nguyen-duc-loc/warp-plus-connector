@@ -46,5 +46,6 @@ func NewRootCommand(version, commit string) *cobra.Command {
 	)
 
 	addRuntimeCommands(root, version)
+	addServiceCommands(root, version)
 	return root
 }
