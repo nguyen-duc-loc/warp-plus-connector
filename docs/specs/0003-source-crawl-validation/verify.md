@@ -55,7 +55,7 @@ AC-1: steps 1 and 2. AC-2: steps 1 and 2. AC-3: steps 3 and 4. AC-4: step 4. AC-
 
 ## Acceptance result, 2026-10-11
 
-PASS. AC-1 through AC-9 are met. Every listed runtime surface was exercised. The feature remains In Progress because its Beta test step is still open.
+PASS. AC-1 through AC-9 are met. Every listed runtime surface was exercised. At the end of this acceptance run, the Beta test step was still open. The subsequent test pass recorded below completed the feature.
 
 The continuing acceptance run used private scratch state at `/private/tmp/wpc-check-dmen8wm0`. The initial collection and persistence observations remain part of this run. Later checks completed the live validator cases that were initially blocked. No application code was changed during verification.
 
@@ -75,4 +75,4 @@ The final image was `sha256:edfd8265e115516d574aebac5023239f85286d3444ea32ec999e
 
 Provider response fixtures verify classification and recovery behavior; they are not live entitlement proof. Live confirmation and cleanup used the authorized sourced candidate. One interruption probe initially read the wrong evidence field name, missed its checkpoint, and allowed normal successful cleanup. The corrected probe reached the checkpoint and passed. No missing surface or unresolved application failure remained.
 
-The repository gate passed formatting, vet, race tests and lint. All temporary verification containers were removed. Scope item 4 now has Verify it ticked; Test it remains open. The spec status remains In Progress.
+The repository gate passed formatting, vet, race tests and lint. All temporary verification containers were removed. The subsequent test pass on 2026-10-11 completed retained regression coverage on macOS and Linux arm64, as recorded in [scope item 4](../../scope/scope.md#4-one-source-crawl-and-validation-loop--done). You confirmed feature completion that day. Both Verify it and Test it are complete, and the spec status is Accepted.

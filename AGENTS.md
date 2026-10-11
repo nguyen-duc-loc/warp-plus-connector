@@ -16,6 +16,8 @@ Workflow: Beta, verify behavior after development, then add meaningful tests. Sc
 ```sh
 rtk proxy go mod download
 rtk proxy go build -o bin/wpc ./cmd/wpc
+rtk proxy goreleaser check
+rtk proxy goreleaser build --snapshot --clean
 rtk proxy sh scripts/build-validator-image.sh
 rtk proxy go run ./cmd/wpc --help
 rtk proxy go test ./...
@@ -38,11 +40,13 @@ Formatting passes when `gofmt -l` prints nothing. To format changed Go files, us
 6. Docker validation requires the tested immutable Linux arm64 image, a local Unix Docker endpoint, and shared private recovery ownership. Never use the host WARP registration as a fallback. Unknown remote cleanup blocks further attachments. Store writes require one lock owner; keep SQL behind the store boundary and transactions outside network requests.
 7. `internal/state` holds domain records; `internal/store` owns SQLite persistence, migrations, recovery, and bounded history reads. Store callers supply an absolute state directory, recovery clock, and explicit freshness evaluation. Runtime CLI commands use the store; help and version remain free of state and configuration access.
 8. `internal/config` resolves private JSON before state or external work; only explicitly changed flags override it. `internal/app` owns coordination: persist crawl intent before fetching, save parsed coverage before messages, and preserve earlier message commits on failure. Listing fixes one freshness evaluation across every store page. CLI diagnostics use stable codes; keys appear only with `list --show-keys`.
+9. Source configuration accepts up to 32 normalized channels and page limits from 1 through 100. Defaults are `warpplus`, `warppluscn`, `warpplushome`, and `warp_veyke`, one page each. Explicit source lists replace defaults. Validate disabled entries too; `crawl --source` only selects configured enabled entries, preserving configuration order, and explicit `--page-limit` overrides selected limits. Only crawl rejects an empty selection. `sources` reads configuration without opening state, contacting sources, or invoking Docker.
 
 ## Tooling
 The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. CI remains pending provider selection; its planned checks include the same gate and builds for macOS and Linux arm64.
 The formatting gate uses `scripts/check-format.sh` to reject unformatted Go files under `cmd` and `internal` without changing them. Go tests under `scripts` also need the broader formatting command above. `.golangci.yml` enables `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`. Repeatable hook checks are in [tooling verification](docs/reviews/tooling/verify.md).
 Observed tools: `golangci-lint 2.14.0`, `pre-commit 4.6.2`. Formatting, vet, race tests, lint, and configuration validation passed on macOS arm64. Sandbox runs of vet, race tests, and golangci encountered cache access or package loading errors; all passed with approved toolchain and cache access. Check the environment before changing dependencies to address those errors.
+GoReleaser `2.18.3` uses `.goreleaser.yaml` for macOS and Linux arm64 builds with CGO disabled and version metadata. Snapshot builds replace generated `dist/` output. `rtk proxy goreleaser release --snapshot --clean` also creates local archives and SHA256 checksums without publishing; the Docker worker image keeps its separate build script.
 
 ## Git
 - integration: on
@@ -66,6 +70,7 @@ Architecture: [0001 stack and architecture](docs/specs/0001-stack-architecture/i
 Declined: additional community skills and MCP servers for this stack. Do not offer discovery again without a new request.
 
 ## Context files
+- [internal/app/AGENTS.md](internal/app/AGENTS.md): Crawl coordination, mutation failure boundaries, checks, and saved reads.
 - [internal/source/AGENTS.md](internal/source/AGENTS.md): Bounded public retrieval, exact candidate extraction, and source provenance.
 - [internal/store/AGENTS.md](internal/store/AGENTS.md): Store ownership, persistence contracts, cancellation, and verification.
 - [internal/validator/AGENTS.md](internal/validator/AGENTS.md): Isolated Docker validation, durable remote recovery, and image preparation.

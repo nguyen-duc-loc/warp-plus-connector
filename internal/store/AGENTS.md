@@ -10,21 +10,31 @@ New directories use `0700`; managed files use `0600`. Existing broad permissions
 
 [migrate.go](migrate.go) applies embedded SQL and the schema version in one transaction. [001_initial.sql](migrations/001_initial.sql) defines the five history tables; [002_crawl_coverage.sql](migrations/002_crawl_coverage.sql) adds requested and parsed crawl coverage. Version zero initializes only when no application schema objects exist. Readers require the current version; newer or damaged state is rejected without replacement.
 
+Schema version 3 adds [003_crawl_plan.sql](migrations/003_crawl_plan.sql), preserving old rows without backfill. `crawl_sources`, `crawl_pages`, and `crawl_page_observations` implement [spec 0004](../../docs/specs/0004-configurable-source-coverage/index.md). A failed migration rolls back its tables and version together; an older binary rejects the newer schema.
+
 ## Saved records and retries
 
 [discovery.go](discovery.go) saves one message atomically. Identity trims surrounding key whitespace and preserves the remaining bytes. Sightings retain their first known publication time and URL; each run and sighting pair retains its first observation time. Discovery times are derived from saved observations.
 
 [crawl.go](crawl.go) creates crawl intent and coverage atomically, records parsed facts once, and reads active or terminal reports with counts from one transaction. Legacy runs have unavailable coverage. Local run recovery does not reconcile Docker registrations; the validator owns its separate remote session journal.
 
+[plan.go](plan.go) saves the complete selected source snapshot before fetching, derives each request from saved coverage, fills parsed facts once, and links message observations to pages in the same transaction as discovery. A message requires a matching active parsed page and its fetched timestamp. Overlapping pages preserve the first observation time and page link. Legacy message and finish APIs reject plan runs.
+
+[plan_finish.go](plan_finish.go) validates page, source, and parent completion. Identical request, parse, and terminal replays succeed even after closure; conflicting inputs fail. Source completion requires a terminal page and a truthful `preview_end` or `page_limit` boundary. Parent completion requires every selected source to complete. An abort updates unfinished children and the parent in one transaction.
+
 [runs.go](runs.go) and [attempts.go](attempts.go) use caller request tokens for repeatable creation. Matching normalized inputs return the current saved record; conflicting inputs or terminal results return `ErrConflict`. One unresolved attempt per candidate is permitted across all runs. A validation run finishes only after all its attempts resolve.
 
 Times normalize to UTC microseconds. Recovery marks unfinished runs interrupted and unresolved attempts inconclusive, with explicit recovery time and no invented finish time. Earlier completed evidence remains intact.
+
+Plan recovery marks active pages and sources `interrupted`, skips pending sources with `interrupted_before_start`, and preserves terminal children. Recovered records have `recovered_at` and no invented `finished_at`. Request intent does not prove that an HTTP request reached Telegram; later crawls create new plans rather than resuming cursors.
 
 ## Reads and evidence
 
 [reads.go](reads.go) separates the latest completed attempt, last definitive result, and unresolved attempt. Attempt ID determines recency. Freshness uses the last definitive confirmation, explicit `AsOf`, and positive `MaxAge`; inconclusive retries do not refresh evidence.
 
 Pages default to 100 rows and allow up to 1000 per call, with no total cap. The first page fixes the highest included ID; later pages read current details. Cursors retain collection, parent, filter, and evaluation. Observation traversal requires a terminal crawl run.
+
+[plan_reads.go](plan_reads.go) reads every saved source and page in configuration and page order. `GetCrawlReport` returns saved plans independently of current settings, while preserving both earlier report formats. Candidate totals use distinct IDs at each report level; page totals cannot be summed to infer distinct run candidates. Parsed post counts include overlapping occurrences and posts without keys.
 
 [values.go](values.go) validates typed evidence and normalized reason codes. [errors.go](errors.go) preserves stable errors and cancellation for `errors.Is`, while excluding raw driver text from both messages and unwrap chains. The store emits no routine logs and never accepts message bodies or raw validator output.
 

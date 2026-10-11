@@ -225,7 +225,7 @@ Public preview markup remains an external dependency. End of visible pagination 
 
 1. Verify live channel identity and older navigation markup during implementation, recording only sanitized evidence. A dead seed is an explicit source failure, not a reason to replace the configured list silently.
 2. Keep retries, concurrent validation, export formats, scheduling, and background supervision in their existing later scope slices. Cursor resume and a database source registry are outside this design.
-3. After implementation, durable source and store context will need updates to describe the new contracts. Spec 0003 also contains an older progress paragraph inconsistent with its accepted status; that historical cleanup is separate from this feature.
+3. Complete: durable source and store context describe the new contracts. Spec 0003's completion notes now agree with its accepted status and recorded verification and test results.
 
 ## Rationale
 

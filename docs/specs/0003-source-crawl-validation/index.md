@@ -33,7 +33,7 @@ You can crawl the latest public page from `warpplus`, retain its candidates and 
 
 **Chosen option**: Keep one native Go CLI with separate crawl, check, and read actions. Use the existing SQLite store, add one crawl coverage table, and use goquery for public preview parsing. Treat the local Docker experiment as the first feasibility gate, with no real backend enabled by configuration alone. (basis: [scope item 4](../../scope/scope.md), [architecture](../0001-stack-architecture/index.md), [persistent state](../0002-persistent-key-state/index.md), your confirmed choices)
 
-This is a feature spec for scope item 4. You confirmed its initial content on 2026-10-10 after independent review. The Docker experiment subsequently established attributable Unlimited evidence and independently observed normal cleanup. The final build added the concrete backend and exercised real interruption handling. On 2026-10-11 you chose to leave a fresh positive check through the final CLI pending rather than release your working registration's device slot. The feature remains In Progress for verification and retained test coverage.
+This is a feature spec for scope item 4. You confirmed its initial content on 2026-10-10 after independent review. The Docker experiment established attributable Unlimited evidence and independently observed normal cleanup. The final CLI then confirmed a real sourced candidate, saved its evidence, and returned that confirmation from a separate process after cleanup. Runtime verification and retained tests passed on macOS and Linux arm64, and you confirmed feature completion on 2026-10-11. Your working registration remained unchanged. The [verification record](verify.md) and [scope item 4](../../scope/scope.md#4-one-source-crawl-and-validation-loop--done) retain the evidence and test results.
 
 **Implementation boundary**: The [Docker backend child](0003-docker-validator.md) now owns the tested commands, image, evidence, and recovery contract. Its explicit Docker settings and recovery command extend the initial configuration and CLI tables below. The default unsupported behavior remains supported. No host registration fallback, unverified vendor version, or discard of cleanup uncertainty is authorized.
 
@@ -146,14 +146,14 @@ Tracer Bullet delivery begins with the feasibility gate and then proves one thin
 
 You get a useful collection path and a durable record of what each crawl observed. Explicit unsupported attempts preserve intent without inventing entitlement. The single page and strict grammar keep coverage finite and inspectable.
 
-Public preview markup can change, and this slice intentionally misses older posts and future key formats. Docker requires a prepared local image and private recovery state. Public account capacity and entitlement can change between checks. The remaining fresh positive verification needs an available authorized Unlimited slot; unknown remote state deliberately blocks further attachments.
+Public preview markup can change, and this slice intentionally misses older posts and future key formats. Docker requires a prepared local image and private recovery state. Public account capacity and entitlement can change between checks. Future live positive checks need an available authorized Unlimited slot; unknown remote state deliberately blocks further attachments.
 
 ## Follow-up
 
 1. Complete: you confirmed the spec after independent review, and scope item 4 links its build milestones. The real backend design gate remains visible.
-2. Record the tested goquery version and transitive dependencies during implementation. The current research verifies the project, not a version tested in this repository.
-3. Verify live DOM compatibility during source implementation; current research observed rendered content and token shape, not a raw DOM fixture or a live parser result.
-4. Provision the Docker experiment and controlled subscription without altering the host WARP registration. Complete its evidence record and the backend child before real adapter work.
+2. Complete: `go.mod` and `go.sum` record tested goquery `v1.13.0`, cascadia `v1.3.4`, and `golang.org/x/net v0.58.0`.
+3. Complete: live parsing and sanitized fixtures established DOM compatibility, as recorded in [verification](verify.md).
+4. Complete: the isolated Docker experiment, backend contract, live confirmation, cleanup, and interruption checks passed without changing the host WARP registration. The [backend child](0003-docker-validator.md) and [verification record](verify.md) retain the evidence.
 5. Keep multiple channels, historical backfill, parallel checks, retries, export formats, schedules, and background supervision in their existing later scope slices.
 
 ## Rationale
