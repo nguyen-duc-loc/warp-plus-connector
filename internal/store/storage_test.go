@@ -19,7 +19,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 	require.NoError(t, err)
 	r, err := w.StartRun(ctx, state.RunInput{RequestID: "original", Kind: state.Crawl, StartedAt: time.Now()})
 	require.NoError(t, err)
-	err = migrate(ctx, w.h.writeDB, []string{initialSchema, coverageSchema, "CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);"})
+	err = migrate(ctx, w.h.writeDB, []string{initialSchema, coverageSchema, planSchema, "CREATE TABLE rollback_probe(id INTEGER); INSERT INTO table_missing VALUES (1);"})
 	require.Error(t, err)
 	var version, count int
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version))
@@ -31,7 +31,7 @@ func TestMigrationRollbackAndSchemaGuards(t *testing.T) {
 	require.Equal(t, r.ID, runs.Items[0].ID)
 	// Introspection verifies that the embedded migration actually ran.
 	require.NoError(t, w.h.writeDB.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&count))
-	require.Equal(t, 6, count)
+	require.Equal(t, 9, count)
 	require.NoError(t, w.Close())
 }
 
@@ -178,7 +178,7 @@ func TestCoverageMigrationPreservesLegacyHistory(t *testing.T) {
 	sightings, err := w.ListSightings(ctx, id, state.PageRequest{})
 	require.NoError(t, err)
 	// Remove only the schema 2 addition to reconstruct a populated schema 1 file.
-	_, err = w.h.writeDB.ExecContext(ctx, "DROP TABLE crawl_coverage; PRAGMA user_version=1")
+	_, err = w.h.writeDB.ExecContext(ctx, "DROP TABLE crawl_page_observations; DROP TABLE crawl_pages; DROP TABLE crawl_sources; DROP TABLE crawl_coverage; PRAGMA user_version=1")
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	r, err := OpenReader(ctx, dir)

@@ -1,4 +1,4 @@
-// Package telegram reads the single public warpplus preview page.
+// Package telegram reads bounded public Telegram preview pages.
 package telegram
 
 import (
@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,15 +40,17 @@ func (e *Error) Unwrap() error { return e.cause }
 
 // Page contains fully validated posts and observed coverage, never raw HTML.
 type Page struct {
-	Messages []state.MessageInput
-	Facts    state.CrawlPage
+	Messages     []state.MessageInput
+	Facts        state.CrawlPage
+	NextBeforeID *int64
 }
 
 // Adapter owns a dedicated HTTP client, with transport replacement for fixtures.
 type Adapter struct {
-	client  *http.Client
-	clock   func() time.Time
-	version string
+	client    *http.Client
+	clock     func() time.Time
+	version   string
+	startedAt time.Time
 }
 
 // New constructs a bounded client. A nil transport uses the standard transport.
@@ -68,21 +71,41 @@ func New(version string, clock func() time.Time, transport http.RoundTripper) *A
 	}}
 }
 
-// Fetch retrieves and fully parses one page, without retries or pagination.
+// Fetch retrieves the default channel for callers of the original adapter.
 func (a *Adapter) Fetch(ctx context.Context) (Page, error) {
+	return a.FetchPage(ctx, "warpplus", nil)
+}
+
+// FetchPage retrieves one canonical channel page without retries.
+func (a *Adapter) FetchPage(ctx context.Context, channel string, before *int64) (Page, error) {
+	normalized, ok := state.NormalizeChannel(channel)
+	if !ok || before != nil && *before <= 0 {
+		return Page{}, &Error{Reason: "source_pagination_error"}
+	}
+	channel = normalized
+	requestURL := "https://t.me/s/" + channel
+	if before != nil {
+		n := *before
+		before = &n
+		requestURL += "?before=" + strconv.FormatInt(n, 10)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	var zero Page
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, PreviewURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return zero, sourceError(ctx, "source_transport_error", err)
 	}
 	req.Header.Set("User-Agent", "wpc/"+a.version)
+	a.startedAt = time.Now()
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return zero, sourceError(ctx, "source_transport_error", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return zero, &Error{Reason: "source_rate_limited"}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return zero, &Error{Reason: "source_http_error"}
 	}
@@ -98,12 +121,16 @@ func (a *Adapter) Fetch(ctx context.Context) (Page, error) {
 		return zero, &Error{Reason: "source_body_too_large"}
 	}
 	at := a.clock().UTC().Truncate(time.Microsecond)
-	page, err := parse(body, at)
+	page, err := parsePage(body, at, channel, before)
 	if ctx.Err() != nil {
 		return zero, sourceError(ctx, "source_transport_error", ctx.Err())
 	}
 	return page, err
 }
+
+// RequestStartedAt returns the monotonic start of the most recent HTTP call.
+// The adapter is used sequentially by one crawl coordinator.
+func (a *Adapter) RequestStartedAt() time.Time { return a.startedAt }
 
 func sourceError(ctx context.Context, reason string, err error) error {
 	if errors.Is(ctx.Err(), context.Canceled) {
@@ -116,21 +143,29 @@ func sourceError(ctx context.Context, reason string, err error) error {
 }
 
 var tokenPattern = regexp.MustCompile(`[A-Za-z0-9]{8}-[A-Za-z0-9]{8}-[A-Za-z0-9]{8}`)
-var postPattern = regexp.MustCompile(`^warpplus/([0-9]+)$`)
+var postPattern = regexp.MustCompile(`^([A-Za-z0-9_]+)/([0-9]+)$`)
 
-func parse(body []byte, at time.Time) (Page, error) {
+func parsePage(body []byte, at time.Time, channel string, before *int64) (Page, error) {
 	bad := &Error{Reason: "source_parse_error"}
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return Page{}, bad
 	}
 	identity := doc.Find(".tgme_channel_info_header_username")
-	if identity.Length() != 1 || strings.TrimSpace(identity.Text()) != "@warpplus" {
+	if identity.Length() != 1 || !strings.EqualFold(strings.TrimSpace(identity.Text()), "@"+channel) {
 		return Page{}, bad
 	}
 	feed := doc.Find(".tgme_channel_history")
 	if feed.Length() != 1 {
 		return Page{}, bad
+	}
+	if feed.Children().Not(".tgme_widget_message,.tgme_widget_message_wrap,.js-messages_more_wrap").Length() != 0 {
+		return Page{}, bad
+	}
+	for n := feed.Get(0).FirstChild; n != nil; n = n.NextSibling {
+		if n.Type == html.TextNode && strings.TrimSpace(n.Data) != "" {
+			return Page{}, bad
+		}
 	}
 	out := Page{Facts: state.CrawlPage{FetchedAt: at}}
 	seen := map[int64]bool{}
@@ -148,7 +183,9 @@ func parse(body []byte, at time.Time) (Page, error) {
 	if parseErr != nil {
 		return Page{}, parseErr
 	}
-	if posts.Length() == 0 && (feed.Children().Length() != 0 || strings.TrimSpace(feed.Text()) != "") {
+	emptyContent := feed.Clone()
+	emptyContent.ChildrenFiltered(".js-messages_more_wrap").Remove()
+	if posts.Length() == 0 && (emptyContent.Children().Length() != 0 || strings.TrimSpace(emptyContent.Text()) != "") {
 		return Page{}, bad
 	}
 	posts.Each(func(_ int, s *goquery.Selection) {
@@ -156,19 +193,19 @@ func parse(body []byte, at time.Time) (Page, error) {
 			return
 		}
 		match := postPattern.FindStringSubmatch(s.AttrOr("data-post", ""))
-		if len(match) != 2 {
+		if len(match) != 3 || !strings.EqualFold(match[1], channel) {
 			parseErr = bad
 			return
 		}
-		id, err := strconv.ParseInt(match[1], 10, 64)
+		id, err := strconv.ParseInt(match[2], 10, 64)
 		if err != nil || id <= 0 || seen[id] {
 			parseErr = bad
 			return
 		}
 		seen[id] = true
 		messageID := strconv.FormatInt(id, 10)
-		url := "https://t.me/warpplus/" + messageID
-		message := state.MessageInput{SourceID: SourceID, MessageID: messageID, MessageURL: &url, ObservedAt: at}
+		url := "https://t.me/" + channel + "/" + messageID
+		message := state.MessageInput{SourceID: "telegram:" + channel, MessageID: messageID, MessageURL: &url, ObservedAt: at}
 		text := strings.Builder{}
 		s.Find(".tgme_widget_message_text").Each(func(_ int, part *goquery.Selection) {
 			if part.Closest(".tgme_widget_message").Get(0) != s.Get(0) || hiddenAncestors(part.Get(0)) {
@@ -205,7 +242,87 @@ func parse(body []byte, at time.Time) (Page, error) {
 		maxID, _ := strconv.ParseInt(out.Messages[len(out.Messages)-1].MessageID, 10, 64)
 		out.Facts.MinMessageID, out.Facts.MaxMessageID = &minID, &maxID
 	}
+	next, err := pagination(feed, channel, before, out.Facts.MinMessageID)
+	if err != nil {
+		return Page{}, err
+	}
+	out.NextBeforeID = next
 	return out, nil
+}
+
+func decimalID(text string) (int64, bool) {
+	if text == "" {
+		return 0, false
+	}
+	for _, c := range text {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.ParseInt(text, 10, 64)
+	return n, err == nil && n > 0
+}
+
+// Only direct dedicated navigation controls may provide the next cursor.
+func pagination(feed *goquery.Selection, channel string, before, minID *int64) (*int64, error) {
+	bad := &Error{Reason: "source_pagination_error"}
+	var next *int64
+	var parseErr error
+	feed.ChildrenFiltered(".js-messages_more_wrap").Each(func(_ int, wrap *goquery.Selection) {
+		controls := wrap.ChildrenFiltered("a.tme_messages_more.js-messages_more")
+		if controls.Length() == 0 || wrap.Children().Length() != controls.Length() {
+			parseErr = bad
+			return
+		}
+		controls.Each(func(_ int, control *goquery.Selection) {
+			// Live older pages also include a dedicated newer control. It
+			// contributes no older cursor and is never followed.
+			_, newer := control.Attr("data-after")
+			_, older := control.Attr("data-before")
+			if newer && !older {
+				return
+			}
+			if newer && older {
+				parseErr = bad
+				return
+			}
+			base, _ := url.Parse("https://t.me/s/" + channel)
+			raw, ok := control.Attr("href")
+			if !ok || raw == "" {
+				parseErr = bad
+				return
+			}
+			link, err := url.Parse(raw)
+			if err != nil {
+				parseErr = bad
+				return
+			}
+			link = base.ResolveReference(link)
+			query, err := url.ParseQuery(link.RawQuery)
+			if err != nil || link.Scheme != "https" || link.Host != "t.me" || link.User != nil || link.Fragment != "" || strings.Contains(raw, "#") || !strings.EqualFold(link.EscapedPath(), "/s/"+channel) || len(query) != 1 || len(query["before"]) != 1 {
+				parseErr = bad
+				return
+			}
+			n, ok := decimalID(query.Get("before"))
+			if !ok || minID == nil || n > *minID || before != nil && n >= *before {
+				parseErr = bad
+				return
+			}
+			if attr, exists := control.Attr("data-before"); exists {
+				m, ok := decimalID(attr)
+				if !ok || m != n {
+					parseErr = bad
+					return
+				}
+			}
+			if next != nil && *next != n {
+				parseErr = bad
+				return
+			}
+			next = &n
+		})
+	})
+	return next, parseErr
 }
 
 func hidden(n *html.Node) bool {

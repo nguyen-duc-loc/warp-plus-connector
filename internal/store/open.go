@@ -95,7 +95,7 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time) (*
 	if mode != "wal" {
 		return nil, ErrStateAccess
 	}
-	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema}); err != nil {
+	if err = migrate(ctx, h.writeDB, []string{initialSchema, coverageSchema, planSchema}); err != nil {
 		return nil, safeError(ctx, "migrate state", err)
 	}
 	recovery, err := normalizeTime(clock())
@@ -366,6 +366,15 @@ func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {
 	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, "UPDATE validation_attempts SET outcome='inconclusive', reason_code='interrupted', recovered_at=? WHERE outcome IS NULL", at.UnixMicro()); err != nil {
 		return err
+	}
+	for _, query := range []string{
+		"UPDATE crawl_pages SET status='interrupted',reason_code='interrupted',recovered_at=? WHERE status IN ('requested','parsed') AND run_id IN (SELECT id FROM runs WHERE status='running')",
+		"UPDATE crawl_sources SET status='interrupted',stop_reason='interrupted',recovered_at=? WHERE status='running' AND run_id IN (SELECT id FROM runs WHERE status='running')",
+		"UPDATE crawl_sources SET status='skipped',stop_reason='interrupted_before_start',recovered_at=? WHERE status='pending' AND run_id IN (SELECT id FROM runs WHERE status='running')",
+	} {
+		if _, err = tx.ExecContext(ctx, query, at.UnixMicro()); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, "UPDATE runs SET status='interrupted', reason_code='interrupted', recovered_at=? WHERE status='running'", at.UnixMicro()); err != nil {
 		return err

@@ -13,7 +13,10 @@ var initialSchema string
 //go:embed migrations/002_crawl_coverage.sql
 var coverageSchema string
 
-const schemaVersion = 2
+//go:embed migrations/003_crawl_plan.sql
+var planSchema string
+
+const schemaVersion = 3
 
 // A private argument lets package tests exercise rollback without exposing a
 // migration override to application callers.

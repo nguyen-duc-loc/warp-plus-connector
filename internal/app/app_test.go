@@ -26,7 +26,9 @@ const crawlKey = "ABCDEFGH-12345678-AbCdEf01"
 
 type sourceFunc func(context.Context) (telegram.Page, error)
 
-func (f sourceFunc) Fetch(ctx context.Context) (telegram.Page, error) { return f(ctx) }
+func (f sourceFunc) FetchPage(ctx context.Context, _ string, _ *int64) (telegram.Page, error) {
+	return f(ctx)
+}
 
 type httpFunc func(*http.Request) (*http.Response, error)
 
@@ -34,7 +36,7 @@ func (f httpFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(
 
 func crawlApp(t *testing.T) *app.App {
 	t.Helper()
-	return &app.App{Settings: config.Settings{StateDir: filepath.Join(t.TempDir(), "state"), RecheckInterval: time.Hour}, Clock: func() time.Time { return crawlTime }}
+	return &app.App{Settings: config.Settings{Sources: []config.Source{{Channel: "warpplus", Enabled: true, PageLimit: 1}}, StateDir: filepath.Join(t.TempDir(), "state"), RecheckInterval: time.Hour}, Clock: func() time.Time { return crawlTime }}
 }
 
 // covers: spec 0003 AC-1, AC-2, AC-3. HTTP parsing and SQLite form one real path.
@@ -56,10 +58,12 @@ func TestCrawl_PersistsIntentBeforeFetchAndMergesRepeatedDiscoveries(t *testing.
 		require.NotZero(t, active.ID)
 		report, err := reader.GetCrawlReport(r.Context(), active.ID)
 		require.NoError(t, err)
-		require.Equal(t, "latest_preview", report.Coverage.CoverageMode)
-		require.Equal(t, 1, report.Coverage.PageLimit)
-		require.Nil(t, report.Coverage.FetchedAt)
-		require.Nil(t, report.Coverage.ParsedPostCount)
+		require.Nil(t, report.Coverage)
+		require.Len(t, report.Sources, 1)
+		require.Equal(t, "requested", report.Sources[0].Pages[0].Status)
+		require.Equal(t, 1, report.Sources[0].PageLimit)
+		require.Nil(t, report.Sources[0].Pages[0].FetchedAt)
+		require.Nil(t, report.Sources[0].Pages[0].ParsedPostCount)
 		require.NoError(t, reader.Close())
 		body := `<div class="tgme_channel_info_header_username">@warpplus</div><div class="tgme_channel_history"><div class="tgme_widget_message" data-post="warpplus/7"><div class="tgme_widget_message_text">` + crawlKey + ` ` + crawlKey + `</div></div><div class="tgme_widget_message" data-post="warpplus/9"></div></div>`
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
@@ -70,9 +74,9 @@ func TestCrawl_PersistsIntentBeforeFetchAndMergesRepeatedDiscoveries(t *testing.
 		require.Equal(t, state.Completed, report.Run.Status)
 		require.Equal(t, int64(1), report.SavedCandidates)
 		require.Equal(t, int64(1), report.SavedSightings)
-		require.Equal(t, 2, *report.Coverage.ParsedPostCount)
-		require.Equal(t, int64(7), *report.Coverage.MinMessageID)
-		require.Equal(t, int64(9), *report.Coverage.MaxMessageID)
+		require.Equal(t, 2, *report.Sources[0].Pages[0].ParsedPostCount)
+		require.Equal(t, int64(7), *report.Sources[0].Pages[0].MinMessageID)
+		require.Equal(t, int64(9), *report.Sources[0].Pages[0].MaxMessageID)
 		restarted := &app.App{Settings: a.Settings, Clock: a.Clock}
 		saved, err := restarted.ShowCrawl(t.Context(), report.Run.ID)
 		require.NoError(t, err)
@@ -125,6 +129,9 @@ func TestCrawl_PreservesProgressAndSanitizesFailures(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				want := state.Failed
+				if mode == "partial message failure" {
+					want = state.Running
+				}
 				if mode == "cancelled" {
 					want = state.Cancelled
 				}
@@ -135,12 +142,12 @@ func TestCrawl_PreservesProgressAndSanitizesFailures(t *testing.T) {
 			}
 			if mode == "partial message failure" {
 				require.Equal(t, int64(1), report.SavedCandidates)
-				require.Equal(t, 2, *report.Coverage.ParsedPostCount)
+				require.Equal(t, 2, *report.Sources[0].Pages[0].ParsedPostCount)
 			} else {
 				require.Zero(t, report.SavedCandidates)
 			}
 			if mode == "source failure" || mode == "cancelled" {
-				require.Nil(t, report.Coverage.FetchedAt)
+				require.Nil(t, report.Sources[0].Pages[0].FetchedAt)
 			}
 			saved, readErr := a.ShowCrawl(t.Context(), report.Run.ID)
 			require.NoError(t, readErr)

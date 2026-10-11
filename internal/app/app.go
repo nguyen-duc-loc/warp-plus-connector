@@ -17,7 +17,7 @@ import (
 
 // Source retrieves one fully parsed bounded page.
 type Source interface {
-	Fetch(context.Context) (telegram.Page, error)
+	FetchPage(context.Context, string, *int64) (telegram.Page, error)
 }
 
 // Error carries a stable diagnostic and preserves only known safe causes.
@@ -31,11 +31,13 @@ func (e *Error) Unwrap() error { return e.cause }
 
 // App uses a concrete store and small interfaces at external boundaries.
 type App struct {
-	Settings  config.Settings
-	Source    Source
-	Validator validator.Backend
-	Clock     func() time.Time
-	Logger    *slog.Logger
+	SourceNames []string
+	PageLimit   *int
+	Settings    config.Settings
+	Source      Source
+	Validator   validator.Backend
+	Clock       func() time.Time
+	Logger      *slog.Logger
 }
 
 func (a *App) evaluation() state.Evaluation {
@@ -80,57 +82,6 @@ func (a *App) log(runID int64, code string) {
 	if a.Logger != nil {
 		a.Logger.Info("run", "run_id", runID, "result", code)
 	}
-}
-
-// Crawl persists request intent before fetching and commits one message at a time.
-func (a *App) Crawl(ctx context.Context) (report state.CrawlReport, err error) {
-	w, err := store.OpenWriter(ctx, a.Settings.StateDir, a.Clock)
-	if err != nil {
-		return report, classified(err)
-	}
-	defer closeStore(&w.Reader, &err)
-	report, err = w.StartCrawl(ctx, state.CrawlInput{RequestID: rand.Text(), StartedAt: a.Clock(), SourceID: telegram.SourceID, RequestedURL: telegram.PreviewURL, CoverageMode: "latest_preview", PageLimit: 1})
-	if err != nil {
-		return report, classified(err)
-	}
-	id := report.Run.ID
-	finishing := false
-	defer func() {
-		if err != nil && !finishing {
-			a.cleanup(w, id, 0, err)
-		}
-		readCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if saved, readErr := w.GetCrawlReport(readCtx, id); readErr == nil {
-			report = saved
-		} else if err == nil {
-			err = classified(readErr)
-		}
-		a.log(id, string(report.Run.Status))
-	}()
-	page, err := a.Source.Fetch(ctx)
-	if err != nil {
-		return report, classified(err)
-	}
-	page.Facts.RunID = id
-	if _, err = w.RecordCrawlPage(ctx, page.Facts); err != nil {
-		return report, classified(err)
-	}
-	for _, message := range page.Messages {
-		if len(message.Keys) == 0 {
-			continue
-		}
-		message.RunID = id
-		if _, err = w.RecordMessage(ctx, message); err != nil {
-			return report, classified(err)
-		}
-	}
-	if err = ctx.Err(); err != nil {
-		return report, classified(err)
-	}
-	finishing = true
-	_, err = w.FinishRun(ctx, state.RunCompletion{RunID: id, Status: state.Completed, FinishedAt: a.Clock()})
-	return report, classified(err)
 }
 
 // Check records one deliberate attempt. Unknown IDs create no run or attempt.

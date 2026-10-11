@@ -1,7 +1,7 @@
 # 0004. Configurable source coverage
 
 **Date**: 2026-10-11
-**Status**: Proposed
+**Status**: Accepted
 
 ## Summary
 
@@ -28,7 +28,7 @@ You can crawl several public Telegram channels with a bounded number of pages fo
 
 **Chosen option**: Extend the current packages and add source and page records beside legacy coverage. Keep one run per invocation, sequential requests, private JSON as the editable source list, and the existing candidate and observation identities.
 
-This is an enhancement for scope feature 5. It adds a new contract to spec 0003 without replacing that completed slice. The feature remains `Proposed` until implementation begins. No new dependency, service, community skill, or MCP server is required.
+This is an enhancement for scope feature 5. It adds a new contract to spec 0003 without replacing that completed slice. You accepted the completed feature on 2026-10-11 after runtime verification and regression tests passed. No new dependency, service, community skill, or MCP server is required.
 
 You confirmed this design on 2026-10-11 after independent review and approved the resulting recovery and reporting clarifications. Scope feature 5 records the build milestones.
 

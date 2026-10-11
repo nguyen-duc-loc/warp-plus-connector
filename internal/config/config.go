@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
 )
 
@@ -23,6 +24,8 @@ var (
 
 // Settings are fully validated runtime inputs.
 type Settings struct {
+	Sources           []Source
+	CrawlPageLimit    int
 	StateDir          string
 	RecheckInterval   time.Duration
 	Validator         string
@@ -58,7 +61,7 @@ func Resolve(in Overrides) (Settings, error) {
 	} else if xdg := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(xdg) {
 		stateDir = filepath.Join(xdg, "warp-plus-connector")
 	}
-	out := Settings{StateDir: stateDir, RecheckInterval: 6 * time.Hour, Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator")}
+	out := Settings{Sources: defaultSources(), CrawlPageLimit: 1, StateDir: stateDir, RecheckInterval: 6 * time.Hour, Validator: "unsupported", ValidatorStateDir: filepath.Join(stateDir, "validator")}
 	path := filepath.Join(base, "warp-plus-connector", "config.json")
 	if in.ConfigPath != nil {
 		if *in.ConfigPath == "" {
@@ -78,10 +81,8 @@ func Resolve(in Overrides) (Settings, error) {
 		if err != nil {
 			return zero, err
 		}
-		for k, v := range values {
-			if err := apply(&out, k, v); err != nil {
-				return zero, err
-			}
+		if err := applyJSON(&out, values); err != nil {
+			return zero, err
 		}
 	}
 	for _, override := range []struct {
@@ -139,42 +140,190 @@ func private(info os.FileInfo) bool {
 	return ok && info.Mode().IsRegular() && info.Mode().Perm()&0077 == 0 && s.Uid == uint32(os.Geteuid())
 }
 
-func decode(data []byte) (map[string]string, error) {
+// Source is one configured channel, including disabled entries.
+type Source struct {
+	Channel   string
+	Enabled   bool
+	PageLimit int
+}
+
+func defaultSources() []Source {
+	return []Source{{"warpplus", true, 1}, {"warppluscn", true, 1}, {"warpplushome", true, 1}, {"warp_veyke", true, 1}}
+}
+
+func decode(data []byte) (map[string]json.RawMessage, error) {
 	d := json.NewDecoder(bytes.NewReader(data))
+	if err := uniqueJSON(d); err != nil {
+		return nil, err
+	}
+	if _, err := d.Token(); !errors.Is(err, io.EOF) {
+		return nil, ErrInvalid
+	}
+	var out map[string]json.RawMessage
+	if json.Unmarshal(data, &out) != nil || out == nil {
+		return nil, ErrInvalid
+	}
+	return out, nil
+}
+
+// Walk every object before decoding so nested duplicate fields cannot disappear.
+func uniqueJSON(d *json.Decoder) error {
 	t, err := d.Token()
-	if err != nil || t != json.Delim('{') {
-		return nil, ErrInvalid
+	if err != nil {
+		return ErrInvalid
 	}
-	values := map[string]string{}
-	for d.More() {
-		t, err = d.Token()
+	delim, ok := t.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := map[string]bool{}
+		for d.More() {
+			t, err := d.Token()
+			if err != nil {
+				return ErrInvalid
+			}
+			key, ok := t.(string)
+			if !ok || seen[key] {
+				return ErrInvalid
+			}
+			seen[key] = true
+			if err := uniqueJSON(d); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for d.More() {
+			if err := uniqueJSON(d); err != nil {
+				return err
+			}
+		}
+	default:
+		return ErrInvalid
+	}
+	if _, err := d.Token(); err != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func pageLimit(raw json.RawMessage) (int, error) {
+	var n int
+	if string(raw) == "null" || json.Unmarshal(raw, &n) != nil || n < 1 || n > 100 {
+		return 0, ErrInvalid
+	}
+	return n, nil
+}
+
+func applyJSON(out *Settings, values map[string]json.RawMessage) error {
+	if raw, ok := values["crawl_page_limit"]; ok {
+		n, err := pageLimit(raw)
 		if err != nil {
-			return nil, ErrInvalid
+			return err
 		}
-		name, ok := t.(string)
-		if !ok {
-			return nil, ErrInvalid
-		}
-		if _, exists := values[name]; exists {
-			return nil, ErrInvalid
-		}
-		var value any
-		if d.Decode(&value) != nil {
-			return nil, ErrInvalid
-		}
-		s, ok := value.(string)
-		if !ok {
-			return nil, ErrInvalid
-		}
-		values[name] = s
+		out.CrawlPageLimit = n
 	}
-	if t, err = d.Token(); err != nil || t != json.Delim('}') {
-		return nil, ErrInvalid
+	for i := range out.Sources {
+		out.Sources[i].PageLimit = out.CrawlPageLimit
 	}
-	if _, err = d.Token(); !errors.Is(err, io.EOF) {
-		return nil, ErrInvalid
+	for k, raw := range values {
+		switch k {
+		case "crawl_page_limit":
+		case "sources":
+			var entries []map[string]json.RawMessage
+			if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil || len(entries) > 32 {
+				return ErrInvalid
+			}
+			out.Sources = []Source{}
+			seen := map[string]bool{}
+			for _, entry := range entries {
+				item := Source{Enabled: true, PageLimit: out.CrawlPageLimit}
+				for name, v := range entry {
+					switch name {
+					case "channel":
+						if string(v) == "null" || json.Unmarshal(v, &item.Channel) != nil {
+							return ErrInvalid
+						}
+					case "enabled":
+						if string(v) == "null" || json.Unmarshal(v, &item.Enabled) != nil {
+							return ErrInvalid
+						}
+					case "page_limit":
+						n, err := pageLimit(v)
+						if err != nil {
+							return err
+						}
+						item.PageLimit = n
+					default:
+						return ErrInvalid
+					}
+				}
+				channel, ok := state.NormalizeChannel(item.Channel)
+				if !ok || seen[channel] {
+					return ErrInvalid
+				}
+				seen[channel] = true
+				item.Channel = channel
+				out.Sources = append(out.Sources, item)
+			}
+		default:
+			var v string
+			if string(raw) == "null" || json.Unmarshal(raw, &v) != nil {
+				return ErrInvalid
+			}
+			if err := apply(out, k, v); err != nil {
+				return err
+			}
+		}
 	}
-	return values, nil
+	return nil
+}
+
+// Selection errors occur before state is opened and never include input values.
+var (
+	ErrSelectionInvalid = errors.New("source_selection_invalid")
+	ErrSelectionEmpty   = errors.New("source_selection_empty")
+)
+
+// SelectSources preserves configured order and applies an explicit budget last.
+func (s Settings) SelectSources(names []string, limit *int) ([]state.SourcePlan, error) {
+	if limit != nil && (*limit < 1 || *limit > 100) {
+		return nil, ErrSelectionInvalid
+	}
+	selected := map[string]bool{}
+	for _, name := range names {
+		channel, ok := state.NormalizeChannel(name)
+		if !ok || selected[channel] {
+			return nil, ErrSelectionInvalid
+		}
+		selected[channel] = true
+	}
+	var out []state.SourcePlan
+	for _, source := range s.Sources {
+		if len(names) > 0 && !selected[source.Channel] {
+			continue
+		}
+		if !source.Enabled {
+			if selected[source.Channel] {
+				return nil, ErrSelectionInvalid
+			}
+			continue
+		}
+		n := source.PageLimit
+		if limit != nil {
+			n = *limit
+		}
+		out = append(out, state.SourcePlan{Channel: source.Channel, PageLimit: n})
+		delete(selected, source.Channel)
+	}
+	if len(selected) > 0 {
+		return nil, ErrSelectionInvalid
+	}
+	if len(out) == 0 {
+		return nil, ErrSelectionEmpty
+	}
+	return out, nil
 }
 
 func apply(out *Settings, name, value string) error {

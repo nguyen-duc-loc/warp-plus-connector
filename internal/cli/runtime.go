@@ -21,12 +21,22 @@ import (
 var errArguments = errors.New("invalid arguments, see command help")
 
 func addRuntimeCommands(root *cobra.Command, version string) {
-	crawl := &cobra.Command{Use: "crawl", Short: "Collect the latest public warpplus preview page", Args: noArguments}
+	crawl := &cobra.Command{Use: "crawl", Short: "Collect bounded pages from configured public channels", Args: noArguments}
 	commonFlags(crawl)
+	var sourceNames []string
+	crawl.Flags().StringArrayVar(&sourceNames, "source", nil, "Select a configured enabled channel (repeatable)")
+	crawl.Flags().Int("page-limit", 1, "Override selected channel page limits (1 through 100)")
 	crawl.RunE = func(cmd *cobra.Command, _ []string) error {
 		a, err := application(cmd, version)
 		if err != nil {
 			return err
+		}
+		// Use the bound slice: GetStringArray serializes a single empty value
+		// as an empty array, which would turn invalid selection into defaults.
+		a.SourceNames = append([]string(nil), sourceNames...)
+		if cmd.Flags().Changed("page-limit") {
+			n, _ := cmd.Flags().GetInt("page-limit")
+			a.PageLimit = &n
 		}
 		report, err := a.Crawl(cmd.Context())
 		if report.Run.ID != 0 {
@@ -115,7 +125,28 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 		return err
 	}
 	validation.AddCommand(recoverCommand)
-	root.AddCommand(crawl, check, list, validation)
+	sources := &cobra.Command{Use: "sources", Short: "Show configured sources and effective page limits", Args: noArguments}
+	commonFlags(sources)
+	sources.RunE = func(cmd *cobra.Command, _ []string) error {
+		settings, err := resolveSettings(cmd)
+		if err != nil {
+			return err
+		}
+		b := strings.Builder{}
+		if len(settings.Sources) == 0 {
+			b.WriteString("No sources configured.\n")
+		} else {
+			b.WriteString("CHANNEL\tSOURCE\tENABLED\tPAGE_LIMIT\n")
+			for _, s := range settings.Sources {
+				fmt.Fprintf(&b, "%s\ttelegram:%s\t%t\t%d\n", s.Channel, s.Channel, s.Enabled, s.PageLimit)
+			}
+		}
+		if _, err := io.WriteString(cmd.OutOrStdout(), b.String()); err != nil {
+			return &app.Error{Code: "output_error"}
+		}
+		return nil
+	}
+	root.AddCommand(crawl, check, list, validation, sources)
 }
 
 func validatorFlags(cmd *cobra.Command) {
@@ -153,7 +184,7 @@ func commonFlags(cmd *cobra.Command) {
 	cmd.Flags().String("recheck-interval", "6h", "Positive duration used to evaluate evidence freshness")
 }
 
-func application(cmd *cobra.Command, version string) (*app.App, error) {
+func resolveSettings(cmd *cobra.Command) (config.Settings, error) {
 	flag := func(name string) *string {
 		if !cmd.Flags().Changed(name) {
 			return nil
@@ -161,12 +192,16 @@ func application(cmd *cobra.Command, version string) (*app.App, error) {
 		value, _ := cmd.Flags().GetString(name)
 		return &value
 	}
-	settings, err := config.Resolve(config.Overrides{ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"), Validator: flag("validator"), ValidatorImage: flag("validator-image"), ValidatorSocket: flag("validator-socket")})
+	return config.Resolve(config.Overrides{ConfigPath: flag("config"), StateDir: flag("state-dir"), RecheckInterval: flag("recheck-interval"), Validator: flag("validator"), ValidatorImage: flag("validator-image"), ValidatorSocket: flag("validator-socket")})
+}
+
+func application(cmd *cobra.Command, version string) (*app.App, error) {
+	settings, err := resolveSettings(cmd)
 	if err != nil {
 		return nil, err
 	}
 	var backend validator.Backend = validator.Unsupported{Version: version}
-	if settings.Validator == "docker" {
+	if settings.Validator == "docker" && (cmd.Name() == "check" || cmd.Name() == "recover") {
 		backend = &validator.Docker{Options: validator.DockerOptions{Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir}}
 	}
 	return &app.App{Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend, Clock: time.Now,
@@ -193,6 +228,9 @@ func idValue(v *int64) string {
 }
 
 func renderCrawl(w io.Writer, r state.CrawlReport) error {
+	if len(r.Sources) > 0 {
+		return renderPlan(w, r)
+	}
 	b := strings.Builder{}
 	fmt.Fprintf(&b, "run_id=%d status=%s reason=%s counts_current=%t\n", r.Run.ID, r.Run.Status, textValue(r.Run.ReasonCode), r.Run.Status == state.Running)
 	if c := r.Coverage; c != nil {
@@ -247,7 +285,7 @@ func Diagnostic(err error) string {
 	if errors.As(err, &runtime) {
 		return runtime.Code
 	}
-	for _, known := range []error{config.ErrInvalid, config.ErrAccess, errArguments} {
+	for _, known := range []error{config.ErrInvalid, config.ErrAccess, config.ErrSelectionInvalid, config.ErrSelectionEmpty, errArguments} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

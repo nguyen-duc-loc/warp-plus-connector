@@ -149,5 +149,9 @@ func crawlReport(ctx context.Context, tx *sql.Tx, id int64) (state.CrawlReport, 
 		return out, err
 	}
 	err = tx.QueryRowContext(ctx, `SELECT count(DISTINCT s.candidate_id),count(*) FROM crawl_observations o JOIN sightings s ON s.id=o.sighting_id WHERE o.run_id=?`, id).Scan(&out.SavedCandidates, &out.SavedSightings)
+	if err != nil {
+		return out, err
+	}
+	out.Sources, err = readSources(ctx, tx, id)
 	return out, err
 }

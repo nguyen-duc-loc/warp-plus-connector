@@ -1,6 +1,6 @@
 # WPC (Warp Plus Connector)
 
-A personal CLI for publicly shared WARP Plus key candidates. You can crawl the latest public `warpplus` preview, inspect saved coverage, list all saved candidates, and check a selected authorized key in an isolated Linux container.
+A personal CLI for publicly shared WARP Plus key candidates. You can crawl bounded public Telegram previews, inspect saved coverage, list all saved candidates, and check a selected authorized key in an isolated Linux container.
 
 The first version targets macOS and Linux on arm64. Support for amd64 is deferred. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
 
@@ -29,14 +29,18 @@ The [architecture](docs/specs/0001-stack-architecture/index.md) defines the conf
 ## Crawl and inspect
 
 ```sh
+./bin/wpc sources
 ./bin/wpc crawl
+./bin/wpc crawl --source warpplus --page-limit 2
 ./bin/wpc crawl show 1
 ./bin/wpc list
 ./bin/wpc check 1
 ./bin/wpc list --show-keys
 ```
 
-You can replace the example IDs with a saved run ID or candidate ID. Crawling fetches only one latest preview page, with a 20 second deadline and a 2 MiB decoded body limit. It retains exact candidate identity, source message provenance, and observed coverage. It does not fetch channel history or retry requests. Repeated crawls merge identities while retaining observations.
+You can replace the example IDs with a saved run ID or candidate ID. Crawling defaults to one page each from `warpplus`, `warppluscn`, `warpplushome`, and `warp_veyke`. Requests run sequentially with at least one second between starts, a 20 second deadline, and a 2 MiB decoded body limit. Higher page limits follow validated older navigation without an extra probe or retry. Repeated crawls preserve exact candidate identity and source message provenance. Reports distinguish a page budget stop, the end of the visible preview, and failures. They always report `history_complete=false`.
+
+`sources` shows configured channels, including disabled entries, without opening state. Only `crawl` accepts repeatable `--source` selection and `--page-limit`. Selection preserves configuration order and cannot enable a disabled channel. One source failure allows later channels to run; HTTP 429 stops further requests.
 
 `crawl show` and `list` use saved state without contacting Telegram or a validator. Listing follows every bounded store page, with no total limit. Keys stay hidden unless you supply `--show-keys`. Missing state is an error; an initialized empty collection reports `No candidates saved.`
 
@@ -74,9 +78,16 @@ The optional default file is `os.UserConfigDir()/warp-plus-connector/config.json
 {
   "state_dir": "/absolute/private/path/wpc",
   "recheck_interval": "6h",
-  "validator": "unsupported"
+  "validator": "unsupported",
+  "crawl_page_limit": 1,
+  "sources": [
+    {"channel": "warpplus", "page_limit": 2},
+    {"channel": "warppluscn", "enabled": false}
+  ]
 }
 ```
+
+Omitting `sources` uses the four defaults. An explicit list replaces them, including an empty list. Channels use bare ASCII letters, digits, or underscores and normalize to lowercase. Duplicate channels are invalid. Up to 32 entries and page limits from 1 through 100 are accepted. Per channel limits override `crawl_page_limit`; an explicit `--page-limit` overrides selected limits. An empty enabled selection fails only for `crawl`, before opening state.
 
 Relative state paths resolve from your invocation directory. Shell expansions such as `~` are not performed. State defaults to your `Library/Application Support/warp-plus-connector` on macOS. Linux uses an absolute `XDG_STATE_HOME`, or your `.local/state`, followed by `warp-plus-connector`. State is private to your account. Opening a writer applies schema migrations and recovers interrupted local work; reading does neither.
 

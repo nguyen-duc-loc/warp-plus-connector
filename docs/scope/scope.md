@@ -27,7 +27,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 2 | Coding standards and tooling | Foundation | done |
 | 3 | Persistent key state | Foundation | done |
 | 4 | One source crawl and validation loop | Slice 1 | done |
-| 5 | Configurable source coverage | Slice 2 | in-progress |
+| 5 | Configurable source coverage | Slice 2 | done |
 | 6 | Concurrent checks and bounded retries | Slice 3 | planned |
 | 7 | Complete results and export | Slice 4 | planned |
 | 8 | Scheduled crawl and revalidation | Slice 5 | planned |
@@ -114,22 +114,24 @@ The test pass on 2026-10-11 added 28 test functions across 15 files. Coverage in
 
 ## Slice 2: Expand source coverage
 
-### 5. Configurable source coverage · in-progress
+### 5. Configurable source coverage · done
 
 Let you configure multiple public channels, collect directly from them, and see which sources succeeded. Initial seed candidates are `warpplus`, `warppluscn`, `warpPlusHome`, and `warp_veyke`.
 
 **Done when:** enabled sources contribute deduplicated candidates with provenance; the configured message or page coverage and any truncation are visible; repeated crawls are idempotent; one source failure does not discard other results or change a key's entitlement status.
 
-**Spec:** [0004. Configurable source coverage](../specs/0004-configurable-source-coverage/index.md), confirmed on 2026-10-11 after independent review. All four seeds are enabled by default. Coverage uses a shared page limit with per channel overrides, sequential requests, and one saved run with source and page outcomes. The spec remains Proposed until implementation begins.
+**Spec:** [0004. Configurable source coverage](../specs/0004-configurable-source-coverage/index.md), confirmed on 2026-10-11 after independent review. All four seeds are enabled by default. Coverage uses a shared page limit with per channel overrides, sequential requests, and one saved run with source and page outcomes. Implementation, runtime verification, and regression tests are complete. You confirmed feature completion on 2026-10-11. Code in `internal/config`, `internal/source/telegram`, `internal/state`, `internal/store`, `internal/app`, and `internal/cli`.
 
 - [x] Design it (spec): `/architect configurable source coverage`
-- [ ] Build it: `/develop configurable source coverage`
-  - [ ] Prove one configured channel through the migration, saved plan, one page crawl, and report after restart while preserving old history (AC-2, AC-4, AC-6, AC-10).
-  - [ ] Add the four defaults, custom source selection, source inspection, limit precedence, and independent source outcomes (AC-1, AC-2, AC-3, AC-4, AC-7).
-  - [ ] Prove bounded older page traversal, page records, overlap handling, request pacing, and visible coverage limits (AC-4, AC-5, AC-6, AC-9).
-  - [ ] Complete rate limit abort, cancellation, mutation error recovery, output errors, and privacy behavior (AC-2, AC-3, AC-7, AC-8, AC-10).
-- [ ] Verify it: `/check verify configurable source coverage`
-- [ ] Test it: `/test configurable source coverage`
+- [x] Build it: `/develop configurable source coverage`
+  - [x] Prove one configured channel through the migration, saved plan, one page crawl, and report after restart while preserving old history (AC-2, AC-4, AC-6, AC-10).
+  - [x] Add the four defaults, custom source selection, source inspection, limit precedence, and independent source outcomes (AC-1, AC-2, AC-3, AC-4, AC-7).
+  - [x] Prove bounded older page traversal, page records, overlap handling, request pacing, and visible coverage limits (AC-4, AC-5, AC-6, AC-9).
+  - [x] Complete rate limit abort, cancellation, mutation error recovery, output errors, and privacy behavior (AC-2, AC-3, AC-7, AC-8, AC-10).
+- [x] Verify it: `/check verify configurable source coverage`
+- [x] Test it: `/test configurable source coverage`
+
+The test pass on 2026-10-11 added 16 test functions across five existing test files, with acceptance references for AC-1 through AC-10. Coverage includes configuration boundaries, safe pagination, page budgets, later page failures, cancellation, saved reports, store lifecycle rejection, replay, atomic page links, migration rollback, and unchanged entitlement on rediscovery. The full repository formatting, vet, race test, and lint gate passed on macOS arm64. All five affected package suites also passed on Linux arm64 with networking disabled. Live Telegram behavior remains covered by the completed verification record. You approved feature completion and the milestone commit on 2026-10-11.
 
 ## Slice 3: Check reliably at scale
 

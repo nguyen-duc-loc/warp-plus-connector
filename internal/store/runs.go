@@ -42,6 +42,13 @@ func (w *Writer) StartRun(ctx context.Context, in state.RunInput) (state.Run, er
 func (w *Writer) FinishRun(ctx context.Context, in state.RunCompletion) (state.Run, error) {
 	return transact(ctx, &w.Reader, true, "finish run", func(tx *sql.Tx) (state.Run, error) {
 		var zero state.Run
+		plan, err := hasPlan(ctx, tx, in.RunID)
+		if err != nil {
+			return zero, err
+		}
+		if plan {
+			return zero, ErrInvalidInput
+		}
 		at, err := normalizeTime(in.FinishedAt)
 		if err != nil || in.RunID <= 0 {
 			return zero, ErrInvalidInput
