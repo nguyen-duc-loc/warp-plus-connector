@@ -119,7 +119,9 @@ func renderDefinition(m Manifest) ([]byte, error) {
 		}
 		b.WriteString("\nRestart=on-failure\nRestartSec=30s\nTimeoutStopSec=75s\n")
 		b.WriteString("KillMode=mixed\nKillSignal=SIGTERM\nSendSIGKILL=yes\nUMask=0077\nWorkingDirectory=")
-		b.WriteString(unitQuote(m.WorkingDir, false))
+		// WorkingDirectory is a literal path, not a quoted command word. A final
+		// dot preserves trailing spaces and backslashes through unit file parsing.
+		b.WriteString(strings.ReplaceAll(m.WorkingDir, "%", "%%") + "/.")
 		for _, pair := range environment(m) {
 			b.WriteString("\nEnvironment=" + unitQuote(pair, false))
 		}
@@ -266,16 +268,33 @@ func properties(data []byte) (map[string]string, error) {
 
 func linuxState(ctx context.Context, a Account, m *Manifest) (ManagerState, error) {
 	s := ManagerState{Identity: "unverified"}
-	data, err := native(ctx, a, 5*time.Second, "show", a.Name, "--no-pager")
+	data, err := native(ctx, a, 5*time.Second, "show", a.Name, "--all", "--no-pager")
 	if err != nil {
 		return s, err
 	}
+	return linuxPropertiesState(data, m)
+}
+
+func linuxPropertiesState(data []byte, m *Manifest) (ManagerState, error) {
+	s := ManagerState{Identity: "unverified"}
 	p, err := properties(data)
 	if err != nil {
 		return s, err
 	}
+	jobValue, ok := p["Job"]
+	if !ok {
+		return s, failure("service_manager_unavailable")
+	}
+	// systemctl renders an absent job as an empty value, not a numeric zero.
+	job := 0
+	if jobValue != "" {
+		job, err = strconv.Atoi(jobValue)
+		if err != nil || job < 0 {
+			return s, failure("service_manager_unavailable")
+		}
+	}
 	if p["LoadState"] == "not-found" {
-		if p["MainPID"] != "0" || p["Job"] != "0" {
+		if p["MainPID"] != "0" || job != 0 {
 			return s, failure("service_manager_unavailable")
 		}
 		s.Identity = "absent"
@@ -294,10 +313,6 @@ func linuxState(ctx context.Context, a Account, m *Manifest) (ManagerState, erro
 	s.Running = &running
 	active := p["ActiveState"]
 	s.ActiveState = &active
-	job, err := strconv.Atoi(p["Job"])
-	if err != nil {
-		return s, failure("service_manager_unavailable")
-	}
 	pending := job != 0
 	s.PendingJob = &pending
 	status, err := strconv.Atoi(p["ExecMainStatus"])
@@ -340,11 +355,19 @@ func verifyLinuxProperties(p map[string]string, m Manifest) error {
 		"FragmentPath": m.DefinitionPath, "DropInPaths": "", "Type": "exec", "Restart": "on-failure",
 		"RestartUSec": "30s", "TimeoutStopUSec": "1min 15s", "KillMode": "mixed", "KillSignal": "15",
 		"SendSIGKILL": "yes", "UMask": "0077", "WorkingDirectory": m.WorkingDir,
-		"EnvironmentFiles": "", "NeedDaemonReload": "no", "ExecStartPre": "", "ExecStartPost": "",
-		"ExecStop": "", "ExecStopPost": "", "ExecCondition": "", "ExecReload": "",
+		"NeedDaemonReload": "no",
 	}
 	for k, v := range expected {
 		if actual, ok := p[k]; !ok || actual != v {
+			return failure("service_definition_changed")
+		}
+	}
+	// systemctl omits empty struct arrays even with --all. Nonempty arrays
+	// produce records and must still reject extra commands or environment files.
+	for _, k := range []string{
+		"EnvironmentFiles", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecCondition", "ExecReload",
+	} {
+		if p[k] != "" {
 			return failure("service_definition_changed")
 		}
 	}
