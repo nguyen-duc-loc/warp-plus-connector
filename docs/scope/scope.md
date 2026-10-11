@@ -31,7 +31,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 6 | Concurrent checks and bounded retries | Slice 3 | done |
 | 7 | Complete results and export | Slice 4 | done |
 | 8 | Scheduled crawl and revalidation | Slice 5 | done |
-| 9 | Background operation and diagnostics | Slice 6 | planned |
+| 9 | Background operation and diagnostics | Slice 6 | in-progress |
 
 ## Foundations
 
@@ -200,13 +200,23 @@ The test pass on 2026-10-11 added 21 test functions across eight files and exten
 
 ## Slice 6: Operate in the background
 
-### 9. Background operation and diagnostics · planned · needs a decision
+### 9. Background operation and diagnostics · in-progress
 
 Run unattended on the selected platforms and let you inspect progress, stop cleanly, and recover after failure.
 
 **Done when:** you can start background operation, inspect status, and stop it; duplicate instances sharing state are prevented; shutdown saves completed work within a bounded time; restart recovers interrupted work; status reports last and next runs, queue depth, outcome counts, and source or validator failures; routine logs mask key values.
 
-- [ ] Design it (spec): `/architect background operation and diagnostics`
+**Spec:** [0008. Background operation and diagnostics](../specs/0008-background-operation-diagnostics/index.md), confirmed on 2026-10-11 after independent review and all eleven approved fixes. One native user service starts at login and runs the existing scheduler. Private observations, bounded logs, complete status, and local diagnostic checks explain operation without a database migration. Implementation remains pending.
+
+- [x] Design it (spec): `/architect background operation and diagnostics`
+- [ ] Build it: `/develop background operation and diagnostics`
+  - [ ] Prove a macOS collection service through installation, explicit start, saved observation, status, stop, and inspection after restart (AC-1, AC-2, AC-3, AC-6, AC-8, AC-15).
+  - [ ] Prove the same path under a real Linux user manager, then complete login activation, repeatable controls, bound paths, stopped uninstall, and native supervision (AC-1, AC-2, AC-3, AC-4, AC-5, AC-16).
+  - [ ] Complete snapshot status across all 338 controlled candidates, preserving complete terminal summaries during active work and explicit unavailable components (AC-8, AC-9, AC-10, AC-11, AC-15).
+  - [ ] Add bounded logs, recent and following inspection, local doctor checks, and diagnostic failure handling (AC-11, AC-12, AC-13, AC-14, AC-15).
+  - [ ] Complete crash recovery, service identity checks, ownership races, interrupted controls, and bounded shutdown on both platforms (AC-3, AC-4, AC-5, AC-6, AC-7, AC-14, AC-16).
+- [ ] Verify it: `/check verify background operation and diagnostics`
+- [ ] Test it: `/test background operation and diagnostics`
 
 ## Deferred
 
@@ -215,6 +225,8 @@ Billing, a hosted service, and product analytics are unnecessary for the selecte
 From spec 0006: provenance exports, complete history archives, CSV, saved export jobs, source and date filters, overwrite flags, and resumable public cursors remain deferred. None blocks complete candidate summaries and export.
 
 From spec 0007: history retention controls, calendar schedules, live configuration reload, user queue controls, and adaptive intervals remain deferred. None blocks the confirmed interval scheduler.
+
+From spec 0008: boot services, Linux lingering management, multiple named services, remote control, alerts, configurable log retention, and log export bundles remain deferred. None blocks the confirmed user service and diagnostics design.
 
 ## Legend
 
