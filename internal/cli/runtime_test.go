@@ -48,7 +48,7 @@ func TestRuntime_DistinguishesAbsentEmptyAndFailedOutput(t *testing.T) {
 	require.Equal(t, "No candidates saved.\n", out)
 	_, err = execute(true)
 	require.Error(t, err)
-	require.Equal(t, "command or output failed", cli.Diagnostic(err))
+	require.Equal(t, "output_error", cli.Diagnostic(err))
 }
 
 // covers: spec 0005 AC-1, AC-10. Invalid selections and policy flags fail before creating state.

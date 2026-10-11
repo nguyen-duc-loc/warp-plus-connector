@@ -1,7 +1,7 @@
 # 0006. Complete results and export
 
 **Date**: 2026-10-11
-**Status**: Proposed
+**Status**: Accepted
 
 ## Summary
 

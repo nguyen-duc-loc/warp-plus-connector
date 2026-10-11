@@ -26,7 +26,9 @@ Cancellation, output errors, unsafe cleanup, and throttling without a trusted de
 
 ## Reads and diagnostics
 
-`ShowCrawl`, `ShowCheck`, and `List` open readers only. `ShowCheck` streams the saved policy, every selected item, and each attempt independently of current settings or Docker; legacy reports have no invented batch metadata. Listing fixes one freshness evaluation for every page and has no total result cap. An output callback failure stops traversal and returns `output_error`. Application errors and logs use stable codes, record IDs, and source identities without raw upstream content or keys.
+`ShowCrawl`, `ShowCheck`, `List`, and `QueryCandidates` open readers only. `ShowCheck` streams the saved policy, every selected item, and each attempt independently of current settings or Docker; legacy reports have no invented batch metadata. `List` delegates to the snapshot query without a total cap and maps callback failures to `output_error`. Application errors and logs use stable codes, record IDs, and source identities without raw upstream content or keys.
+
+[query.go](query.go) implements [spec 0006](../../docs/specs/0006-complete-results-export/index.md): normalize and own filters before state access, combine alternatives within each filter and intersect filters, and capture one UTC evaluation at microsecond precision. `QueryCandidates` counts successful callbacks and probes one extra match to determine truncation. Callbacks prepare output synchronously and retain their error identity. The snapshot and reader close before return, including on cancellation; CLI delivery starts only after successful preparation and reader closure.
 
 You can run `rtk proxy go test -race ./internal/app` for focused checks. Tests use synthetic source or validator responses with the real store. Live behavior remains recorded in the feature verification files.
 

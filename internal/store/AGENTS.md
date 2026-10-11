@@ -38,6 +38,8 @@ Plan recovery marks active pages and sources `interrupted`, skips pending source
 
 Pages default to 100 rows and allow up to 1000 per call, with no total cap. The first page fixes the highest included ID; later pages read current details. Cursors retain collection, parent, filter, and evaluation. Observation traversal requires a terminal crawl run.
 
+[snapshot.go](snapshot.go) adds `VisitCandidates` for [spec 0006](../../docs/specs/0006-complete-results-export/index.md), with no schema change. It reads ascending IDs in pages of 100 and derives every summary within one read transaction and explicit evaluation. Later writer commits cannot alter that view. Returning false stops normally, callback errors retain their identity, and callbacks must not reenter the reader. Traversal stays synchronous through cancellation so entered callbacks finish before caller resources can be reused. Existing paged APIs retain their separate transaction behavior.
+
 [plan_reads.go](plan_reads.go) reads every saved source and page in configuration and page order. `GetCrawlReport` returns saved plans independently of current settings, while preserving both earlier report formats. Candidate totals use distinct IDs at each report level; page totals cannot be summed to infer distinct run candidates. Parsed post counts include overlapping occurrences and posts without keys.
 
 [batch_reads.go](batch_reads.go) derives report totals from saved rows and pages through items in selection order and attempts in attempt number order. Cursors bind the batch and candidate. Legacy runs have a nil policy; they retain their original history without invented selection metadata. An active report header is a point in time, while later pages may reflect newer commits.

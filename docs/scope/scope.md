@@ -29,7 +29,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 4 | One source crawl and validation loop | Slice 1 | done |
 | 5 | Configurable source coverage | Slice 2 | done |
 | 6 | Concurrent checks and bounded retries | Slice 3 | done |
-| 7 | Complete results and export | Slice 4 | in-progress |
+| 7 | Complete results and export | Slice 4 | done |
 | 8 | Scheduled crawl and revalidation | Slice 5 | planned |
 | 9 | Background operation and diagnostics | Slice 6 | planned |
 
@@ -155,7 +155,7 @@ Use Go concurrency to validate independent candidates with configurable worker a
 
 ## Slice 4: Reach every result
 
-### 7. Complete results and export · in-progress
+### 7. Complete results and export · done
 
 Inspect outcomes and freshness, and export the full matching collection for your own use. Terminal presentation and export must make any user selected limits explicit.
 
@@ -164,13 +164,17 @@ Inspect outcomes and freshness, and export the full matching collection for your
 **Spec:** [0006. Complete results and export](../specs/0006-complete-results-export/index.md), confirmed on 2026-10-11 after independent review. Listing and export share fixed snapshot filters and explicit limits. Export provides JSON or complete key lines to stdout or a private named file that never replaces an existing path. Output is prepared before delivery; no database migration is needed.
 
 - [x] Design it (spec): `/architect complete results and export`
-- [ ] Build it: `/develop complete results and export`
-  - [ ] Prove one saved candidate through snapshot traversal, JSON preparation, and stdout delivery after restart (AC-3, AC-5, AC-8, AC-11).
-  - [ ] Add complete summaries, shared filters and limits, empty results, and snapshot text listing across all 338 controlled candidates (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7).
-  - [ ] Add key disclosure and exact key lines, private named output, and atomic refusal to replace existing destinations (AC-5, AC-6, AC-9).
-  - [ ] Complete cancellation, failure diagnostics, publication uncertainty, cleanup, and concurrent writer and destination checks (AC-3, AC-6, AC-8, AC-9, AC-10, AC-11).
-- [ ] Verify it: `/check verify complete results and export` (AC-1 through AC-12 on macOS and Linux arm64).
-- [ ] Test it: `/test complete results and export`
+- [x] Build it: `/develop complete results and export`
+  - [x] Prove one saved candidate through snapshot traversal, JSON preparation, and stdout delivery after restart (AC-3, AC-5, AC-8, AC-11).
+  - [x] Add complete summaries, shared filters and limits, empty results, and snapshot text listing across all 338 controlled candidates (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7).
+  - [x] Add key disclosure and exact key lines, private named output, and atomic refusal to replace existing destinations (AC-5, AC-6, AC-9).
+  - [x] Complete cancellation, failure diagnostics, publication uncertainty, cleanup, and concurrent writer and destination checks (AC-3, AC-6, AC-8, AC-9, AC-10, AC-11).
+**Code:** `internal/store/snapshot.go`, `internal/app/query.go`, `internal/cli/results.go`, `internal/cli/result_encoding.go`, and `internal/cli/output_stage.go`.
+
+- [x] Verify it: `/check verify complete results and export` (AC-1 through AC-12 passed on macOS and Linux arm64, 2026-10-11; evidence in the feature verification checklist).
+- [x] Test it: `/test complete results and export`
+
+The test pass on 2026-10-11 added 13 test functions and extended subprocess coverage across five files, with references to spec 0006 acceptance criteria. Coverage includes complete collections, filter normalization, freshness boundaries, limit metadata, history references, disclosure, unsafe key preparation, empty and damaged state, publication races, state aliases, and callback ownership during cancellation. All 641 tests and subtests passed with the race detector on macOS arm64; one subprocess helper was intentionally skipped outside its parent test. Formatting, vet, and lint passed. The three affected internal package suites also passed on Linux arm64, with 341 tests and subtests and the same helper skip, using compiled test binaries in a container with networking disabled. Linux container compilation with race instrumentation was killed while building SQLite; the successful Linux run used ordinary test binaries. Platform command and memory verification remains recorded in the feature verification checklist. The separate test workflow is complete; `/sync` reconciled the feature status to done from implementation, verification, and test evidence.
 
 ## Slice 5: Keep results fresh
 

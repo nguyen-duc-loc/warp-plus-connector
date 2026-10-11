@@ -109,31 +109,15 @@ func (a *App) ShowCrawl(ctx context.Context, id int64) (report state.CrawlReport
 	return report, classified(err)
 }
 
-// List streams every candidate through bounded pages at one fixed evaluation.
-func (a *App) List(ctx context.Context, emit func(state.Candidate) error) (err error) {
-	r, err := store.OpenReader(ctx, a.Settings.StateDir)
-	if err != nil {
-		return classified(err)
-	}
-	defer closeStore(r, &err)
-	evaluation := a.evaluation()
-	request := state.PageRequest{Size: 100}
-	for {
-		page, err := r.ListCandidates(ctx, request, evaluation)
-		if err != nil {
-			return classified(err)
-		}
-		for _, candidate := range page.Items {
-			if err := ctx.Err(); err != nil {
-				return classified(err)
-			}
-			if err := emit(candidate); err != nil {
+// List visits every candidate from one snapshot at a fixed evaluation.
+func (a *App) List(ctx context.Context, emit func(state.Candidate) error) error {
+	_, err := a.QueryCandidates(
+		ctx, CandidateQuery{}, func(c state.Candidate) error {
+			if err := emit(c); err != nil {
 				return &Error{Code: "output_error"}
 			}
-		}
-		if page.Next == nil {
 			return nil
-		}
-		request.Cursor = page.Next
-	}
+		},
+	)
+	return err
 }

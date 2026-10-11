@@ -310,6 +310,13 @@ func (h *handle) close() error {
 }
 
 func transact[T any](ctx context.Context, r *Reader, write bool, op string, fn func(*sql.Tx) (T, error)) (T, error) {
+	return transactOwned(ctx, r, write, op, false, fn)
+}
+
+// Synchronous operations retain caller owned callback resources until all work ends.
+func transactOwned[T any](
+	ctx context.Context, r *Reader, write bool, op string, synchronous bool, fn func(*sql.Tx) (T, error),
+) (T, error) {
 	var zero T
 	if r == nil || r.h == nil {
 		return zero, ErrClosed
@@ -328,48 +335,50 @@ func transact[T any](ctx context.Context, r *Reader, write bool, op string, fn f
 		h.mu.RUnlock()
 		return zero, ErrClosed
 	}
-	return awaitContext(
-		ctx, func() (T, error) {
-			defer h.mu.RUnlock()
-			conn, err := db.Conn(ctx)
-			if err != nil {
-				return zero, safeError(ctx, op, err)
+	work := func() (T, error) {
+		defer h.mu.RUnlock()
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		defer func() { _ = conn.Close() }()
+		// Bound SQLite's native wait by a known earlier deadline. Explicit
+		// cancellation is handled by awaitContext without releasing ownership early.
+		timeout := 5000
+		if deadline, ok := ctx.Deadline(); ok {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return zero, safeError(ctx, op, context.DeadlineExceeded)
 			}
-			defer func() { _ = conn.Close() }()
-			// Bound SQLite's native wait by a known earlier deadline. Explicit
-			// cancellation is handled by awaitContext without releasing ownership early.
-			timeout := 5000
-			if deadline, ok := ctx.Deadline(); ok {
-				remaining := time.Until(deadline)
-				if remaining <= 0 {
-					return zero, safeError(ctx, op, context.DeadlineExceeded)
-				}
-				if remaining < 5*time.Second {
-					timeout = int((remaining + time.Millisecond - 1) / time.Millisecond)
-				}
+			if remaining < 5*time.Second {
+				timeout = int((remaining + time.Millisecond - 1) / time.Millisecond)
 			}
-			if _, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", timeout)); err != nil {
-				return zero, safeError(ctx, op, err)
-			}
-			defer func() { _, _ = conn.ExecContext(context.Background(), "PRAGMA busy_timeout=5000") }()
-			tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: !write})
-			if err != nil {
-				return zero, safeError(ctx, op, err)
-			}
-			defer func() { _ = tx.Rollback() }()
-			if err = ctx.Err(); err != nil {
-				return zero, safeError(ctx, op, err)
-			}
-			result, err := fn(tx)
-			if err != nil {
-				return zero, safeError(ctx, op, err)
-			}
-			if err = tx.Commit(); err != nil {
-				return zero, safeError(ctx, op, err)
-			}
-			return result, nil
-		}, nil,
-	)
+		}
+		if _, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", timeout)); err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		defer func() { _, _ = conn.ExecContext(context.Background(), "PRAGMA busy_timeout=5000") }()
+		tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: !write})
+		if err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err = ctx.Err(); err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		result, err := fn(tx)
+		if err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		if err = tx.Commit(); err != nil {
+			return zero, safeError(ctx, op, err)
+		}
+		return result, nil
+	}
+	if synchronous {
+		return work()
+	}
+	return awaitContext(ctx, work, nil)
 }
 
 func recoverState(ctx context.Context, db *sql.DB, at time.Time) error {

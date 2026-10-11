@@ -125,39 +125,8 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 	}
 	check.AddCommand(checkShow)
 
-	list := &cobra.Command{Use: "list", Short: "List every saved candidate, hiding keys by default", Args: noArguments}
-	commonFlags(list)
-	list.Flags().Bool("show-keys", false, "Include complete saved keys in output")
-	list.RunE = func(cmd *cobra.Command, _ []string) error {
-		a, err := application(cmd, version)
-		if err != nil {
-			return err
-		}
-		showKeys, err := cmd.Flags().GetBool("show-keys")
-		if err != nil {
-			return err
-		}
-		count := 0
-		err = a.List(
-			cmd.Context(), func(c state.Candidate) error {
-				if count == 0 {
-					header := "ID\tLATEST\tREASON\tLAST_DEFINITIVE\tEVIDENCE_AT\tFRESHNESS\tCLOCK_ANOMALY"
-					if showKeys {
-						header += "\tKEY"
-					}
-					if _, err := fmt.Fprintln(cmd.OutOrStdout(), header); err != nil {
-						return err
-					}
-				}
-				count++
-				return renderCandidate(cmd.OutOrStdout(), c, showKeys)
-			},
-		)
-		if err == nil && count == 0 {
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "No candidates saved.")
-		}
-		return err
-	}
+	list := candidateCommand(false)
+	export := candidateCommand(true)
 	validation := &cobra.Command{Use: "validator", Short: "Manage isolated validation recovery"}
 	recoverCommand := &cobra.Command{
 		Use: "recover", Short: "Reconcile an earlier validation without a new registration", Args: noArguments,
@@ -203,7 +172,7 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 		}
 		return nil
 	}
-	root.AddCommand(crawl, check, list, validation, sources)
+	root.AddCommand(crawl, check, list, export, validation, sources)
 }
 
 func validatorFlags(cmd *cobra.Command) {
@@ -406,6 +375,10 @@ func renderCandidate(w io.Writer, c state.Candidate, showKeys bool) error {
 
 // Diagnostic sanitizes parser and output errors before they reach stderr.
 func Diagnostic(err error) string {
+	var output *deliveryError
+	if errors.As(err, &output) {
+		return output.diagnostic()
+	}
 	var validation *validator.Error
 	if errors.As(err, &validation) {
 		return validation.Code

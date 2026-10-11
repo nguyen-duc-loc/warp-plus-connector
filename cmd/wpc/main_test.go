@@ -3,6 +3,7 @@ package main_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -174,6 +175,7 @@ func snapshot(t *testing.T, root string) map[string]string {
 
 // covers: spec 0003 AC-2, AC-3, AC-4, AC-6. Fresh processes read every saved
 // candidate and return an explicit failing exit for unsupported validation.
+// covers: spec 0006 AC-1, AC-5, AC-6, AC-10. Export survives restart and reports process failures.
 func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 	binary := buildCLI(t, "")
 	dir := t.TempDir()
@@ -219,9 +221,40 @@ func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 	invoke := func(args ...string) (string, string, int) {
 		return runCLI(t, binary, append(args, "--config", configPath, "--state-dir", stateDir)...)
 	}
+	t.Run("export after restart", func(t *testing.T) {
+		out, diagnostic, code := invoke("export")
+		require.Zero(t, code, diagnostic)
+		require.Empty(t, diagnostic)
+		var doc struct {
+			Items []map[string]json.RawMessage `json:"items"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &doc))
+		require.Len(t, doc.Items, 338)
+		for i, item := range doc.Items {
+			require.Equal(t, fmt.Sprint(i+1), string(item["id"]))
+			require.NotContains(t, item, "key")
+			for _, field := range []string{"latest_reason", "last_definitive", "evidence_at",
+				"latest_attempt_id", "definitive_attempt_id", "active_attempt_id"} {
+				require.Equal(t, "null", string(item[field]), field)
+			}
+		}
+		out, diagnostic, code = invoke("export", "--format", "keys")
+		require.Zero(t, code, diagnostic)
+		require.Equal(t, strings.Join(keys, "\n")+"\n", out)
+		require.Equal(t, "returned_count=338 limit=none truncated=false\n", diagnostic)
+		destination := filepath.Join(dir, "export.json")
+		require.NoError(t, os.WriteFile(destination, []byte("other owner"), 0600))
+		out, diagnostic, code = invoke("export", "--output", destination)
+		require.Equal(t, 1, code)
+		require.Empty(t, out)
+		require.Contains(t, diagnostic, "export_exists")
+		data, err := os.ReadFile(destination)
+		require.NoError(t, err)
+		require.Equal(t, "other owner", string(data))
+	})
 	out, diagnostic, code := invoke("list")
 	require.Zero(t, code, diagnostic)
-	require.Empty(t, diagnostic)
+	require.Equal(t, "returned_count=338 limit=none truncated=false\n", diagnostic)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	require.Len(t, lines, 339)
 	seen := map[string]bool{}
@@ -286,11 +319,12 @@ func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 
 // covers: spec 0003 AC-5, AC-6. Runtime help ignores invalid configuration,
 // and argument errors never echo supplied secrets or create state.
+// covers: spec 0006 AC-2, AC-10, AC-11. Export help and invalid filters avoid runtime work.
 func TestCLI_RuntimeHelpAndErrorsHaveNoSideEffects(t *testing.T) {
 	binary := buildCLI(t, "")
 	for _, args := range [][]string{
 		{"crawl", "--help"}, {"crawl", "show", "--help"}, {"list", "--help"}, {"check", "--help"},
-		{"validator", "recover", "--help"},
+		{"validator", "recover", "--help"}, {"export", "--help"},
 		{"check", "show", "--help"},
 	} {
 		out, diagnostic, code := runCLI(t, binary, args...)
@@ -301,6 +335,7 @@ func TestCLI_RuntimeHelpAndErrorsHaveNoSideEffects(t *testing.T) {
 	for _, args := range [][]string{
 		{"check", "ABCDEFGH-12345678-AbCdEf01"}, {"check", "0"}, {"check", "9223372036854775808"}, {"list", "secret"},
 		{"crawl", "show"}, {"crawl", "--config", "/missing/private-secret.json"},
+		{"export", "--status", "private-secret"}, {"export", "--format", "keys", "--show-keys=false"},
 	} {
 		out, diagnostic, code := runCLI(t, binary, args...)
 		require.Equal(t, 1, code)
