@@ -20,7 +20,7 @@ type ControlResult struct {
 	State          string
 }
 
-func publishDefinition(m Manifest) error {
+func publishDefinition(m Manifest) (err error) {
 	data, err := renderDefinition(m)
 	if err != nil {
 		return err
@@ -28,20 +28,47 @@ func publishDefinition(m Manifest) error {
 	if err := os.MkdirAll(filepath.Dir(m.DefinitionPath), 0700); err != nil {
 		return failure("service_access_error")
 	}
-	f, err := privateOpen(m.DefinitionPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
-	if err != nil {
+	dir := filepath.Dir(m.DefinitionPath)
+	if _, err := os.Lstat(m.DefinitionPath); err == nil {
 		// An identical publication from an interrupted install may be adopted.
-		if e := verifyDefinition(m); e != nil {
+		if err := verifyDefinition(m); err != nil {
 			return failure("service_conflict")
 		}
-		return privatefs.SyncDirectory(filepath.Dir(m.DefinitionPath))
+		return privatefs.SyncDirectory(dir)
+	} else if !missing(err) {
+		return failure("service_access_error")
 	}
+	// Publish only complete, synchronized bytes. Writing directly to the native
+	// path can strand a partial definition that no safe retry can adopt.
+	f, err := os.CreateTemp(dir, ".wpc-definition-")
+	if err != nil {
+		return failure("service_access_error")
+	}
+	name := f.Name()
+	defer func() {
+		if e := os.Remove(name); e != nil && !missing(e) {
+			err = errors.Join(err, failure("service_access_error"))
+		}
+	}()
 	_, err = f.Write(data)
 	err = errors.Join(err, f.Sync(), f.Close())
 	if err != nil {
 		return failure("service_access_error")
 	}
-	return privatefs.SyncDirectory(filepath.Dir(m.DefinitionPath))
+	// A hard link creates the native path atomically without replacing a file
+	// introduced since the initial absence check.
+	if err := os.Link(name, m.DefinitionPath); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return failure("service_access_error")
+		}
+		if err := verifyDefinition(m); err != nil {
+			return failure("service_conflict")
+		}
+	}
+	if err := os.Remove(name); err != nil {
+		return failure("service_access_error")
+	}
+	return privatefs.SyncDirectory(dir)
 }
 
 // Install enables login startup only after validating all installation inputs.
