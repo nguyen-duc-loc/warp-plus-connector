@@ -27,7 +27,13 @@ func WithLifecycle(ctx context.Context, started, shutdown func(), signalCode fun
 }
 
 // RunManaged enters the existing coordinator under a separate service lifetime owner.
-func RunManaged(parent context.Context, id, version string) (err error) {
+func RunManaged(parent context.Context, id, version string) error {
+	return runManaged(parent, id, version, ResolveAccount)
+}
+
+func runManaged(
+	parent context.Context, id, version string, resolveAccount func(context.Context) (Account, error),
+) (err error) {
 	if !identityPattern.MatchString(id) {
 		return failure("invalid_arguments")
 	}
@@ -56,7 +62,7 @@ func RunManaged(parent context.Context, id, version string) (err error) {
 		case <-done:
 		}
 	}()
-	a, err := ResolveAccount(ctx)
+	a, err := resolveAccount(ctx)
 	if err != nil {
 		return err
 	}
@@ -106,6 +112,7 @@ func RunManaged(parent context.Context, id, version string) (err error) {
 		return nil
 	}
 	if err := log(Event{Type: "runner_phase", Status: "starting"}); err != nil {
+		_ = p.publish(context.Background(), func(o *Observation) { terminal(o, "service_log_failed", 1) })
 		return err
 	}
 	beatDone := make(chan struct{})
