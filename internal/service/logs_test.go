@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -11,6 +12,35 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// Spec 0008 AC-12 and AC-14: the fast path must retain strict JSON field validation.
+func TestLogEntryDecodePreservesStrictSchema(t *testing.T) {
+	entry := Entry{
+		SchemaVersion: 1, InstallationID: strings.Repeat("a", 32), InvocationID: strings.Repeat("b", 32),
+		Sequence: 1, At: time.Now().UTC().Truncate(time.Microsecond), Stream: "diagnostic",
+		Event: Event{Type: "runner_phase", Status: "running"},
+	}
+	canonical, err := json.Marshal(entry)
+	require.NoError(t, err)
+	var indented bytes.Buffer
+	require.NoError(t, json.Indent(&indented, canonical, "", "  "))
+	for _, data := range [][]byte{canonical, indented.Bytes()} {
+		var got Entry
+		require.NoError(t, decodeLogEntry(data, &got))
+		require.Equal(t, entry, got)
+	}
+	for _, invalid := range [][]byte{
+		bytes.Replace(canonical, []byte(`"schema_version":1,`), nil, 1),
+		bytes.Replace(canonical, []byte(`"schema_version":1`), []byte(`"schema_version":1,"schema_version":1`), 1),
+		bytes.Replace(canonical, []byte(`"schema_version":1`), []byte(`"schema_version":1,"extra":0`), 1),
+		bytes.Replace(canonical, []byte(`"schema_version":1`), []byte(`"SCHEMA_VERSION":1`), 1),
+		bytes.Replace(canonical, []byte(`"sequence":1`), []byte(`"sequence":null`), 1),
+		bytes.Replace(canonical, []byte(`"status":"running"`), []byte(`"status":"running","status":"running"`), 1),
+	} {
+		var got Entry
+		require.Error(t, decodeLogEntry(invalid, &got))
+	}
+}
 
 // Spec 0008 AC-12: five bounded files survive rotation and a partial crash tail.
 func TestLogRotationAndTailRecovery(t *testing.T) {

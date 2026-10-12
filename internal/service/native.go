@@ -495,9 +495,18 @@ func checkedNative(ctx context.Context, a Account, m Manifest) (ManagerState, er
 		return s, err
 	}
 	if s.Identity == "unverified" {
-		return s, failure("service_identity_unverified")
+		return s, failure(nativeIdentityCode(a.Manager))
 	}
 	return s, nil
+}
+
+func nativeIdentityCode(manager string) string {
+	// With a bound Linux manifest, an unverified loaded identity means the
+	// effective settings failed comparison. macOS can lack identity evidence.
+	if manager == "systemd" {
+		return "service_definition_changed"
+	}
+	return "service_identity_unverified"
 }
 
 func startup(ctx context.Context, a Account, m Manifest, enabled bool) error {

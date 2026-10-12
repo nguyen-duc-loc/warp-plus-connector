@@ -508,7 +508,7 @@ func checkedStoppedNative(ctx context.Context, a Account, m Manifest) (ManagerSt
 		return s, err
 	}
 	if s.Identity == "unverified" {
-		return s, failure("service_identity_unverified")
+		return s, failure(nativeIdentityCode(a.Manager))
 	}
 	if !nativeGone(s) {
 		return s, failure("service_running")

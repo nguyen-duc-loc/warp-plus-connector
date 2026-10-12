@@ -91,7 +91,11 @@ func Doctor(parent context.Context) DoctorReport {
 			} else if err := verifyDefinition(m); err != nil {
 				add(name, "fail", "service_definition_changed", "inspect_native_definition")
 			} else if nativeErr == nil && nativeState.Identity == "unverified" {
-				add(name, "fail", "service_identity_unverified", "inspect_native_registration")
+				action := "inspect_native_registration"
+				if m.Manager == "systemd" {
+					action = "inspect_native_definition"
+				}
+				add(name, "fail", nativeIdentityCode(m.Manager), action)
 			} else {
 				add(name, "pass", "ok", "none")
 			}

@@ -187,6 +187,20 @@ func sameInvocation(a, b Entry) bool {
 	return a.InstallationID == b.InstallationID && a.InvocationID == b.InvocationID
 }
 
+func decodeLogEntry(data []byte, entry *Entry) error {
+	if err := json.Unmarshal(data, entry); err != nil {
+		return failure("service_log_invalid")
+	}
+	// Our own encoder emits a canonical record. Exact equality proves that no
+	// fields were omitted, aliased, duplicated, or discarded by Unmarshal.
+	// Other valid JSON layouts still receive the full strict schema check.
+	canonical, err := json.Marshal(entry)
+	if err == nil && bytes.Equal(data, canonical) {
+		return nil
+	}
+	return decode(data, entry)
+}
+
 type logArchive struct {
 	mu                            sync.Mutex
 	dir, installation, invocation string
@@ -423,7 +437,7 @@ func archiveSnapshot(ctx context.Context, root string, lines int) (LogView, erro
 				return out, failure("service_log_invalid")
 			}
 			var e Entry
-			if len(line)+1 > 16*1024 || decode(line, &e) != nil || validateEntry(e) != nil {
+			if len(line)+1 > 16*1024 || decodeLogEntry(line, &e) != nil || validateEntry(e) != nil {
 				return out, failure("service_log_invalid")
 			}
 			key := entryKey(e)
