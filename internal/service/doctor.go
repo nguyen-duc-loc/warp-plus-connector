@@ -137,53 +137,7 @@ func Doctor(parent context.Context) DoctorReport {
 				}
 				continue
 			}
-			r := c.Data.(RunnerStatus)
-			before := len(out.Checks)
-			held := r.LockHeld != nil && *r.LockHeld
-			if r.Observation != nil && r.InstallationMatches != nil && !*r.InstallationMatches {
-				add(name, "warn", "service_historical_observation", "none")
-				if held {
-					add(name, "fail", "service_owner_mismatch", "inspect_native_registration")
-				}
-			} else {
-				if held && nativeState.PID != nil && r.OwnerPID != nil && *r.OwnerPID != *nativeState.PID {
-					add(name, "fail", "service_owner_mismatch", "inspect_native_registration")
-				}
-				if held && r.Observation != nil && r.OwnerPID != nil && r.Observation.PID != *r.OwnerPID {
-					add(name, "fail", "service_owner_mismatch", "inspect_native_registration")
-				}
-				if held && (r.Observation == nil || r.Observation.terminal()) {
-					add(name, "fail", "service_observation_unavailable", "inspect_service_logs")
-				}
-				if o := r.Observation; o != nil {
-					if !o.terminal() && r.Stale != nil && *r.Stale {
-						add(name, "fail", "service_observation_stale", "inspect_service_logs")
-					}
-					if r.ClockAnomaly {
-						add(name, "fail", "service_clock_anomaly", "check_system_clock")
-					}
-					if o.Phase == "failed" {
-						add(name, "fail", "service_runner_failed", "inspect_service_logs")
-					}
-					pending := nativeState.PendingJob != nil && *nativeState.PendingJob
-					if !held && !o.terminal() && !pending {
-						add(name, "fail", "service_interrupted", "inspect_service_logs")
-					}
-					if !held && pending {
-						add(name, "warn", "service_starting", "check_status_later")
-					}
-				}
-			}
-			if nativeErr != nil || (held && nativeState.PID == nil) {
-				add(name, "warn", "service_owner_unknown", "open_supported_user_session")
-			}
-			if before == len(out.Checks) {
-				code := "ok"
-				if !held {
-					code = "service_stopped"
-				}
-				add(name, "pass", code, "none")
-			}
+			diagnoseRunner(c.Data.(RunnerStatus), nativeState, nativeErr, add)
 		case "state":
 			_, err := readWork(ctx, m.StateDir)
 			if err != nil {
@@ -231,4 +185,60 @@ func Doctor(parent context.Context) DoctorReport {
 	}
 	out.ObservedAt = timestamp()
 	return out
+}
+
+// diagnoseRunner keeps unknown ownership separate from released ownership.
+func diagnoseRunner(r RunnerStatus, native ManagerState, nativeErr error, add func(string, string, string, string)) {
+	findings := 0
+	emit := func(status, code, action string) {
+		findings++
+		add("runner", status, code, action)
+	}
+	held := r.LockHeld != nil && *r.LockHeld
+	released := r.LockHeld != nil && !*r.LockHeld
+	pending := nativeErr == nil && native.PendingJob != nil && *native.PendingJob
+	pendingKnown := nativeErr == nil && (native.PendingJob != nil || !native.Loaded)
+	o := r.Observation
+	historical := o != nil && r.InstallationMatches != nil && !*r.InstallationMatches
+	mismatch := held && (historical ||
+		(nativeErr == nil && native.PID != nil && r.OwnerPID != nil && *r.OwnerPID != *native.PID) ||
+		(o != nil && r.OwnerPID != nil && o.PID != *r.OwnerPID))
+	if mismatch {
+		emit("fail", "service_owner_mismatch", "inspect_native_registration")
+	}
+	if held && (o == nil || o.terminal()) {
+		emit("fail", "service_observation_unavailable", "inspect_service_logs")
+	}
+	if o != nil && !historical {
+		if !o.terminal() && r.Stale != nil && *r.Stale {
+			emit("fail", "service_observation_stale", "inspect_service_logs")
+		}
+		if r.ClockAnomaly {
+			emit("fail", "service_clock_anomaly", "check_system_clock")
+		}
+		if o.Phase == "failed" {
+			emit("fail", "service_runner_failed", "inspect_service_logs")
+		}
+		if released && !o.terminal() && pendingKnown && !pending {
+			emit("fail", "service_interrupted", "inspect_service_logs")
+		}
+	}
+	if !held && pending {
+		emit("warn", "service_starting", "check_status_later")
+	}
+	if historical {
+		emit("warn", "service_historical_observation", "none")
+	}
+	if nativeErr != nil || (held && native.PID == nil) ||
+		(r.LockHeld == nil && o != nil && !pending) ||
+		(released && o != nil && !o.terminal() && !pendingKnown) {
+		emit("warn", "service_owner_unknown", "open_supported_user_session")
+	}
+	if findings == 0 {
+		code := "ok"
+		if !held {
+			code = "service_stopped"
+		}
+		emit("pass", code, "none")
+	}
 }

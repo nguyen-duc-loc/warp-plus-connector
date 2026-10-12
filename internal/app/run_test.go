@@ -71,6 +71,86 @@ func TestRun_CancellationSharesRemoteCleanupAllowance(t *testing.T) {
 	}
 }
 
+// Spec 0008 AC-7: active crawl and validation share the existing cleanup budget.
+// Another cancellation cannot extend it, and finalization has only five seconds.
+func TestRun_CancellationBoundsBothActiveLanes(t *testing.T) {
+	synctest.Test(
+		t, func(t *testing.T) {
+			a := batchApp(t, 2)
+			scheduledSettings(a)
+			a.Settings.CrawlEnabled = true
+			source := &cancelledScheduledSource{started: make(chan struct{})}
+			a.Source = source
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var workers atomic.Int32
+			stopped := make(chan time.Time, 1)
+			finished := make(chan time.Time, 2)
+			fixture := &scheduledFixture{}
+			fixture.run = func(ctx context.Context, _ validator.Input, h validator.Hooks) (validator.Result, error) {
+				<-source.started
+				if workers.Add(1) == 2 {
+					stopped <- time.Now()
+					cancel()
+					time.AfterFunc(30*time.Second, cancel)
+				}
+				<-ctx.Done()
+				cleanup, release := h.CleanupContext()
+				defer release()
+				<-cleanup.Done()
+				finished <- time.Now()
+				return validator.Result{
+					Outcome: state.Inconclusive, ReasonCode: "cancelled", FailureClass: state.Terminal,
+					CleanupProven: true, Removed: true,
+				}, ctx.Err()
+			}
+			a.Validator = fixture
+			var finalDeadline time.Time
+			a.Finalize = func(ctx context.Context, _ error) error {
+				var ok bool
+				finalDeadline, ok = ctx.Deadline()
+				require.True(t, ok)
+				return nil
+			}
+			var summaries []app.RunSummary
+			err := a.Run(ctx, func(s app.RunSummary) error { summaries = append(summaries, s); return nil })
+			require.ErrorIs(t, err, context.Canceled)
+			stop := <-stopped
+			for range 2 {
+				require.Equal(t, 60*time.Second, (<-finished).Sub(stop))
+			}
+			require.Equal(t, stop.Add(65*time.Second), finalDeadline)
+			require.LessOrEqual(t, time.Since(stop), 65*time.Second)
+			require.Equal(t, int32(1), source.calls.Load())
+			require.Equal(t, int32(2), workers.Load())
+			require.Len(t, summaries, 2)
+			for _, summary := range summaries {
+				if summary.Crawl != nil {
+					require.NotEqual(t, state.Running, summary.Crawl.Run.Status)
+				} else {
+					require.NotEqual(t, state.Running, summary.Validation.Run.Status)
+				}
+			}
+			saved, err := a.ShowSchedule(t.Context(), 0)
+			require.NoError(t, err)
+			require.Zero(t, saved.Candidates.Active)
+		},
+	)
+}
+
+type cancelledScheduledSource struct {
+	started chan struct{}
+	calls   atomic.Int32
+}
+
+func (s *cancelledScheduledSource) FetchPage(ctx context.Context, _ string, _ *int64) (telegram.Page, error) {
+	if s.calls.Add(1) == 1 {
+		close(s.started)
+	}
+	<-ctx.Done()
+	return telegram.Page{}, ctx.Err()
+}
+
 // covers: spec 0007 AC-5, AC-7. A backward clock pauses due work across restart;
 // a forward jump admits one new run rather than replaying missed occurrences.
 func TestRun_ClockRepairCoalescesMissedCrawls(t *testing.T) {
