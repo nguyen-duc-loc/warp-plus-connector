@@ -31,6 +31,9 @@ type ProcessRunner struct{}
 
 // Run bounds one vendor command and returns either JSON data or a stable code.
 func (ProcessRunner) Run(parent context.Context, args ...string) Reply {
+	if contextExpired(parent) {
+		return Reply{Code: "validation_timeout"}
+	}
 	if len(args) == 2 && args[0] == "registration" && args[1] == "creation-status" {
 		f, err := os.Open("/var/lib/wpc/daemon.log")
 		if err != nil {
@@ -50,7 +53,7 @@ func (ProcessRunner) Run(parent context.Context, args ...string) Reply {
 	var out, diagnostic boundedBuffer
 	cmd.Stdout, cmd.Stderr = &out, &diagnostic
 	err := cmd.Run()
-	if ctx.Err() != nil {
+	if contextExpired(ctx) {
 		return Reply{Code: "validation_timeout"}
 	}
 	if out.overflow || diagnostic.overflow {

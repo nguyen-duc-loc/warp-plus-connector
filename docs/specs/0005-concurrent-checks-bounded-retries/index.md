@@ -3,6 +3,8 @@
 **Date**: 2026-10-11
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
 You can check several saved candidates in one command, with a configurable ceiling on active checks. Temporary failures receive a finite number of attempts, and every attempt remains visible after restart. One shared owner coordinates isolated Docker sessions, command pacing, and recovery. Uncertain cleanup stops new work without changing earlier entitlement evidence.
@@ -24,7 +26,7 @@ You can check several saved candidates in one command, with a configurable ceili
 | AC-9 | `check` prints each committed final candidate result as it finishes, followed by a batch summary. `check show <run-id>` reads saved selection, policy, item status, attempts, retry details, and totals after restart, including all 338 items in a controlled batch. Output errors stop work and propagate failure. |
 | AC-10 | Defaults, private JSON, and explicit flags retain their existing precedence and validation. Help and version have no runtime side effects. Saved reads do not invoke Docker. Keys remain absent from results, host arguments, environment, labels, and diagnostics. |
 | AC-11 | The additive SQLite migration preserves old history. The new backend safely reconciles a legacy single session before converting the recovery journal. Old binaries and incompatible images fail closed rather than starting work against the new journal. |
-| AC-12 | Verification proves real Docker overlap, global mutation pacing, cleanup, saved results after restart, and unchanged host registration using separately authorized keys. Controlled fault cases and retained race tests prove the failure boundaries on macOS and Linux arm64. No live acceptance result is claimed from fixtures alone. |
+| AC-12 | Verification proves real Docker overlap, global mutation pacing, cleanup, saved results after restart, and unchanged host registration using separately authorized keys. Controlled fault cases and retained race tests prove the failure boundaries on Linux amd64 and Linux arm64. No live acceptance result is claimed from fixtures alone. |
 
 ## Decision
 
@@ -202,7 +204,7 @@ SQLite writer recovery marks unresolved attempts inconclusive and nonterminal ba
 
 ### Security and observability
 
-The existing operating system account is the only actor. State and journals stay private, with the existing ownership and symlink checks. Retain the local Unix Docker endpoint, immutable Linux arm64 image, no host registration fallback, and no secret output. A shared owner serializes profiles even when the same key has different candidate IDs in their databases. Within a profile, exact key uniqueness and the unresolved attempt constraint enforce key identity.
+The existing operating system account is the only actor. State and journals stay private, with the existing ownership and symlink checks. Retain the local Unix Docker endpoint, immutable Linux image matching the supported daemon architecture, as defined in spec 0003, no host registration fallback, and no secret output. A shared owner serializes profiles even when the same key has different candidate IDs in their databases. Within a profile, exact key uniqueness and the unresolved attempt constraint enforce key identity.
 
 Use `log/slog` on stderr for batch admission, attempt admission and completion, retry planning, mutation admission and completion, and batch stop. Fields are run, candidate, attempt, session, attempt number, active count, effective ceiling, fixed operation name, elapsed duration, wait duration, and stable reason. No keys, account identifiers, raw vendor output, or credentials. Monotonic elapsed values establish concurrency and spacing; UTC timestamps serve saved history. No metrics service or new logging settings are introduced.
 
@@ -251,7 +253,7 @@ Tracer Bullet delivery starts with one saved batch item through every layer, the
 3. [ ] Extend the same path to two then four workers, shared mutation admission, bounded channels, complete selection reads, callback output, and fair slot reuse. Measure overlap and the configured ceiling with controlled work. Satisfies AC-1, AC-2, AC-3, AC-9.
 4. [ ] Add typed classification, finite retries, saved retry plans, candidate and attempt deadlines, server delay handling, and the current Docker throttling stop. Prove unchanged definitive evidence and no repeated mutation within a session. Satisfies AC-4, AC-5, AC-6.
 5. [ ] Complete cancellation, global stop races, uncertain store and journal acknowledgements, cleanup deadlines, multi session recovery, privacy, and output failure handling. Satisfies AC-2, AC-7, AC-8, AC-9, AC-10, AC-11.
-6. [ ] Run `/check verify concurrent checks and bounded retries`, including the separately authorized live Docker demonstration. Then run `/test` for meaningful retained regression coverage and the repository formatting, vet, race, and lint gate, with both supported arm64 builds. Satisfies AC-1 through AC-12.
+6. [ ] Run `/check verify concurrent checks and bounded retries`, including the separately authorized live Docker demonstration. Then run `/test` for meaningful retained regression coverage and the repository formatting, vet, race, and lint gate, with Linux amd64 and Linux arm64 builds. Satisfies AC-1 through AC-12.
 
 ## Consequences
 

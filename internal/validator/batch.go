@@ -30,6 +30,7 @@ type dockerOwner struct {
 	docker                      *Docker
 	lock                        *os.File
 	endpoint, daemon            string
+	platform                    string
 	registry                    registry
 	poisoned                    bool
 }
@@ -66,8 +67,10 @@ func (d *Docker) acquireAt(
 	if err != nil {
 		return nil, acquisitionFailure(err)
 	}
+	osName, arch := d.executablePlatform()
 	owner = &dockerOwner{
 		docker: d, lock: lock, endpoint: endpoint, daemon: daemon,
+		platform: osName + "/" + arch,
 		registry: registry{
 			Version: 3, Sessions: []manifest{}, LastObservedAt: clock().UTC().Truncate(time.Microsecond),
 		},
@@ -509,7 +512,7 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 		return result, err
 	}
 	data, err := o.docker.at(
-		ctx, m.Endpoint, nil, "create", "--name", m.Name, "--platform", "linux/arm64",
+		ctx, m.Endpoint, nil, "create", "--name", m.Name, "--platform", o.platform,
 		"--network", "bridge", "--memory", "512m", "--cpus", "1", "--pids-limit", "256", "--security-opt",
 		"no-new-privileges", "--label", containerLabel+"=1", "--label", containerLabel+".session="+m.SessionID, m.Image,
 	)

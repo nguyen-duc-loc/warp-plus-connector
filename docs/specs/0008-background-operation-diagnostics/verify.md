@@ -4,11 +4,11 @@ This is the acceptance procedure for the proposed feature. No item is marked pas
 
 ## Native service path
 
-1. On macOS arm64 with a real GUI user domain, install a valid collection configuration. Prove no database, source request, or runner starts during installation. Explicitly start, observe one scheduled crawl, inspect status from another process, stop, and inspect saved work. Covers AC-1, AC-2, AC-3, AC-6, AC-8, AC-15.
+1. On Linux amd64 with a real systemd user manager, install a valid collection configuration. Prove no database, source request, or runner starts during installation. Explicitly start, observe one scheduled crawl, inspect status from another process, stop, and inspect saved work. Covers AC-1, AC-2, AC-3, AC-6, AC-8, AC-15.
 2. Repeat under a real Linux arm64 systemd user manager. Verify native unit validation and the installed definition's effective settings. Record the user manager's session and lingering state without changing it. Covers AC-1, AC-2, AC-3, AC-16.
 3. Prove activation at the next native login, stop without disabling future startup, disable without stopping the current runner, enabled start after a stop, and disabled start refusal. Prove stopped uninstall retains data and diagnostics. Covers AC-2, AC-4, AC-16.
 4. Repeat identical install and control commands. Reject different config bindings, foreign definitions, absent managers, wrong ownership, broad permissions, managed symlinks, malformed metadata, and unsupported versions. Covers AC-3, AC-4, AC-14.
-5. Change caller `HOME` and prove the effective account lookup still locates the same installation. Exercise missing or ambiguous native account lookup. Load a different same name job, add a Linux drop in or runtime override, and leave an inactive macOS registration with unverified identity. Require refusal before a destructive native action, with the documented recovery guidance. Covers AC-1, AC-3, AC-4, AC-14.
+5. Change caller `HOME` and prove the effective account lookup still locates the same installation. Exercise missing or ambiguous native account lookup. Load a different same name job, add a Linux drop in or runtime override, and present a manifest with a foreign manager value. Require refusal before a destructive native action, with the documented recovery guidance. Covers AC-1, AC-3, AC-4, AC-14.
 
 ## Process failure and recovery
 
@@ -37,11 +37,19 @@ This is the acceptance procedure for the proposed feature. No item is marked pas
 
 ## Completion
 
-Runtime proof precedes the separate test pass under the Beta workflow. Native supervision needs real user managers on both targets; mocked command tests and ordinary Docker containers do not close AC-16. Existing real provider behavior is reused where this feature does not alter it. Any new experiment that attaches a real candidate uses separately authorized keys and preserves host registration.
+Runtime proof precedes the separate test pass under the Beta workflow. Native supervision needs real user managers on both Linux architectures; mocked command tests and ordinary Docker containers do not close AC-16. Existing real provider behavior is reused where this feature does not alter it. Any new experiment that attaches a real candidate uses separately authorized keys and preserves host registration.
 
-After runtime verification, run the meaningful regression suite, formatting, vet, race tests, lint, and macOS and Linux arm64 builds. Record unavailable target evidence as an unmet acceptance criterion rather than declaring the feature complete.
+After runtime verification, run the meaningful regression suite, formatting, vet, race tests, lint, and Linux amd64 and Linux arm64 builds. Record unavailable target evidence as an unmet acceptance criterion rather than declaring the feature complete.
 
 ## Linux removal checkpoint correction
 
 1. Stop and disable the owned unit, then query it while its definition still exists. A loaded inactive unit is expected and does not prevent removal. Covers AC-4 and AC-14.
 2. Interrupt removal after definition deletion before its phase acknowledgement, after that acknowledgement before manager reload, and after reload before acknowledgement. Retry under both locks, confirm file absence and no foreign replacement, reload, and prove `LoadState=not-found`, no main PID, and no pending job before the receipt and manifest deletion. Covers AC-4, AC-6, AC-14, and AC-16.
+
+## Platform transition
+
+The 2026-10-12 amendment removes native macOS requirements. Existing Linux arm64 evidence may be reused for unchanged behavior when its exact commands and versions remain recorded; none closes the added amd64 checks. The sections above apply on each Linux architecture.
+
+1. Complete the [platform checklist](../0001-stack-architecture/verify.md), including packaging, validator admission, real provider proof, retained recovery, and existing command regressions. Covers AC-17, AC-18, AC-19.
+2. Use doctor on each target with matching, mismatched, missing, and mislabeled images. Prove the same runtime admission rules as manual checks without any provider or container mutation. Covers AC-13, AC-18.
+3. Run the shared graceful cleanup, crash recovery, privacy, and controlled identity fault scenarios on both targets. macOS GUI session availability cannot block this completion. Covers AC-5, AC-6, AC-7, AC-12, AC-14, AC-16, AC-19.

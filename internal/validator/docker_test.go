@@ -21,16 +21,18 @@ const testContainer = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const testOrphan = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 
 type fakeDocker struct {
-	t             *testing.T
-	ids           []string
-	session       string
-	recoveryError error
-	creates       int
-	checks        int
-	removals      int
-	input         protocol.Request
-	check         func(context.Context) error
-	protocol      int
+	t               *testing.T
+	ids             []string
+	session         string
+	recoveryError   error
+	creates         int
+	checks          int
+	removals        int
+	input           protocol.Request
+	check           func(context.Context) error
+	protocol        int
+	arch            string
+	createdPlatform string
 }
 
 func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]byte, error) {
@@ -41,14 +43,18 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 		require.NotContains(f.t, arg, "ABCDEFGH-12345678-AbCdEf01")
 	}
 	encode := func(value any) ([]byte, error) { return json.Marshal(value) }
+	arch := f.arch
+	if arch == "" {
+		arch = "arm64"
+	}
 	switch a[0] {
 	case "info":
-		return encode(map[string]string{"ID": "daemon", "OSType": "linux", "Architecture": "aarch64"})
+		return encode(map[string]string{"ID": "daemon", "OSType": "linux", "Architecture": arch})
 	case "image":
 		return encode(
 			[]any{
 				map[string]any{
-					"Id": testImage, "Os": "linux", "Architecture": "arm64", "Config": map[string]any{
+					"Id": testImage, "Os": "linux", "Architecture": arch, "Config": map[string]any{
 						"Labels": map[string]string{
 							containerLabel + ".protocol": "2", containerLabel + ".warp": protocol.WARPVersion,
 						},
@@ -59,6 +65,11 @@ func (f *fakeDocker) run(ctx context.Context, input []byte, args ...string) ([]b
 	case "ps":
 		return []byte(strings.Join(f.ids, "\n")), nil
 	case "create":
+		for index, arg := range a {
+			if arg == "--platform" {
+				f.createdPlatform = a[index+1]
+			}
+		}
 		f.creates++
 		f.protocol = 2
 		f.ids = append(f.ids, testContainer)
@@ -147,7 +158,10 @@ func dockerFixture(t *testing.T) (*Docker, *fakeDocker) {
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0700))
 	f := &fakeDocker{t: t}
-	d := &Docker{Options: DockerOptions{Image: testImage, Socket: "/tmp/docker.sock", StateDir: dir}, run: f.run}
+	d := &Docker{
+		Options: DockerOptions{Image: testImage, Socket: "/tmp/docker.sock", StateDir: dir}, run: f.run,
+		platform: func() (string, string) { return "linux", "arm64" },
+	}
 	return d, f
 }
 
@@ -452,4 +466,78 @@ func ownedCheck(d *Docker, ctx context.Context, in Input) (Result, error) {
 			},
 		},
 	)
+}
+
+// AC-18: platform admission uses executable, daemon and image observations.
+// Doctor shares the checks without creating a registry or invoking the worker.
+func TestPlatformAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, executableOS, executableArch, daemonOS, daemonArch, imageOS, imageArch, reason string
+	}{
+		{"amd64", "linux", "amd64", "linux", "amd64", "linux", "amd64", ""},
+		{"x86 alias", "linux", "amd64", "linux", "x86_64", "linux", "amd64", ""},
+		{"arm64", "linux", "arm64", "linux", "arm64", "linux", "arm64", ""},
+		{"arm alias", "linux", "arm64", "linux", "aarch64", "linux", "arm64", ""},
+		{"host OS", "darwin", "arm64", "linux", "arm64", "linux", "arm64", "validator_platform_unsupported"},
+		{"host arch", "linux", "386", "linux", "amd64", "linux", "amd64", "validator_platform_unsupported"},
+		{"daemon OS", "linux", "amd64", "windows", "amd64", "linux", "amd64", "validator_platform_unsupported"},
+		{"daemon mismatch", "linux", "amd64", "linux", "arm64", "linux", "amd64", "validator_platform_unsupported"},
+		{"daemon unknown", "linux", "amd64", "linux", "unknown", "linux", "amd64", "validator_platform_unsupported"},
+		{"image mismatch", "linux", "amd64", "linux", "amd64", "linux", "arm64", "validator_version_mismatch"},
+		{"image OS", "linux", "arm64", "linux", "arm64", "windows", "arm64", "validator_version_mismatch"},
+		{"image alias refused", "linux", "arm64", "linux", "arm64", "linux", "aarch64", "validator_version_mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, f := dockerFixture(t)
+			d.platform = func() (string, string) { return tc.executableOS, tc.executableArch }
+			d.run = func(ctx context.Context, input []byte, args ...string) ([]byte, error) {
+				data, err := f.run(ctx, input, args...)
+				if err != nil {
+					return data, err
+				}
+				if args[2] == "info" {
+					var value map[string]any
+					require.NoError(t, json.Unmarshal(data, &value))
+					value["OSType"], value["Architecture"] = tc.daemonOS, tc.daemonArch
+					return json.Marshal(value)
+				}
+				require.Equal(t, "image", args[2], "local inspection cannot invoke worker operations")
+				var values []map[string]any
+				require.NoError(t, json.Unmarshal(data, &values))
+				values[0]["Os"], values[0]["Architecture"] = tc.imageOS, tc.imageArch
+				return json.Marshal(values)
+			}
+			err := d.InspectLocal(t.Context())
+			if tc.reason == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.reason)
+			}
+			require.Zero(t, f.creates)
+			require.Zero(t, f.checks)
+			_, err = os.Stat(d.path())
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// AC-18: both admitted platforms reach a matching creation request and preserve
+// the same registry, evidence and cleanup lifecycle.
+func TestChecksCreateMatchingPlatform(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			d, f := dockerFixture(t)
+			f.arch = arch
+			d.platform = func() (string, string) { return "linux", arch }
+			result, err := ownedCheck(d, t.Context(), Input{Key: "ABCDEFGH-12345678-AbCdEf01"})
+			require.NoError(t, err)
+			require.Equal(t, state.Confirmed, result.Outcome)
+			require.Equal(t, "linux/"+arch, f.createdPlatform)
+			require.Equal(t, 1, f.removals)
+			var saved registry
+			require.NoError(t, privatefs.Read(d.path(), &saved))
+			require.Equal(t, 3, saved.Version)
+			require.Empty(t, saved.Sessions)
+		})
+	}
 }

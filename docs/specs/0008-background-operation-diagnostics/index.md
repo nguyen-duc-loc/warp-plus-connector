@@ -2,10 +2,11 @@
 
 **Date**: 2026-10-11
 **Status**: In Progress
+**Updated**: Linux amd64 and arm64 amendment confirmed on 2026-10-12 after independent review. Implementation and new target proof remain pending.
 
 ## Summary
 
-You can install one background service for your account, start it, inspect its work, and stop it. The operating system starts it at login and supervises the existing runner. Private status records and bounded logs explain failures without exposing keys or requiring a working database.
+You can install one background service for your account, start it, inspect its work, and stop it. A Linux systemd user manager starts it at login and supervises the existing runner on amd64 or arm64. Private status records and bounded logs explain failures without exposing keys or requiring a working database.
 
 ## Structure
 
@@ -20,7 +21,7 @@ Both children belong to scope feature 9. This index owns their shared contract a
 
 | ID | Acceptance criterion |
 | --- | --- |
-| AC-1 | Built in service commands manage one service per account on macOS and Linux arm64, using user launchd and systemd respectively. No root service, automatic privilege elevation, or detached process fallback is introduced. |
+| AC-1 | Built in service commands manage one service per account on Linux amd64 and Linux arm64, using systemd user managers. No root service, automatic privilege elevation, or detached process fallback is introduced. |
 | AC-2 | Installation validates an existing private configuration file and an available user manager before publishing managed files. It enables startup at the next login but does not start work immediately. Start is a separate action. |
 | AC-3 | The service retains explicit executable, configuration, state, and shared validator paths. Enabled validation also retains the Docker executable and local socket. It rereads settings on each start, rejects changes to bound paths, and does not inherit a different Docker context from a later shell. |
 | AC-4 | Start, stop, restart, enable, disable, and uninstall have repeatable outcomes. Stop affects the current session and preserves login startup. Disable changes future startup without stopping the current process. A differing installation requires stop and uninstall first. Uninstall preserves configuration, candidate history, and diagnostics. |
@@ -35,15 +36,18 @@ Both children belong to scope feature 9. This index owns their shared contract a
 | AC-13 | Doctor checks local paths, configuration, native service files, manager access, saved state, and the configured local Docker daemon and image. It creates no container or registration, fetches no image, contacts no source or provider, and makes no repairs. |
 | AC-14 | Log or observation write failure cancels managed work and initiates normal cleanup. Partial installation, uncertain file publication, manager failures, and interrupted control commands remain diagnosable and safe to retry without overwriting foreign files or discarding recovery state. |
 | AC-15 | Help and version retain their absence of configuration, state, manager, and network access. Foreground run and existing report commands retain their output and exit contracts. Native definition arguments and service diagnostics disclose no candidate keys. |
-| AC-16 | Runtime verification proves the service lifecycle on both arm64 platforms, including native login activation, duplicate ownership, controlled crash restart, permanent error handling, rotation, stop deadlines, and recovery. A Linux container without a real user manager is insufficient evidence for native supervision. |
+| AC-16 | Runtime verification proves the service lifecycle on both Linux architectures, including native login activation, duplicate ownership, controlled crash restart, permanent error handling, rotation, stop deadlines, and recovery. A Linux container without a real user manager is insufficient evidence for native supervision. |
+| AC-17 | Release configuration emits only Linux amd64 and arm64 archives with version metadata and checksums, with CGO disabled for both release executables. Help and version retain their side effect contract. macOS native proof and artifacts are not required. |
+| AC-18 | Both Linux targets use matching local daemon, immutable image, and worker architectures under spec 0003. Real amd64 entitlement and cleanup evidence is recorded before claiming support. Wrong architecture, labels, or remote endpoint cannot start registration or attachment. Existing compatible arm64 sessions still reconcile without rewriting or splitting the shared registry. |
+| AC-19 | The existing CLI, persistence, migration, export, scheduling, recovery, and privacy contracts pass on both Linux targets, including meaningful race tests. Existing records and paths remain compatible without a platform driven schema migration. Earlier macOS evidence is historical and never substituted for amd64 runtime evidence. |
 
 ## Decision
 
 **Chosen option**: Built in native user service management around the existing foreground application runner, with private JSON observations and application owned bounded logs.
 
-You confirmed this design on 2026-10-11 after independent review and incorporation of all eleven approved fixes. It is linked to scope feature 9 as a new feature record, not a replacement for spec 0007. Implementation remains pending, so its status stays `Proposed` until implementation begins.
+You confirmed this design on 2026-10-11 after independent review and incorporation of all eleven approved fixes. It is linked to scope feature 9 as a new feature record, not a replacement for spec 0007. Implementation is in progress. Your 2026-10-12 scope decision removes macOS from acceptance and adds Linux amd64. Existing Linux arm64 evidence is retained; new target proof and remaining fault checks stay open.
 
-Use Go standard library facilities for native commands, XML, JSON, file ownership, and rotation. A general service library is the runner up, but these two adapters still need explicit lifecycle and failure policies. No additional dependency, community skill, or MCP server is selected.
+Use Go standard library facilities for native commands, JSON, file ownership, and rotation. A general service library is the runner up, but the existing systemd adapter already defines the lifecycle and failure policies needed here. No additional dependency, community skill, or MCP server is selected.
 
 ### Shared contract
 
@@ -113,26 +117,26 @@ Native tools receive argument arrays without a shell. Diagnostics use controlled
 
 ### Critical scenarios
 
-The executable procedure is in [verify.md](verify.md). The main thread to prove is install, explicit start, scheduled crawl, status from another process, stop, and saved inspection after restart. Later slices add both native managers, failure recovery, and complete diagnostics.
+The executable procedure is in [verify.md](verify.md). The main thread to prove is install, explicit start, scheduled crawl, status from another process, stop, and saved inspection after restart. The remaining work proves the amd64 path, failure recovery, and complete diagnostics on both Linux architectures.
 
 ## Build plan
 
 Use Tracer Bullet delivery and the Beta workflow. Each milestone proves a complete user path rather than a separate technical layer.
 
-1. Prove one macOS collection service through install, explicit start, the shared runner, a private observation, status, stop, and saved inspection. Add the private service formats and no database migration. Covers AC-1, AC-2, AC-3, AC-6, AC-8, AC-15.
-2. Prove that same path under a real Linux user manager. Complete login activation, enable and disable, repeatable controls, path binding, stopped uninstall, and native supervision policies. Covers AC-1, AC-2, AC-3, AC-4, AC-5, AC-16.
+1. Prove the added Linux amd64 thread through a release binary, matching local validator image, one attributable saved check with cleanup, and a separate read after restart. Generalize all platform admission checks together and preserve existing arm64 recovery. Covers AC-15, AC-17, AC-18, AC-19.
+2. Prove Linux amd64 installation without work, explicit start, one scheduled crawl, saved observation, status, stop, and inspection after restart under a real systemd user manager. Complete login activation, repeatable controls, path binding, stopped uninstall, and native supervision. Retain the existing arm64 lifecycle evidence and rerun changed paths there. Covers AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-15, AC-16.
 3. Complete status from one database snapshot, including the controlled 338 candidate collection, last runs, source failures, lane observations, missing components, text, and JSON. Covers AC-8, AC-9, AC-10, AC-11, AC-15.
 4. Prove bounded private logs from the managed runner through recent inspection, following, rotation, and restart. Add read only doctor probes and diagnostic write failure handling. Covers AC-11, AC-12, AC-13, AC-14, AC-15.
-5. Exercise crashes, permanent errors, duplicate service and writer ownership, configuration drift, interrupted control operations, uncertain publication, and the shared cleanup deadline on both platforms. Covers AC-3, AC-4, AC-5, AC-6, AC-7, AC-14, AC-16.
-6. Run `/check verify background operation and diagnostics`, then `/test background operation and diagnostics`. Run the repository gate and target builds. Covers AC-1 through AC-16.
+5. Exercise crashes, permanent errors, duplicate service and writer ownership, configuration drift, interrupted control operations, uncertain publication, and the shared cleanup deadline on Linux amd64 and arm64. Covers AC-3, AC-4, AC-5, AC-6, AC-7, AC-14, AC-16.
+6. Run `/check verify background operation and diagnostics`, then `/test background operation and diagnostics`. Run the repository gate on both Linux architectures, target builds, and the platform transition checklist in spec 0001. Covers AC-1 through AC-19.
 
 ## Consequences
 
-**Benefits**: You gain one operating interface across both platforms, useful diagnosis when state cannot open, and bounded local logging. The existing scheduler and remote recovery rules remain the work engine.
+**Benefits**: You gain one operating interface across both Linux architectures, useful diagnosis when state cannot open, and bounded local logging. The existing scheduler and remote recovery rules remain the work engine.
 
-**Costs**: Native service behavior needs verification on both operating systems. Process and database observations cannot form one atomic snapshot. Bound executable and Docker paths need a new installation when moved. Retained logs can lose old evidence. On macOS, an inactive registered job whose loaded identity cannot be proven requires native inspection and removal before the CLI proceeds. This can occur after a permanent startup failure.
+**Costs**: Native service behavior and validator compatibility need verification on both Linux architectures. Process and database observations cannot form one atomic snapshot. Bound executable and Docker paths need a new installation when moved. Retained logs can lose old evidence.
 
-**Limits**: Login startup depends on the native user manager. macOS needs a GUI login domain; Linux session and lingering policy remain owned by the host. Power loss or forced termination cannot promise completed cleanup. A permanent error before the executable can run may only be visible through native manager diagnostics.
+**Limits**: Login startup depends on the native user manager. Linux session and lingering policy remain owned by the host. macOS GUI access is not a prerequisite. Power loss or forced termination cannot promise completed cleanup. A permanent error before the executable can run may only be visible through native manager diagnostics.
 
 ## Follow-up
 

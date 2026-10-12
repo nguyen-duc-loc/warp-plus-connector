@@ -131,12 +131,24 @@ func (e *Engine) Initialize(in protocol.Request) (protocol.Receipt, error) {
 }
 
 func (e *Engine) cancelled(ctx context.Context) bool {
-	if ctx.Err() != nil {
+	if contextExpired(ctx) {
 		return true
 	}
 	var marker bool
 	err := privatefs.Read(filepath.Join(e.Dir, "cancel.json"), &marker)
 	return !errors.Is(err, os.ErrNotExist)
+}
+
+func contextExpired(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	// Deadline expiry can precede timer delivery or propagation to a child.
+	// Admission must not depend on that goroutine having run after a slow write.
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return true
+	}
+	return false
 }
 
 // operationContext observes cancellation while a vendor command is running.

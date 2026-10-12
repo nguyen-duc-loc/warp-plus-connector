@@ -64,3 +64,7 @@ You accepted the reviewed spec on 2026-10-10. Scope item 4 now links this decisi
 7. [Cloudflare One client changelog](https://developers.cloudflare.com/changelog/product/cloudflare-one-client/), different product context that does not prove consumer slot reclamation.
 
 These links record the design research for human reference. Later spec reviews and builds can use the recorded findings without fetching the pages again.
+
+## Linux scope amendment, 2026-10-12
+
+The macOS and arm64 choices above record the original experiment. Current supported operation is Linux amd64 and arm64 under spec 0001. The backend child defines one immutable image per architecture, matching native executable and daemon admission, and unchanged shared recovery. All earlier measured arm64 results remain historical evidence; amd64 entitlement, cleanup, and failure handling need their own runtime proof before support is claimed. macOS verification is no longer required.

@@ -22,7 +22,7 @@ import (
 func main() { os.Exit(run()) }
 
 func run() int {
-	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" || len(os.Args) != 2 {
+	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") || len(os.Args) != 2 {
 		return fail("validator_worker_unsupported")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

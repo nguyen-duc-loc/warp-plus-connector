@@ -3,6 +3,8 @@
 **Date**: 2026-10-11
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
 You can crawl several public Telegram channels with a bounded number of pages for each. One saved run explains which channels and pages succeeded, where work stopped, and which discoveries were committed. This extends the existing CLI and preserves earlier reports and validation evidence.
@@ -22,7 +24,7 @@ You can crawl several public Telegram channels with a bounded number of pages fo
 | AC-7 | A source fetch or parse failure preserves earlier commits and allows later channels to run. The invocation exits nonzero if any channel fails. HTTP 429 stops all further requests, records rate limiting, and explains unattempted sources. |
 | AC-8 | Cancellation, storage failure, and process interruption retain committed work and truthful unfinished status. The next manual crawl creates a new run from the latest pages. It does not resume or automatically retry an earlier request. |
 | AC-9 | Coverage distinguishes a page budget stop from the end of the visible preview and from failures. It always reports `history_complete=false`. A recognized empty feed succeeds, while unrecognized markup fails. Posts without keys count toward parsed coverage. |
-| AC-10 | One versioned migration preserves existing records, old reports, store ownership, and recovery on macOS and Linux arm64. New reports remain readable when current source settings change. Crawling never invokes the validator or reveals harvested keys in output or diagnostics. |
+| AC-10 | One versioned migration preserves existing records, old reports, store ownership, and recovery on Linux amd64 and Linux arm64. New reports remain readable when current source settings change. Crawling never invokes the validator or reveals harvested keys in output or diagnostics. |
 
 ## Decision
 
@@ -203,7 +205,7 @@ Logs use the existing `slog` stderr handler with run ID, normalized source ID, p
 
 **Rollback**: A failed migration rolls back completely. After a successful migration, an older binary rejects the newer schema; reverting code alone is not a database downgrade. Keep the upgraded binary or restore a separately verified private preupgrade snapshot while no writer is active, accepting loss of later records. Do not delete new tables automatically or copy an active WAL database as a backup.
 
-**Risks**: A missing page link could make saved counts misleading, so observation and link insertion must be atomic. Legacy and new APIs must reject mixed run formats. Verify record preservation and migration failure on both supported platforms.
+**Risks**: A missing page link could make saved counts misleading, so observation and link insertion must be atomic. Legacy and new APIs must reject mixed run formats. Verify record preservation and migration failure on both supported Linux architectures.
 
 ## Build plan
 

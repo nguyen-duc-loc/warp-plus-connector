@@ -3,6 +3,8 @@
 **Date**: 2026-10-10
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
 Your store retains every distinct candidate, its source messages, each validation attempt, and run history across restarts. A temporary check failure preserves earlier definitive evidence without making it fresh again. This slice supplies a Go store interface and proves persistence through that interface. CLI commands, crawling, real validation, scheduling, and export presentation belong to later features.
@@ -32,7 +34,7 @@ Your store retains every distinct candidate, its source messages, each validatio
 
 This is a feature spec for scope item 3. You confirmed the complete design on 2026-10-10 after independent review and its approved fixes. The feature is implemented, verified, and tested; its lifecycle is `Accepted`, matching scope item 3 marked `done`.
 
-Internal implementation recommendations are explicit here. Use one embedded, ordered SQL migration sequence with `PRAGMA user_version`, rather than a migration framework for one initial schema. Use the operating system advisory file lock through Go's `syscall.Flock` on the two accepted platforms, rather than adding a locking dependency for this narrow platform set. Record the exact tested SQLite driver version in `go.mod` during implementation; this design does not claim a version has been tested.
+Internal implementation recommendations are explicit here. Use one embedded, ordered SQL migration sequence with `PRAGMA user_version`, rather than a migration framework for one initial schema. Use the operating system advisory file lock through Go's `syscall.Flock` on both supported Linux architectures, rather than adding a locking dependency for this narrow platform set. Record the exact tested SQLite driver version in `go.mod` during implementation; this design does not claim a version has been tested.
 
 Introduce `internal/state` for domain records and `internal/store` for persistence when the first working path needs them. Domain records contain no Cobra, HTTP, or driver types. The store is a concrete type with explicit reader and writer handles; callers may define small interfaces where substitution is useful. No configuration parser or application orchestration package is required for this slice.
 
@@ -143,7 +145,7 @@ Use a dedicated database handle with one connection for serialized writes. Give 
 
 If opening, migration, or recovery fails, close every acquired database resource and release the lock before returning an error. Roll back any active transaction first. Do not remove created state files as a cleanup shortcut; a later writer can retry initialization of a valid empty database.
 
-New state directories are mode `0700`; the database and lock file are `0600`. SQLite sidecars must remain `0600` as well, verified on both platforms. Check ownership by the current effective user and reject any group or other access bits on the managed state directory, database, lock, and existing sidecars. Reject symlinked managed database, lock, or sidecar files rather than following them. Do not tighten permissions automatically or inspect and change unrelated ancestor directories. Permission failures identify the path and required mode without exposing its contents.
+New state directories are mode `0700`; the database and lock file are `0600`. SQLite sidecars must remain `0600` as well, verified on both Linux architectures. Check ownership by the current effective user and reject any group or other access bits on the managed state directory, database, lock, and existing sidecars. Reject symlinked managed database, lock, or sidecar files rather than following them. Do not tighten permissions automatically or inspect and change unrelated ancestor directories. Permission failures identify the path and required mode without exposing its contents.
 
 Open readers with SQLite `mode=ro`, without creation, migrations, recovery, or journal mode changes. Never use SQLite `immutable` mode against a live WAL database. Readers can participate in SQLite shared memory coordination but cannot change application records or create a database or directory. If the existing WAL cannot be read with available filesystem permissions, report state access failure instead of changing permissions or falling back to stale data.
 
@@ -192,7 +194,7 @@ The project uses Tracer Bullet delivery and a Beta workflow. The first thread cr
 1. Build the first executable store path: add the domain records and SQLite dependency, private state initialization, writer lock, initial migration, start a crawl run, save one message, close, and read its summary through `GetCandidate` and provenance through `ListSightings` in a second process. Keep CLI construction unchanged. Satisfies AC-1, AC-2, AC-3, AC-6, AC-7, AC-10, and AC-11.
 2. Extend the working path with repeatable discovery, all provenance and observation reads, request token handling, bounded pages, and cursor membership rules. Demonstrate the 338 candidate traversal. Satisfies AC-2, AC-9, and AC-12.
 3. Add attempt creation and completion using controlled evidence fixtures, run completion, derived summaries, freshness, and every attempt history read. Satisfies AC-3, AC-4, AC-5, and AC-12.
-4. Complete interruption recovery, error mapping, migration rollback checks, permission refusal, contention bounds, and simultaneous reader verification on macOS and Linux arm64. Satisfies AC-6, AC-7, AC-8, AC-10, AC-11, and AC-12.
+4. Complete interruption recovery, error mapping, migration rollback checks, permission refusal, contention bounds, and simultaneous reader verification on Linux amd64 and Linux arm64. Satisfies AC-6, AC-7, AC-8, AC-10, AC-11, and AC-12.
 5. Run `/check verify persistent key state` through the public store interface, using the scenarios above and subprocesses for locks and crashes. Then use `/test persistent key state` to retain meaningful regression coverage under the existing test preferences. Run the repository formatting, vet, race, and lint gate. Satisfies AC-1 through AC-12.
 
 ## Consequences
@@ -206,7 +208,7 @@ This feature can ship before validation feasibility because its evidence fixture
 ## Follow-up
 
 1. Complete: the design is confirmed and linked to scope item 3. The independent completeness review and its approved fixes are recorded in the rationale.
-2. Record the exact SQLite driver version and prove runtime behavior on both arm64 platforms during development. No additional skill or MCP discovery is requested.
+2. Record the exact SQLite driver version and prove runtime behavior on both Linux architectures during development. No additional skill or MCP discovery is requested.
 3. The validation feasibility design must provide attributable entitlement evidence, normalized rejection codes, and durable remote cleanup recovery before any real adapter is enabled. It may extend evidence storage through a new migration if the proven backend needs more fields.
 4. Later feature specs own source ID normalization, configuration resolution, CLI commands, consistent snapshot export, scheduling eligibility, and bounded application shutdown. They reuse this store contract rather than making its timestamps or outcomes mean something different.
 

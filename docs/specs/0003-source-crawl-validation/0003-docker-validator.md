@@ -2,7 +2,7 @@
 
 ## Summary
 
-You can check one saved candidate with the official WARP client in an isolated Linux arm64 container. The application saves a confirmation only after the returned license matches the input and temporary registration cleanup succeeds. A private recovery record survives interruption and prevents another attachment while cleanup is uncertain.
+You can check one saved candidate with the official WARP client in an isolated Linux container matching the supported amd64 or arm64 runtime. The application saves a confirmation only after the returned license matches the input and temporary registration cleanup succeeds. A private recovery record survives interruption and prevents another attachment while cleanup is uncertain.
 
 ## Decision and evidence
 
@@ -23,13 +23,29 @@ This child implements parent AC-7 and AC-8 and preserves AC-3 through AC-6.
 
 ## Runtime and configuration
 
-Use a separate Go worker executable inside an image built by `scripts/build-validator-image.sh`. The Dockerfile pins the tested Debian arm64 base and official WARP package version and verifies the package repository signature. The build prints its immutable image ID. No package installation or image pull happens during a check.
+Use a separate Go worker executable inside an image built by `scripts/build-validator-image.sh`. The Dockerfile pins a Debian Bookworm base covering the selected architecture and official WARP package version and verifies the package repository signature. The Linux architecture amendment below defines the expanded build contract. The build prints its immutable image ID. No package installation or image pull happens during a check.
 
-The existing `validator` setting gains `docker`; its default remains `unsupported`. Add string settings `validator_image` and `validator_socket`, with matching check flags. A Docker image must be an immutable `sha256:` ID. The optional socket must be an absolute local Unix socket path. When absent, inspect the selected Docker context or Docker host setting and accept only a local Unix endpoint. Pin that endpoint for the entire session. Require a Linux arm64 daemon and an arm64 image with the expected worker protocol and WARP version labels.
+The existing `validator` setting gains `docker`; its default remains `unsupported`. Add string settings `validator_image` and `validator_socket`, with matching check flags. A Docker image must be an immutable `sha256:` ID. The optional socket must be an absolute local Unix socket path. When absent, inspect the selected Docker context or Docker host setting and accept only a local Unix endpoint. Pin that endpoint for the entire session. Require a local Linux daemon and matching amd64 or arm64 image with the expected worker protocol and WARP version labels. The executable must run natively on that same Linux architecture.
 
 These settings remain subject to existing private JSON parsing and explicit flag precedence. Help and version never inspect Docker. Read and crawl commands never invoke a validator.
 
 `wpc check <candidate-id> --validator docker --validator-image sha256:...` retains the existing saved attempt output and exit semantics. Add `wpc validator recover` with the same validator settings to reconcile only, without creating a candidate attempt or a new registration. Automatic recovery also runs before every Docker check. Recovery outputs `cleanup=complete` or a fixed diagnostic and exit 1.
+
+## Linux architecture amendment
+
+The scope change on 2026-10-12 retains the arm64 measurements above and adds amd64 as required work. It does not assert that the amd64 provider behavior has already passed. Later batch and scheduler specs continue to govern registry version 3 and worker protocol 2; the earlier serial manifest description below is historical where those contracts replace it.
+
+Use one locally built immutable image per architecture. Extend `scripts/build-validator-image.sh` to accept zero or one positional argument, `amd64` or `arm64`. With no argument, select the architecture reported by the chosen local Linux Docker daemon. Normalize daemon `x86_64` to `amd64` and `aarch64` to `arm64`; accept canonical `amd64` and `arm64` too. Reject all other values and any explicit target different from the daemon. The build may be invoked from a development host, but the daemon must be local through the existing Unix endpoint rules. Do not introduce emulated runtime support or a remote build endpoint.
+
+Compile the worker with `GOOS=linux`, the selected `GOARCH`, and `CGO_ENABLED=0`. Pass `--platform linux/<arch>` to Docker. Use a local tag `wpc-validator:2026.8.2100.0-<arch>` only as a preparation convenience. Print exactly the resulting immutable image ID on stdout; diagnostics stay on stderr. Checks and configuration continue to require that ID, never the tag or a manifest list selector.
+
+Keep official WARP version `2026.8.2100.0` and protocol label `2`. Resolve Debian Bookworm base content from the existing official Debian image pin; inspect its manifest to prove both Linux targets are available. If the existing digest covers only one target, record an explicit immutable official Bookworm digest for each architecture in the build script and pass the selected base as a Docker build argument. Record each resolved base digest and exact signed WARP package version with the build evidence. A missing architecture or package fails preparation; there is no floating version fallback, automatic upgrade, or runtime pull. Inspect the completed image's OS, architecture, version labels, and worker executable before reporting its ID.
+
+Runtime admission derives the executable platform from Go runtime constants, the daemon platform and identity from Docker info, and image OS and architecture from Docker image inspection. Require Linux and canonical equality among executable, daemon, and image. Pass that verified platform to container creation. The worker entry point accepts Linux amd64 and arm64. Do not infer actual image architecture from a tag or custom label. Missing or incompatible values use the existing fixed compatibility diagnostics, before registration or attachment. Doctor reuses these read only checks and makes no container or provider mutation.
+
+Keep SQLite schema 5, registry 3, worker protocol 2, and service JSON schema 1. Architecture is derived from immutable image inspection, not a new persisted field or configuration option. Keep one shared validator registry and owner across all profiles; do not partition it by architecture. Recovery uses each recorded endpoint, daemon ID, image ID, and container identity. A newly configured image cannot replace a retained session's image, reinterpret its cleanup receipt, or authorize disposal. Unknown or unavailable old resources stay retained and block new attachments. Existing compatible arm64 images and sessions remain usable.
+
+Verification on amd64 proves the same evidence, isolation, deletion acknowledgement, independent slot reclamation, interruption recovery, concurrency, and pacing contracts that were measured on arm64. Use controlled fixtures for failure classifications and separately authorized real keys for provider proof. Preserve the narrow HTTP 429 creation rejection rule only after its pinned amd64 output has been checked against that rule; unknown output remains inconclusive and retains uncertainty. A build, image label, or passing fixture alone cannot establish provider parity. Record mismatches and return to architecture before changing vendor versions, cleanup rules, or isolation.
 
 ## Records and ownership
 

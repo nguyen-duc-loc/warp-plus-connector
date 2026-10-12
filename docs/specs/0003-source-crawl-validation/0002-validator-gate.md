@@ -4,6 +4,8 @@
 
 Real validation uses a separate Linux arm64 container managed by local Docker. A disposable container is useful only when its remote registration can also be cleaned up. This file retains the experiment protocol; measured results and the implementation contract are now recorded in [the backend child](0003-docker-validator.md).
 
+**Historical protocol:** The original macOS and Linux arm64 experiment is retained below as evidence history. Current runtime support is Linux amd64 and arm64. Apply the same entitlement, independent device cleanup, isolation, and recovery proof to amd64 under [the backend amendment](0003-docker-validator.md#linux-architecture-amendment). macOS prerequisites do not apply to the current release.
+
 ## Original prerequisites
 
 You reported no prepared Linux environment and no controlled subscription with device slot visibility. Docker CLI `29.9.0`, build `f415da838b`, was observed locally on 2026-10-10. That observation establishes only the client binary. No Docker daemon, image, WARP container, registration, entitlement, or cleanup procedure was tested during this design.

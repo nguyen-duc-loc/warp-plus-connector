@@ -3,6 +3,8 @@
 **Date**: 2026-10-11
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
 You can leave `wpc run` running to collect candidates and refresh their validation results on separate schedules. SQLite remembers eligibility, and the shared validator journal remembers provider cooldowns across profiles. Small validation batches reuse the existing check engine. Service installation and live process management remain in the next scope slice.
@@ -34,7 +36,7 @@ Both children belong to scope feature 8. This index owns their shared configurat
 | AC-12 | Each terminal crawl or validation batch produces one stdout summary with its saved run ID and counts. Diagnostics use stderr and stable codes. Disabled lanes, empty candidate sets, output failure, cancellation, and source failure have defined behavior. Output failure triggers cleanup and stops the runner. |
 | AC-13 | Schema version 5 and validator registry version 3 preserve existing history. Migration failures leave a usable earlier version or an explicitly blocked newer version, never a fabricated clean state. Eligibility changes commit with the discovery, terminal item, or recovery that causes them. |
 | AC-14 | Cancellation stops admission, cancels external work, and shares the existing 60 second remote cleanup and five second local finalization allowances across active lanes. Completed evidence survives. Store or journal uncertainty stops unsafe mutations and leaves truthful recovery state. |
-| AC-15 | Controlled checks prove every criterion on macOS and Linux arm64, including selection from all 338 candidates, source and validation overlap, crash recovery, and competing profiles. Real provider calls use separately authorized keys and preserve host registration. |
+| AC-15 | Controlled checks prove every criterion on Linux amd64 and Linux arm64, including selection from all 338 candidates, source and validation overlap, crash recovery, and competing profiles. Real provider calls use separately authorized keys and preserve host registration. |
 
 ## Decision
 
@@ -158,7 +160,7 @@ Follow the project Tracer Bullet approach and Beta verification workflow. These 
 2. Prove one automatically selected candidate through the real batch engine, saved eligibility, and a subsequent due time. Use controlled adapters first; the production command still rejects unsupported validation. Add history initialization, manual participation, and exact coverage matching. Verify AC-3, AC-4, AC-5, AC-6, AC-13.
 3. Prove registry version 3 conversion, a durable cooldown, one probe, and manual behavior through the existing Docker owner boundary. Add interrupted gate recovery before enabling unattended real checks. Verify AC-8, AC-9, AC-10, AC-13, AC-14.
 4. Allow crawl and batch work to overlap through the shared mutation coordinator. Complete bounded selection across the collection, lane controls, configuration restart behavior, and local recovery waits. Verify AC-1, AC-2, AC-3, AC-7, AC-8, AC-10.
-5. Complete clock pauses, fault recovery, prepared inspection output, signal and pipe handling, and shared shutdown deadlines. Exercise both arm64 platforms and the controlled 338 candidate dataset. Verify AC-5, AC-7, AC-9, AC-11, AC-12, AC-13, AC-14, AC-15.
+5. Complete clock pauses, fault recovery, prepared inspection output, signal and pipe handling, and shared shutdown deadlines. Exercise both Linux architectures and the controlled 338 candidate dataset. Verify AC-5, AC-7, AC-9, AC-11, AC-12, AC-13, AC-14, AC-15.
 6. Run `/check verify scheduled crawl and revalidation`, then `/test scheduled crawl and revalidation`, retaining meaningful boundary regressions. Run the repository gate and builds. Verify AC-1 through AC-15.
 
 ## Consequences

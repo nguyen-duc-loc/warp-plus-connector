@@ -3,6 +3,8 @@
 **Date**: 2026-10-11
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
 You can filter every saved candidate and export matching summaries as JSON or complete keys as one key per line. Listing and export use a snapshot (one fixed database view), with no total limit unless you choose one. Output is prepared privately before delivery, and named files never replace existing paths.

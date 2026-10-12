@@ -4,7 +4,7 @@
 
 > Premise note: A publicly posted key and a working WARP connection do not prove Plus entitlement. Temporary registration can affect a subscription device slot. Host isolation and remote cleanup are separate requirements, and neither can be inferred from the presence of `warp-cli`.
 
-Your [scope](../../scope/scope.md) describes a personal macOS and Linux CLI with fixed Go and Cobra choices. It collects candidates from configurable public Telegram channels without login, preserves every distinct record within declared crawl coverage, checks entitlement, and runs on independent crawl and recheck schedules. Automatic key application to your normal connection is outside scope. (basis: project scope)
+Your [scope](../../scope/scope.md) describes a personal Linux amd64 and arm64 CLI with fixed Go and Cobra choices. It collects candidates from configurable public Telegram channels without login, preserves every distinct record within declared crawl coverage, checks entitlement, and runs on independent crawl and recheck schedules. Automatic key application to your normal connection is outside scope. (basis: project scope)
 
 At the initial design review, there was no application source, manifest, existing spec, or root project context file. The directory was not yet a Git repository, so remote freshness could not be checked then. Scope feature 1 combined this architecture decision with a runnable scaffold, which is now implemented, verified, and tested. Root `AGENTS.md` now records project conventions, and Git has an `origin` remote. The project uses Tracer Bullet delivery and the Beta verification workflow. No throughput target, deadline, or managed hosting requirement was supplied.
 
@@ -48,6 +48,26 @@ Optional MCP candidates were official experimental gopls support, `hloiseau/mcp-
 On 2026-10-10, a separate model reviewed this decision and its scope without fetching references or changing files. It found no blocking decision gap for the help and version scaffold. It identified two gaps for later implementation: freshness needed an explicit current time source, and the writer busy result needed to distinguish contention from state access failures.
 
 You approved both recommended fixes. The decision now names the application host's UTC wall clock for check timestamps and freshness, and reserves busy errors for lock contention. Clock anomaly handling remains assigned to the persistent state and scheduling specs. You accepted the revised spec on 2026-10-10. Its lifecycle status is now `Accepted`: the linked foundation scaffold is implemented, verified, and tested for macOS and Linux arm64, and scope feature 1 is marked done. Real validation remains unsupported until its separate feasibility gate passes.
+
+## Linux scope amendment, 2026-10-12
+
+You replaced macOS and Linux arm64 support with Linux amd64 and arm64 so macOS GUI service verification no longer blocks delivery. The current implementation already has the Linux systemd lifecycle, but release configuration, Docker admission, container creation, image preparation, worker admission, and service admission still contain arm64 assumptions. Adding a build target alone would leave amd64 unable to validate or run the managed service.
+
+| Option | Benefit | Cost | Recommendation |
+| --- | --- | --- | --- |
+| Update the existing Linux path and build one immutable validator image per architecture | Reuses tested service behavior, command contracts, recovery, and dependencies | Needs real amd64 provider and service evidence | Selected for this amendment |
+| Keep macOS and add amd64 alongside it | Retains broader compatibility | Keeps the macOS verification requirement you explicitly removed and adds a third target | Outside your approved scope |
+| Replace service and validator layers with a new abstraction | Could make later operating system additions easier | Discards tested recovery boundaries and introduces unnecessary migration work | Not selected |
+
+Matching the executable, daemon, image, and worker architecture avoids making emulation a supported deployment mode. Existing image IDs remain the configuration boundary, so no registry publication, manifest selection, or new configuration field is needed. Existing journals stay shared and unchanged; this prevents a platform switch from bypassing unresolved cleanup.
+
+Cloudflare's [consumer client prerequisites](https://developers.cloudflare.com/warp-client/get-started/) list AMD64 and ARM64. Its [stable release page](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/download/) lists Linux version `2026.8.2100.0`. These support investigating the existing pinned version on amd64, but do not prove Debian package availability at build time, image compatibility, license attribution, or cleanup parity. Those remain measured implementation requirements.
+
+The transition leaves historical verification records intact and assigns the new proof to spec 0008 AC-17 through AC-19. This keeps the completed scaffold distinct from pending platform work. No implementation, live registration, key attachment, or service mutation occurred during this architecture pass. Git fetch completed, but the repository supplied no remote branch refs, so a remote base comparison was unavailable.
+
+## Independent review of the Linux amendment
+
+On 2026-10-12, a separate model reviewed the draft architecture, validator amendment, service contract, diagnostics, and verification procedures without editing files or fetching references. It found no blocking decision gap or contradictory completion tracking and recommended no corrective change. Architecture value sources, immutable image selection, shared recovery, systemd admission, and AC-17 through AC-19 ownership were explicit. Pinned amd64 package availability, real entitlement and cleanup parity, and native Linux service proof remain implementation requirements. You accepted the technical amendment on 2026-10-12. The scope now points to implementation under feature 9, with no new runtime result claimed.
 
 ## References
 

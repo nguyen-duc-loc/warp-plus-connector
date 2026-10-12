@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +167,66 @@ func TestDeadlineDuringIntentWriteStopsMutation(t *testing.T) {
 			e.afterSave = func(saved string) error {
 				if saved == phase {
 					<-ctx.Done()
+				}
+				return nil
+			}
+			var receipt protocol.Receipt
+			if phase == "registration_pending" {
+				receipt, err = e.Register(ctx, operation)
+			} else {
+				receipt, err = e.Attach(ctx, operation)
+			}
+			require.NoError(t, err)
+			require.Equal(t, "cleaned", receipt.Phase)
+			require.NotContains(t, v.calls, "registration license")
+			if phase == "registration_pending" {
+				require.Empty(t, v.calls)
+			}
+		})
+	}
+}
+
+// delayedDeadline models a timer whose deadline has passed while cancellation
+// delivery is still waiting for the scheduler or parent propagation.
+type delayedDeadline struct {
+	context.Context
+	at time.Time
+}
+
+func (c delayedDeadline) Deadline() (time.Time, bool) { return c.at, true }
+
+func TestExpiredDeadlinePreventsVendorProcess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	marker := filepath.Join(dir, "called")
+	script := "#!/bin/sh\n: > '" + marker + "'\nprintf '%s' '{\"status\":\"Success\"}'\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "warp-cli"), []byte(script), 0700))
+	ctx := delayedDeadline{Context: t.Context(), at: time.Now().Add(-time.Second)}
+	reply := (ProcessRunner{}).Run(ctx, "registration", "delete")
+	require.Equal(t, "validation_timeout", reply.Code)
+	_, err := os.Stat(marker)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestExpiredDeadlineBeforeCancellationDeliveryStopsMutation(t *testing.T) {
+	for _, phase := range []string{"registration_pending", "attachment_pending"} {
+		t.Run(phase, func(t *testing.T) {
+			v := &vendor{accountType: "unlimited"}
+			e := engine(t, v)
+			_, err := e.Initialize(protocol.Request{SessionID: fixtureSession, Key: fixtureKey})
+			require.NoError(t, err)
+			operation := protocol.Operation{RemainingUS: 5000000}
+			if phase == "attachment_pending" {
+				_, err = e.Register(t.Context(), operation)
+				require.NoError(t, err)
+			}
+			parent, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			ctx := delayedDeadline{Context: parent, at: time.Now().Add(20 * time.Millisecond)}
+			e.afterSave = func(saved string) error {
+				if saved == phase {
+					time.Sleep(max(time.Until(ctx.at), 0))
+					require.NoError(t, ctx.Err(), "deadline delivery is intentionally delayed")
 				}
 				return nil
 			}

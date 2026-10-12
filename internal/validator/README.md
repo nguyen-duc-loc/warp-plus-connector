@@ -1,6 +1,6 @@
 # Validator status
 
-The default adapter is `unsupported`. It records an inconclusive attempt without network access, subprocesses, Docker access, or registration changes. The optional `docker` adapter checks selected authorized candidates using the official WARP client in an isolated Linux arm64 container. Earlier definitive evidence stays intact after any inconclusive attempt.
+The default adapter is `unsupported`. It records an inconclusive attempt without network access, subprocesses, Docker access, or registration changes. The optional `docker` adapter checks selected authorized candidates using the official WARP client in an isolated Linux container matching the executable and daemon architecture. Linux amd64 and arm64 are admitted; native amd64 provider evidence remains pending. Earlier definitive evidence stays intact after any inconclusive attempt.
 
 The assessment on 2026-10-10 found a local Colima endpoint under the account's `.colima/default/docker.sock`. Docker client `29.9.0` and server `29.5.2` reported macOS arm64 and Linux arm64 respectively. This establishes a working local container runtime. It does not establish WARP compatibility, isolation, entitlement, or cleanup. A separate Debian container ran application and store probes without external networking or WARP registration.
 
@@ -12,7 +12,7 @@ The controlled experiment established normal slot cleanup through independent de
 
 ## Runtime ownership
 
-Build the image with `rtk proxy sh scripts/build-validator-image.sh` and pass its immutable ID through `--validator-image` or private JSON configuration. The image contains a Go worker and the tested official package. Checks never install software or pull images. Only local Unix Docker endpoints and Linux arm64 images are accepted.
+Build the image with `rtk proxy sh scripts/build-validator-image.sh` and pass its immutable ID through `--validator-image` or private JSON configuration. The image contains a Go worker and the tested official package. Checks never install software or pull images. Only local Unix Docker endpoints and Linux images matching the native Linux amd64 or arm64 executable and daemon are accepted. Preparation detects the daemon architecture or accepts one matching `amd64` or `arm64` argument. Existing arm64 image identities and the shared registry path remain valid.
 
 The shared host journal lives under the platform default state directory at `validator/session.json`, with `owner.lock` retaining one owner across profile overrides. It records up to four sessions, each with its Docker endpoint, daemon identity, image, exact container, originating attempt, submitted operation, and cleanup receipt. The version 2 registry remains present when empty. Candidate keys stay out of host process arguments and this manifest.
 

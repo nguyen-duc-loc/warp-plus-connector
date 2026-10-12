@@ -34,7 +34,7 @@ func TestWorkerCommand_RejectsUnsupportedInvocation(t *testing.T) {
 		require.NoError(t, json.Unmarshal(diagnostic.Bytes(), &value))
 		require.Equal(t, map[string]string{"code": "validator_worker_unsupported"}, value)
 	}
-	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
+	if runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
 		cmd := exec.CommandContext(t.Context(), binary, "initialize")
 		cmd.Stdin = strings.NewReader(`{"unknown":"private-secret"}`)
 		output, err := cmd.CombinedOutput()

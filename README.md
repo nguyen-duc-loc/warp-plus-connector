@@ -2,7 +2,7 @@
 
 A personal CLI for publicly shared WARP Plus key candidates. You can crawl bounded public Telegram previews, inspect saved coverage, list all saved candidates, and check selected authorized keys in an isolated Linux container.
 
-The first version targets macOS and Linux on arm64. Support for amd64 is deferred. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
+The release targets are Linux amd64 and arm64. Native amd64 runtime and provider verification remain pending. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
 
 ```sh
 go build -o bin/wpc ./cmd/wpc
@@ -22,14 +22,14 @@ go build -ldflags '-X main.version=0.1.0 -X main.commit=abc1234' -o bin/wpc ./cm
 
 The values above are examples. You can use your actual release version and commit. If you omit the commit, the output omits it too.
 
-For both supported platforms, you can use GoReleaser (tested with `2.18.3`):
+For both Linux build targets, you can use GoReleaser (tested with `2.18.3`):
 
 ```sh
 rtk proxy goreleaser check
 rtk proxy goreleaser build --snapshot --clean
 ```
 
-[The build configuration](.goreleaser.yaml) produces macOS and Linux arm64 binaries in `dist/`, with version and commit metadata. It disables CGO so the builds need no C compiler. To also create local archives and SHA256 checksums, you can use `rtk proxy goreleaser release --snapshot --clean`. Snapshot mode does not publish. These commands replace the generated `dist/` directory. The Docker validator image keeps its separate build script.
+[The build configuration](.goreleaser.yaml) produces Linux amd64 and arm64 binaries in `dist/`, with version and commit metadata. It disables CGO so the builds need no C compiler. To also create local archives and SHA256 checksums, you can use `rtk proxy goreleaser release --snapshot --clean`. Snapshot mode does not publish. These commands replace the generated `dist/` directory. The Docker validator image keeps its separate build script.
 
 The configuration follows the official [Go build options](https://goreleaser.com/customization/builds/builders/go/) and [snapshot workflow](https://goreleaser.com/getting-started/quick-start/).
 
@@ -60,13 +60,15 @@ The default validator is `unsupported`. It saves an inconclusive attempt with re
 
 ## Isolated validation
 
-You need a local Docker engine running Linux arm64 containers. You can build the tested image once, then select its immutable ID:
+Validation requires a Linux executable and local Docker daemon with the same amd64 or arm64 architecture. You can prepare an image from a development host, then select its immutable ID on the matching Linux runtime:
 
 ```sh
 validator_image_id=$(rtk proxy sh scripts/build-validator-image.sh)
 rtk proxy ./bin/wpc check 1 --validator docker --validator-image "$validator_image_id"
 rtk proxy ./bin/wpc list
 ```
+
+The preparation script detects the local Linux daemon architecture. You can also pass `amd64` or `arm64`; a mismatch is refused. It checks the compiled worker, image platform, labels, signed package version, and installed worker bytes before printing the image ID. Inspection uses a temporary container with networking disabled and does not start WARP.
 
 Replace `1` with a saved candidate ID you are authorized to activate. The build downloads the signed official WARP package; a check uses only the prepared local image. The backend does not change your host registration or connect a host tunnel. Remote Docker endpoints, privileged containers, host networking, and host mounts are unsupported.
 
@@ -138,7 +140,7 @@ The first writer upgrades SQLite to schema 5. Docker acquisition converts clean 
 
 ## Background operation and diagnostics
 
-The service commands manage one login service for your account. You can select an existing private configuration file at installation, then start work separately:
+The service commands manage one systemd login service for your account on Linux amd64 or arm64. You can select an existing private configuration file at installation, then start work separately:
 
 ```sh
 bin/wpc service install --config /absolute/path/config.json
@@ -155,7 +157,7 @@ The installation binds executable, configuration, state, and validator paths. A 
 
 Status combines separately timed manager and runner observations with one snapshot of saved work. Due times describe eligibility. They do not promise execution while a lane is disabled or blocked. Status exits 0 when its report is delivered, including when the service is unhealthy. Doctor performs local inspection without repairs or container creation and exits 1 after delivering failed checks. Both support text and JSON. Logs retain at most 20 MiB across five private files and report gaps when following crosses lost or uncertain history.
 
-The native lifecycle still needs verification in a macOS GUI login session and a real Linux arm64 systemd user session. A macOS Background bootstrap context cannot establish GUI job identity. A preexisting inactive macOS registration also needs native inspection and removal before the CLI can safely control that slot. The full procedure is in [spec 0008 verification](docs/specs/0008-background-operation-diagnostics/verify.md).
+Linux arm64 native lifecycle evidence is retained in the scope. Native Linux amd64 lifecycle and provider proof, plus the remaining recovery and fault checks, are still pending. Docker tests cannot establish native user manager behavior. The full procedure is in [spec 0008 verification](docs/specs/0008-background-operation-diagnostics/verify.md).
 
 ## Development checks
 
@@ -189,6 +191,6 @@ golangci-lint run ./...
 
 The [hook configuration](.pre-commit-config.yaml) follows the [pre-commit configuration reference](https://pre-commit.com/#pre-commit-configyaml---hooks). The [lint configuration](.golangci.yml) explicitly enables the five previously validated checks: `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`, using the [golangci-lint v2 configuration format](https://golangci-lint.run/docs/configuration/file/).
 
-CI remains pending until you select a provider. Its planned checks are the same local gate plus builds for macOS and Linux arm64.
+CI remains pending until you select a provider. Its planned checks are the same local gate plus builds for Linux amd64 and arm64.
 
 You can repeat the gate and its failure cases with the [tooling verification checklist](docs/reviews/tooling/verify.md).

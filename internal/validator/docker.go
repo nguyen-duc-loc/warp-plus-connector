@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,7 @@ type Docker struct {
 	mutation     func(func() error) error
 	Options      DockerOptions
 	run          func(context.Context, []byte, ...string) ([]byte, error)
+	platform     func() (string, string)
 	writeJournal func(string, any) error
 }
 
@@ -230,6 +232,10 @@ func (d *Docker) at(ctx context.Context, endpoint string, input []byte, args ...
 }
 
 func (d *Docker) runtime(ctx context.Context, endpoint string) (string, error) {
+	osName, arch := d.executablePlatform()
+	if osName != "linux" || (arch != "amd64" && arch != "arm64") {
+		return "", &Error{Code: "validator_platform_unsupported"}
+	}
 	data, err := d.at(ctx, endpoint, nil, "info", "--format", `{{json .}}`)
 	if err != nil {
 		return "", err
@@ -238,11 +244,28 @@ func (d *Docker) runtime(ctx context.Context, endpoint string) (string, error) {
 	if json.Unmarshal(
 		data,
 		&info,
-	) != nil || info.ID == "" || info.OSType != "linux" || (info.Architecture != "aarch64" &&
-		info.Architecture != "arm64") {
+	) != nil || info.ID == "" || info.OSType != "linux" || daemonArchitecture(info.Architecture) != arch {
 		return "", &Error{Code: "validator_platform_unsupported"}
 	}
 	return info.ID, nil
+}
+
+func (d *Docker) executablePlatform() (string, string) {
+	if d.platform != nil {
+		return d.platform()
+	}
+	return runtime.GOOS, runtime.GOARCH
+}
+
+func daemonArchitecture(value string) string {
+	switch value {
+	case "amd64", "x86_64":
+		return "amd64"
+	case "arm64", "aarch64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 func (d *Docker) image(ctx context.Context, endpoint string) error {
@@ -265,7 +288,9 @@ func (d *Docker) image(ctx context.Context, endpoint string) error {
 		return &Error{Code: "validator_image_unavailable"}
 	}
 	i := images[0]
-	if i.ID != d.Options.Image || i.Architecture != "arm64" || i.Os != "linux" ||
+	osName, arch := d.executablePlatform()
+	if osName != "linux" || (arch != "amd64" && arch != "arm64") ||
+		i.ID != d.Options.Image || i.Architecture != arch || i.Os != "linux" ||
 		i.Config.Labels[containerLabel+".protocol"] != "2" || i.Config.Labels[containerLabel+
 		".warp"] != protocol.WARPVersion {
 		return &Error{Code: "validator_version_mismatch"}

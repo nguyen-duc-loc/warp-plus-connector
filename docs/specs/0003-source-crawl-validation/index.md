@@ -3,9 +3,11 @@
 **Date**: 2026-10-10
 **Status**: Accepted
 
+**Platform amendment, 2026-10-12:** Current acceptance targets are Linux amd64 and Linux arm64 under spec 0001. Earlier completion and verification records retain their original platform coverage. The added amd64 proof is pending under spec 0008 AC-17 through AC-19; no historical result is promoted by this edit.
+
 ## Summary
 
-You can crawl the latest public page from `warpplus`, retain its candidates and coverage, and inspect saved results after restarting the CLI. Selected checks use the default unsupported adapter or the explicitly selected isolated Docker backend. The native CLI targets macOS and Linux arm64; the real validator uses Linux arm64 containers and durable cleanup recovery.
+You can crawl the latest public page from `warpplus`, retain its candidates and coverage, and inspect saved results after restarting the CLI. Selected checks use the default unsupported adapter or the explicitly selected isolated Docker backend. The native CLI targets Linux amd64 and arm64; the real validator uses matching Linux containers and durable cleanup recovery.
 
 ## Structure
 
@@ -25,9 +27,9 @@ You can crawl the latest public page from `warpplus`, retain its candidates and 
 | AC-4 | An explicit check of an existing candidate ID against the unsupported backend saves one inconclusive attempt with reason `validation_unsupported`, with no external registration work. Earlier definitive evidence remains intact. The command explicitly reports lack of validation support and returns a failure exit status. |
 | AC-5 | Configuration resolves before state or network side effects. Defaults, JSON, and explicit flags have the accepted precedence. Help, root invocation, and version retain their absence of configuration, state, Docker, and network access. |
 | AC-6 | Empty candidate results, unrecognized markup, source failures, state failures, contention, and cancellation are explicit. One request has a 20 second deadline and a 2 MiB body limit, with no automatic retries. Earlier committed messages survive a later failure. Diagnostics reveal no key or credential values. |
-| AC-7 | Before real validation is enabled, the experiment proves isolated Linux arm64 execution, attributable Plus evidence, remote device slot cleanup, and recovery after interrupted attachment or cleanup. Uncertain cleanup retains private state and blocks further attachments. No host WARP registration is used. |
+| AC-7 | Before real validation is enabled, the experiment proves isolated execution on each supported Linux architecture, attributable Plus evidence, remote device slot cleanup, and recovery after interrupted attachment or cleanup. Uncertain cleanup retains private state and blocks further attachments. No host WARP registration is used. |
 | AC-8 | Feature completion requires a real sourced candidate, a check through the proven backend, saved attributable outcome, and a read after process restart. A successful Plus confirmation needs the accepted `Unlimited` evidence. Unsupported operation or controlled fixtures alone cannot satisfy this criterion. |
-| AC-9 | The coverage migration preserves existing candidates, provenance, runs, attempts, evidence, and recovery behavior. Old crawl runs report unavailable coverage honestly. Writer ownership and reader behavior remain consistent with spec 0002 on macOS and Linux arm64. |
+| AC-9 | The coverage migration preserves existing candidates, provenance, runs, attempts, evidence, and recovery behavior. Old crawl runs report unavailable coverage honestly. Writer ownership and reader behavior remain consistent with spec 0002 on Linux amd64 and Linux arm64. |
 
 ## Decision
 
@@ -87,7 +89,7 @@ Exit 0 means the requested action completed and any check produced a definitive 
 
 ### Configuration
 
-Reuse the default configuration and platform state paths from spec 0001. On macOS, state defaults to the account's `Library/Application Support/warp-plus-connector`. On Linux, use absolute `XDG_STATE_HOME` plus `warp-plus-connector`, otherwise the account's `.local/state/warp-plus-connector`; ignore a relative `XDG_STATE_HOME`. Explicit state paths are converted to absolute paths from the invocation directory. There is no shell expansion inside JSON or flags.
+Reuse the default configuration and platform state paths from spec 0001. On Linux, use absolute `XDG_STATE_HOME` plus `warp-plus-connector`, otherwise the account's `.local/state/warp-plus-connector`; ignore a relative `XDG_STATE_HOME`. Explicit state paths are converted to absolute paths from the invocation directory. There is no shell expansion inside JSON or flags.
 
 The initial JSON object has only `state_dir` (nonempty string when present), `recheck_interval` (Go duration string, default `6h`), and `validator` (default and only accepted value `unsupported`). Require a positive interval. There is no scheduler yet; this interval supplies freshness evaluation. Flags override JSON only when explicitly supplied. Reject wrong types, `null` values, duplicate object keys, unknown fields, extra JSON documents, and invalid values. The root value must be an object. Limit configuration input to 64 KiB. These are parser checks, not another configuration framework.
 

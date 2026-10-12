@@ -2,7 +2,7 @@
 
 ## Context
 
-This is scope feature 9 on the existing Go and Cobra CLI for macOS and Linux arm64. Foreground scheduling, persisted eligibility, single writer ownership, and shared validator recovery are already implemented. You need unattended operation and enough local evidence to distinguish an idle runner, stopped process, temporary validator wait, and permanent setup failure.
+This is scope feature 9 on the existing Go and Cobra CLI for Linux amd64 and arm64. Foreground scheduling, persisted eligibility, single writer ownership, and shared validator recovery are already implemented. You need unattended operation and enough local evidence to distinguish an idle runner, stopped process, temporary validator wait, and permanent setup failure.
 
 Your project uses Tracer Bullet delivery and a Beta workflow. The service must preserve completed work and the existing cleanup budget. Configuration and diagnostics must remain useful when SQLite or Docker is unavailable. The product remains a personal local tool with no remote control service.
 
@@ -67,3 +67,11 @@ The changes preserve the 20 MiB archive, 15 second heartbeat, 60 second stale bo
 ## Linux uninstall correction, 2026-10-11
 
 You approved the correction during development. systemd can load an existing unit file whenever it is referenced. It has no explicit unit unload operation, so absence from memory before file removal is not a durable checkpoint. Linux removal therefore disables startup and confirms a stopped unit, removes the owned definition, reloads the manager, and confirms absence before publishing the removal receipt. The added `manager_removed` phase retains a safe retry point after definition removal. macOS keeps its separate registration removal order.
+
+## Linux scope amendment, 2026-10-12
+
+The current contract uses only systemd user services on Linux amd64 and arm64. The earlier launchd comparisons and independent review above remain decision history. macOS GUI proof is dropped; no platform change weakens service identity checks, remote cleanup, privacy, or bounded shutdown.
+
+This feature now carries the platform transition prerequisites from spec 0001 in AC-17 through AC-19. A thin amd64 release, validator, save, and read path comes first, followed by the managed service path. Existing arm64 lifecycle evidence remains useful for unchanged behavior. A direct update of the tested Linux code is smaller than a replacement service library; the cost is native amd64 verification and a separate immutable validator image.
+
+You accepted this technical amendment on 2026-10-12 after an independent model found no blocking gaps and recommended no corrective changes. The feature remains in progress until the Linux implementation, verification, and test stages are complete.

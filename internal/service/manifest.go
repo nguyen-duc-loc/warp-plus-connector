@@ -52,59 +52,28 @@ type Account struct {
 // ResolveAccount never uses the caller's HOME as authority.
 func ResolveAccount(ctx context.Context) (Account, error) {
 	a := Account{UID: os.Geteuid()}
-	if runtime.GOARCH != "arm64" {
+	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
 		return a, failure("service_platform_unsupported")
 	}
 	uid := strconv.Itoa(a.UID)
-	switch runtime.GOOS {
-	case "darwin":
-		data, err := command(ctx, 5*time.Second, "/usr/bin/dscacheutil", "-q", "user", "-a", "uid", uid)
-		if err != nil {
-			return a, failure("service_account_unavailable")
-		}
-		uids, homes := 0, 0
-		for _, line := range strings.Split(string(data), "\n") {
-			key, value, ok := strings.Cut(line, ":")
-			if !ok {
-				continue
-			}
-			switch strings.TrimSpace(key) {
-			case "uid":
-				uids++
-				if strings.TrimSpace(value) != uid {
-					return a, failure("service_account_unavailable")
-				}
-			case "dir":
-				homes++
-				a.Home = strings.TrimSpace(value)
-			}
-		}
-		if uids != 1 || homes != 1 {
-			return a, failure("service_account_unavailable")
-		}
-		a.Manager, a.Name = "launchd", "io.github.nguyen-duc-loc.wpc"
-	case "linux":
-		path, err := systemTool("getent")
-		if err != nil {
-			return a, failure("service_account_unavailable")
-		}
-		data, err := command(ctx, 5*time.Second, path, "passwd", uid)
-		if err != nil {
-			return a, failure("service_account_unavailable")
-		}
-		lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-		if len(lines) != 1 {
-			return a, failure("service_account_unavailable")
-		}
-		fields := strings.Split(lines[0], ":")
-		if len(fields) != 7 || fields[2] != uid {
-			return a, failure("service_account_unavailable")
-		}
-		a.Home = fields[5]
-		a.Manager, a.Name = "systemd", "warp-plus-connector.service"
-	default:
-		return a, failure("service_platform_unsupported")
+	path, err := systemTool("getent")
+	if err != nil {
+		return a, failure("service_account_unavailable")
 	}
+	data, err := command(ctx, 5*time.Second, path, "passwd", uid)
+	if err != nil {
+		return a, failure("service_account_unavailable")
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != 1 {
+		return a, failure("service_account_unavailable")
+	}
+	fields := strings.Split(lines[0], ":")
+	if len(fields) != 7 || fields[2] != uid {
+		return a, failure("service_account_unavailable")
+	}
+	a.Home = fields[5]
+	a.Manager, a.Name = "systemd", "warp-plus-connector.service"
 	if !safePath(a.Home) {
 		return a, failure("service_account_unavailable")
 	}
@@ -114,9 +83,6 @@ func ResolveAccount(ctx context.Context) (Account, error) {
 	}
 	a.Home = home
 	base := filepath.Join(home, ".local", "state", "warp-plus-connector")
-	if a.Manager == "launchd" {
-		base = filepath.Join(home, "Library", "Application Support", "warp-plus-connector")
-	}
 	a.Root = filepath.Join(base, "service")
 	return a, nil
 }
