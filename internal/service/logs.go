@@ -336,6 +336,13 @@ func ReadLogs(ctx context.Context, a Account, lines int) (LogView, error) {
 }
 
 func readArchive(parent context.Context, root string, lines int) (LogView, error) {
+	return readArchiveWithSnapshot(parent, root, lines, archiveSnapshot)
+}
+
+func readArchiveWithSnapshot(
+	parent context.Context, root string, lines int,
+	snapshot func(context.Context, string, int) (LogView, error),
+) (LogView, error) {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	var last error
@@ -343,13 +350,17 @@ func readArchive(parent context.Context, root string, lines int) (LogView, error
 		if ctx.Err() != nil {
 			return LogView{}, failure("service_log_busy")
 		}
-		view, err := archiveSnapshot(ctx, root, lines)
+		view, err := snapshot(ctx, root, lines)
+		// An entered read can finish after its budget. Never accept its late result.
+		if ctx.Err() != nil {
+			return LogView{}, failure("service_log_busy")
+		}
 		if err == nil {
 			return view, nil
 		}
 		var own *Error
 		if !errors.As(err, &own) || own.Code != "service_log_busy" {
-			return view, err
+			return LogView{}, err
 		}
 		last = err
 	}
@@ -430,6 +441,9 @@ func archiveSnapshot(ctx context.Context, root string, lines int) (LogView, erro
 			data = data[:bytes.LastIndexByte(data, '\n')+1]
 		}
 		for _, line := range bytes.Split(bytes.TrimSuffix(data, []byte{'\n'}), []byte{'\n'}) {
+			if ctx.Err() != nil {
+				return out, failure("service_log_busy")
+			}
 			if len(data) == 0 {
 				break
 			}

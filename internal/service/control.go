@@ -298,14 +298,14 @@ func start(ctx context.Context, a Account, m Manifest, result ControlResult) (Co
 		return result, err
 	}
 	if owner != nil && *owner > 0 {
-		if s.Identity != "verified" || s.PID == nil || *owner != *s.PID || baseline.PID != *owner ||
-			baseline.InstallationID != m.InstallationID || baseline.terminal() {
+		state, err := sampleStart(ctx, a, m, baseline)
+		if err != nil {
+			return result, err
+		}
+		if !oneOf(state, "starting", "running") {
 			return result, failure("service_identity_unverified")
 		}
-		result.State = "starting"
-		if baseline.Phase == "running" || baseline.Phase == "clock_paused" {
-			result.State = "running"
-		}
+		result.State = state
 		return result, nil
 	}
 	if s.Running != nil && *s.Running {
@@ -329,25 +329,13 @@ func start(ctx context.Context, a Account, m Manifest, result ControlResult) (Co
 	for {
 		first, e := readObservation(a.Root)
 		if e == nil && first.InstallationID == m.InstallationID && first.InvocationID != baseline.InvocationID {
-			s, e := inspect(wait, a, &m)
-			pid, pe := ownerPID(filepath.Join(a.Root, "runner.lock"))
-			second, se := readObservation(a.Root)
-			if e == nil && pe == nil && se == nil && first.InvocationID == second.InvocationID &&
-				first.PID == second.PID && second.InstallationID == m.InstallationID {
-				noProcess := !s.Loaded || (s.Running != nil && !*s.Running &&
-					(s.PendingJob == nil || !*s.PendingJob))
-				if first.Phase == "failed" && second.Phase == "failed" && pid != nil && *pid == 0 && noProcess {
-					return result, failure("service_start_failed")
-				}
-				if pid != nil && s.PID != nil && *pid == first.PID && *s.PID == first.PID &&
-					oneOf(first.Phase, "running", "clock_paused") && oneOf(
-					second.Phase,
-					"running",
-					"clock_paused",
-				) {
-					result.State = "running"
-					return result, nil
-				}
+			state, e := sampleStart(wait, a, m, first)
+			if e == nil && state == "failed" {
+				return result, failure("service_start_failed")
+			}
+			if e == nil && state == "running" {
+				result.State = state
+				return result, nil
 			}
 		}
 		select {
@@ -360,6 +348,44 @@ func start(ctx context.Context, a Account, m Manifest, result ControlResult) (Co
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// Sample native identity and kernel ownership between two observation reads.
+// Both a repeated start and a newly accepted start require the same agreement.
+func sampleStart(ctx context.Context, a Account, m Manifest, first Observation) (string, error) {
+	s, err := inspect(ctx, a, &m)
+	if err != nil {
+		return "", err
+	}
+	pid, err := ownerPID(filepath.Join(a.Root, "runner.lock"))
+	if err != nil {
+		return "", err
+	}
+	second, err := readObservation(a.Root)
+	if err != nil {
+		return "", err
+	}
+	return startState(m.InstallationID, first, second, s, pid), nil
+}
+
+func startState(id string, first, second Observation, s ManagerState, owner *int) string {
+	if first.InstallationID != id || second.InstallationID != id ||
+		first.InvocationID != second.InvocationID || first.PID != second.PID || owner == nil {
+		return ""
+	}
+	if first.Phase == "failed" && second.Phase == "failed" && *owner == 0 && nativeGone(s) &&
+		oneOf(s.Identity, "verified", "absent") {
+		return "failed"
+	}
+	if s.Identity != "verified" || s.PID == nil || *s.PID != first.PID || *owner != first.PID ||
+		!oneOf(first.Phase, "starting", "running", "clock_paused") ||
+		!oneOf(second.Phase, "starting", "running", "clock_paused") {
+		return ""
+	}
+	if oneOf(first.Phase, "running", "clock_paused") && oneOf(second.Phase, "running", "clock_paused") {
+		return "running"
+	}
+	return "starting"
 }
 
 func stop(parent context.Context, a Account, m Manifest, result ControlResult) (ControlResult, error) {
