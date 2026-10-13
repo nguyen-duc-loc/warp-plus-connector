@@ -34,8 +34,8 @@ jobs:
           test "$REF_TYPE" = tag
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$ ]]
           git merge-base --is-ancestor HEAD origin/main
-          release_state=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" \
-            --jq ".[][] | select(.tag_name == \"$RELEASE_TAG\") | .draft")
+          release_state=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .draft")
           test -z "$release_state" || test "$release_state" = true
 
   checks:
