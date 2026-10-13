@@ -12,7 +12,7 @@ The controlled experiment established normal slot cleanup through independent de
 
 ## Runtime ownership
 
-Build the image with `rtk proxy sh scripts/build-validator-image.sh` and pass its immutable ID through `--validator-image` or private JSON configuration. The image contains a Go worker and the tested official package. Checks never install software or pull images. Only local Unix Docker endpoints and Linux images matching the native Linux amd64 or arm64 executable and daemon are accepted. Preparation detects the daemon architecture or accepts one matching `amd64` or `arm64` argument. Existing arm64 image identities and the shared registry path remain valid.
+Build the image with `sh scripts/build-validator-image.sh` and pass its immutable ID through `--validator-image` or private JSON configuration. The image contains a Go worker and the tested official package. Checks never install software or pull images. Only local Unix Docker endpoints and Linux images matching the native Linux amd64 or arm64 executable and daemon are accepted. Preparation detects the daemon architecture or accepts one matching `amd64` or `arm64` argument. Existing arm64 image identities and the shared registry path remain valid.
 
 The shared host journal lives under the platform default state directory at `validator/session.json`, with `owner.lock` retaining one owner across profile overrides. It records up to four sessions, each with its Docker endpoint, daemon identity, image, exact container, originating attempt, submitted operation, and cleanup receipt. The version 2 registry remains present when empty. Candidate keys stay out of host process arguments and this manifest.
 

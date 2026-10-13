@@ -1,186 +1,341 @@
-# WPC (Warp Plus Connector)
+# Warp Plus Connector (WPC)
 
-A personal CLI for publicly shared WARP Plus key candidates. You can crawl bounded public Telegram previews, inspect saved coverage, list all saved candidates, and check selected authorized keys in an isolated Linux container.
+WPC is a personal command line tool for collecting publicly shared WARP Plus key candidates from Telegram, checking their entitlement, and keeping saved results current. You can inspect and export the complete collection, run scheduled work in the foreground, or manage it through a Linux systemd user service.
 
-The release targets are Linux amd64 and arm64. Native amd64 runtime and provider verification remain pending. You can build and run it with Go. The tested toolchain is `go1.27.2`. Exact dependency versions are recorded in `go.mod` and `go.sum`.
+WPC reads public Telegram previews without a Telegram login. It stores candidates, source provenance, crawl coverage, and validation history in a private local SQLite database. Keys stay hidden in normal output. There is no fixed 100 candidate limit on listing or export.
+
+A collected key is only a candidate. Docker validation uses an isolated official WARP client and requires matching Unlimited evidence plus confirmed cleanup before reporting success. A result describes an observation at a particular time; it does not reserve a device slot or guarantee later activation. You apply a key manually outside WPC.
+
+**Platforms:** Linux amd64 and arm64. macOS may be used for development, but is outside the release scope. Native Linux service and test evidence exists for both architectures. Background operation remains in progress in the [scope](docs/scope/scope.md): the latest verification excluded new provider attachments and fresh Unlimited confirmation, which remain unverified.
+
+## Contents
+
+* [Quick start](#quick-start)
+* [Commands](#commands)
+* [Collect candidates](#collect-candidates)
+* [Check keys with Docker](#check-keys-with-docker)
+* [List, filter, and export](#list-filter-and-export)
+* [Configuration](#configuration)
+* [Scheduled operation](#scheduled-operation)
+* [Background service](#background-service)
+* [Troubleshooting](#troubleshooting)
+* [Development](#development)
+
+## Quick start
+
+You need Go `1.27.2`, the toolchain recorded in [go.mod](go.mod), to build from source. Collection needs network access to public Telegram previews. Docker is needed only for validation; background service controls also require a Linux systemd user manager.
+
+All examples below assume you are in the repository root.
 
 ```sh
+go mod download
 go build -o bin/wpc ./cmd/wpc
-./bin/wpc
+./bin/wpc version
 ./bin/wpc --help
-./bin/wpc version
 ```
 
-With no subcommand, you see help. A local build reports `wpc dev`. Unknown commands and invalid arguments return a nonzero status and an error on stderr. Help and version output use stdout. These commands do not load configuration, create state, or contact the network.
-
-You can supply release metadata at build time:
-
-```sh
-go build -ldflags '-X main.version=0.1.0 -X main.commit=abc1234' -o bin/wpc ./cmd/wpc
-./bin/wpc version
-```
-
-The values above are examples. You can use your actual release version and commit. If you omit the commit, the output omits it too.
-
-For both Linux build targets, you can use GoReleaser (tested with `2.18.3`):
-
-```sh
-rtk proxy goreleaser check
-rtk proxy goreleaser build --snapshot --clean
-```
-
-[The build configuration](.goreleaser.yaml) produces Linux amd64 and arm64 binaries in `dist/`, with version and commit metadata. It disables CGO so the builds need no C compiler. To also create local archives and SHA256 checksums, you can use `rtk proxy goreleaser release --snapshot --clean`. Snapshot mode does not publish. These commands replace the generated `dist/` directory. The Docker validator image keeps its separate build script.
-
-The configuration follows the official [Go build options](https://goreleaser.com/customization/builds/builders/go/) and [snapshot workflow](https://goreleaser.com/getting-started/quick-start/).
-
-The executable entry point lives in `cmd/wpc`. Command definitions live in `internal/cli`. Cobra `v1.10.2` handles command parsing and help, as selected by the architecture. The scaffold was initialized with Go tooling and Cobra CLI `v1.3.0`, then adapted to this layout. Cobra CLI is only a generator, not an application dependency. See the [official Cobra guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md) for the command framework.
-
-The [architecture](docs/specs/0001-stack-architecture/index.md) defines the configuration, persistence, and validator boundaries. The [scope](docs/scope/scope.md) tracks their implementation. The public preview parser uses goquery `v1.13.0` for scoped HTML traversal, with cascadia `v1.3.4` and `golang.org/x/net v0.58.0`. These versions were exercised with live markup and synthetic fixtures on macOS and Linux arm64.
-
-## Crawl and inspect
+For a first collection, no configuration file or Docker setup is required:
 
 ```sh
 ./bin/wpc sources
 ./bin/wpc crawl
-./bin/wpc crawl --source warpplus --page-limit 2
-./bin/wpc crawl show 1
 ./bin/wpc list
-./bin/wpc check 1 2 3
+./bin/wpc export --output candidates.json
+```
+
+`sources` shows the effective channels and page limits. `crawl` creates local state and saves discoveries. `list` shows saved candidate IDs and outcomes. The export creates a private JSON file without keys and refuses to replace an existing file.
+
+To check candidates, you can continue with [Docker setup](#check-keys-with-docker). Without it, the default validator records `validation_unsupported` as an inconclusive attempt and exits 1.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `sources` | Show configured channels, enabled state, and page limits |
+| `crawl` | Fetch bounded public previews and save candidates |
+| `crawl show <run-id>` | Read a saved crawl report and coverage |
+| `check <candidate-id>...` | Validate selected saved candidates |
+| `check show <run-id>` | Read saved selection, policy, attempts, and totals |
+| `list` | Show every matching candidate as text |
+| `export` | Export summaries as JSON or exact key lines |
+| `validator recover` | Reconcile retained validation sessions without a new registration |
+| `run` | Continuously crawl and validate on saved schedules |
+| `schedule show [candidate-id]` | Explain saved scheduling facts as text or JSON |
+| `service` | Install and control background operation, inspect status, logs, and diagnostics |
+| `version` | Show the executable version and supplied commit |
+
+You can append `--help` to any command for its flags. With no subcommand, WPC displays help. Help and version do not read configuration, create state, or contact the network.
+
+Candidate IDs come from `list`; run IDs come from crawl and check reports. The numeric IDs in this README are examples you can replace with your saved IDs.
+
+## Collect candidates
+
+The default sources are `warpplus`, `warppluscn`, `warpplushome`, and `warp_veyke`, with one page per channel per crawl.
+
+```sh
+./bin/wpc crawl
+./bin/wpc crawl --source warpplus --source warppluscn --page-limit 2
+./bin/wpc crawl show 1
+```
+
+`--source` selects configured enabled channels and preserves configuration order. It cannot add an unconfigured channel or enable a disabled one. `--page-limit` overrides the limits of all selected channels for that invocation. Both flags belong to `crawl`; automatic crawling uses the source settings in your configuration.
+
+Repeated crawls retain exact candidate identity and provenance from source messages. Reports distinguish exhausted page budgets, the end of the visible preview, and failures. They always report `history_complete=false`: public previews do not establish complete channel history.
+
+Requests are sequential, with at least one second between starts, a 20 second deadline, and a 2 MiB decoded body limit. A channel failure allows later channels to run; HTTP 429 stops further requests. Higher page limits follow validated older navigation without an extra probe or retry.
+
+## Check keys with Docker
+
+Validation requires a native Linux executable, a local Linux Docker daemon, and a worker image with the same amd64 or arm64 architecture. The Docker CLI must be available to your account. Only local Unix socket endpoints are accepted.
+
+You can build the validator image on that Linux host and capture its immutable image ID:
+
+```sh
+validator_image_id=$(sh scripts/build-validator-image.sh)
+./bin/wpc check 1 2 3 \
+  --validator docker \
+  --validator-image "$validator_image_id"
 ./bin/wpc check show 2
-./bin/wpc list --show-keys
+./bin/wpc list
 ```
 
-You can replace the example IDs with a saved run ID or candidate ID. Crawling defaults to one page each from `warpplus`, `warppluscn`, `warpplushome`, and `warp_veyke`. Requests run sequentially with at least one second between starts, a 20 second deadline, and a 2 MiB decoded body limit. Higher page limits follow validated older navigation without an extra probe or retry. Repeated crawls preserve exact candidate identity and source message provenance. Reports distinguish a page budget stop, the end of the visible preview, and failures. They always report `history_complete=false`.
+You can select saved candidates you are authorized to activate. A check creates a temporary WARP registration, attaches the candidate, inspects attributable account evidence, and deletes that registration. It does not change your host WARP registration or connect a host tunnel.
 
-`sources` shows configured channels, including disabled entries, without opening state. Only `crawl` accepts repeatable `--source` selection and `--page-limit`. Selection preserves configuration order and cannot enable a disabled channel. One source failure allows later channels to run; HTTP 429 stops further requests.
+Image preparation downloads the signed official WARP package pinned to `2026.8.2100.0`. The script detects the local daemon architecture, or accepts a matching `amd64` or `arm64` argument. It verifies the image, installed package, protocol labels, and worker bytes before printing the complete `sha256:` ID. Checks use the prepared local image without pulling or installing software. Image preparation is also possible on a development host with a matching local Linux daemon; validation itself requires Linux.
 
-`crawl show`, `check show`, and `list` use saved state without contacting Telegram or a validator. Listing follows every bounded store page, with no total limit. Keys stay hidden unless you supply `--show-keys`. Missing state is an error; an initialized empty collection reports `No candidates saved.`
+### Outcomes and retries
 
-The default validator is `unsupported`. It saves an inconclusive attempt with reason `validation_unsupported` and exits 1 without registration work. The optional Docker backend uses the official WARP client, confirms only matching Unlimited evidence, and deletes its temporary registration before returning a confirmation. Source claims and matching key formats do not establish entitlement.
+| Latest outcome | Meaning |
+| --- | --- |
+| `unchecked` | No completed validation attempt is saved |
+| `confirmed` | Matching Unlimited evidence was observed and cleanup was proven |
+| `invalid` | A definitive rejection was recorded |
+| `inconclusive` | The attempt could not establish a definitive result |
 
-## Isolated validation
+A matching Free account is inconclusive with `not_unlimited`. A full account reports `device_limit`. Temporary failures do not become invalid results. Inconclusive attempts preserve earlier definitive evidence, so `LATEST` and `LAST_DEFINITIVE` may differ.
 
-Validation requires a Linux executable and local Docker daemon with the same amd64 or arm64 architecture. You can prepare an image from a development host, then select its immutable ID on the matching Linux runtime:
+`check` deduplicates candidate IDs in supplied order and resolves the complete selection before saving a batch. Each final item prints after its result is committed, followed by batch totals. `check show` includes the policy, every attempt, retry waits, and totals without Docker access.
+
+| Check flag, also available on `run` | Default | Accepted range |
+| --- | --- | --- |
+| `--workers` | `2` | 1 through 4 |
+| `--max-attempts` | `3` | 1 through 5 |
+| `--mutation-interval` | `1s` | Whole seconds from 1s through 60s |
+| `--candidate-timeout` | `15m` | 1m through 60m |
+
+Mutation pacing applies after registration and license commands. The candidate budget starts at the first admitted attempt and includes later waits. Only classified temporary failures retry, after proven cleanup and container removal. Retry waits increase with jitter. Free accounts, device capacity, unsupported validation, and unclassified errors do not retry. The pinned adapter cannot provide a trusted server delay, so throttling stops the batch.
+
+### Recover interrupted checks
+
+The validator shares one recovery registry across profiles and supports up to four isolated sessions. New checks first reconcile retained sessions. You can also request cleanup alone:
 
 ```sh
-validator_image_id=$(rtk proxy sh scripts/build-validator-image.sh)
-rtk proxy ./bin/wpc check 1 --validator docker --validator-image "$validator_image_id"
-rtk proxy ./bin/wpc list
+./bin/wpc validator recover \
+  --validator docker \
+  --validator-image "$validator_image_id"
 ```
 
-The preparation script detects the local Linux daemon architecture. You can also pass `amd64` or `arm64`; a mismatch is refused. It checks the compiled worker, image platform, labels, signed package version, and installed worker bytes before printing the image ID. Inspection uses a temporary container with networking disabled and does not start WARP.
+An unknown remote outcome retains the container and blocks further attachments with `validation_cleanup_pending`. Deleting a container or its journal does not prove remote cleanup. Recovery does not create a registration or reapply a license. The [validator contract](docs/specs/0003-source-crawl-validation/0003-docker-validator.md) describes this boundary.
 
-Replace `1` with a saved candidate ID you are authorized to activate. The build downloads the signed official WARP package; a check uses only the prepared local image. The backend does not change your host registration or connect a host tunnel. Remote Docker endpoints, privileged containers, host networking, and host mounts are unsupported.
+## List, filter, and export
 
-A confirmed result includes `account_type=Unlimited`, its observation time, and the tested backend version. Matching Free accounts remain inconclusive with `not_unlimited`. Full accounts report `device_limit`. Throttling reports `validation_rate_limited` when the tested client provides sufficient evidence. Results are observations, not reserved device slots.
-
-The backend keeps one shared recovery registry across profiles, with up to four isolated sessions. A new check first reconciles interrupted work. You can also request cleanup alone:
+Saved reports, listing, export, and schedule inspection work without contacting Telegram or Docker. They remain available while `run` holds the profile writer.
 
 ```sh
-rtk proxy ./bin/wpc validator recover --validator docker --validator-image "$validator_image_id"
+./bin/wpc list
+./bin/wpc list --status confirmed --freshness fresh
+./bin/wpc list --status unchecked,inconclusive --limit 25
+./bin/wpc list --definitive confirmed --show-keys
+./bin/wpc export --output candidates.json
+./bin/wpc export --show-keys --output candidates-with-keys.json
+./bin/wpc export --format keys \
+  --status confirmed --freshness fresh --output confirmed-keys.txt
 ```
 
-Unknown remote outcomes retain the container and block further attachments with `validation_cleanup_pending`. Deleting that container or its journal does not prove remote cleanup. The [validator notes](internal/validator/README.md) describe the retained state and recovery boundary.
+`list` and `export` share these filters:
 
-`check` removes duplicate IDs in your supplied order and resolves the whole selection before saving a batch. Each final item prints when its result is committed, followed by saved totals. `check show <run-id>` reads the policy, selection, every attempt, retry waits, and totals after restart. Reading a report exits 0 even when that historical batch failed.
+| Flag | Values |
+| --- | --- |
+| `--status` | `unchecked`, `confirmed`, `invalid`, `inconclusive` |
+| `--definitive` | `none`, `confirmed`, `invalid` |
+| `--freshness` | `fresh`, `stale`, `unknown`, `not_applicable` |
 
-Checks default to two workers, three attempts per candidate, one second between completed registration or license commands, and a 15 minute candidate budget. You can set `--workers` from 1 through 4, `--max-attempts` from 1 through 5, `--mutation-interval` in whole seconds from 1s through 60s, and `--candidate-timeout` from 1m through 60m. The budget begins at the first admitted attempt and includes later waits.
+Filters accept repeated flags or comma separated values. Values within a filter are alternatives; different filters must all match. `--status` examines the latest outcome. `--definitive` examines the last definitive result, including evidence retained after an inconclusive attempt. Freshness is evaluated using `--recheck-interval`, which defaults to six hours.
 
-Only classified temporary failures retry after proven cleanup. Retry waits grow with jitter and release capacity. Free accounts, device capacity, unsupported validation, and unclassified errors do not retry. The pinned Docker adapter cannot supply a trusted server delay, so throttling stops the batch. Inconclusive attempts preserve earlier definitive evidence and cause exit 1.
+Results are unlimited unless you supply a positive `--limit`. Each command reads one consistent database snapshot. `truncated=true` means another matching candidate existed beyond the requested limit. JSON includes schema version 1, evaluation time, filters, count, limit, and truncation metadata. Text and key line completion summaries go to stderr.
 
-The new image uses worker protocol 2. You can rebuild it with the existing build script before selecting its new immutable ID. Recovery reconciles a retained protocol 1 session with its original image before converting the journal. Older binaries cannot use the new registry. Cancellation allows up to 60 seconds for remote collection, then five seconds for local finalization submissions. Entered store work retains ownership until it finishes, so these are not hard process exit deadlines.
+Keys appear only with `list --show-keys`, `export --show-keys`, or `export --format keys`. The keys format writes one exact key per line and rejects unsafe line characters. It cannot be combined with `--show-keys`, including `--show-keys=false`.
 
-## Private configuration
+Without `--output`, export writes to stdout. `--output -` is not supported. Named exports create a private file atomically, refuse replacement, and must be outside the canonical state directory. JSON contains candidate summaries, not a complete history or provenance archive. The [export contract](docs/specs/0006-complete-results-export/index.md) documents the schema and delivery guarantees.
 
-Runtime commands accept `--config`, `--state-dir`, and `--recheck-interval`. `check`, `run`, and `validator recover` also accept `--validator`, `--validator-image`, and `--validator-socket`. Explicit flags override JSON settings. Validator choices are `unsupported` and `docker`.
+## Configuration
 
-The optional default file is `os.UserConfigDir()/warp-plus-connector/config.json`. An explicit missing file fails. Existing configuration must be a regular file owned by your account, without group or other access or a symlink. For example, you can save this JSON with mode `0600`:
+WPC resolves settings in this order: built in defaults, a private JSON file, then explicitly supplied flags. The default file is optional. An explicit `--config` path must exist.
+
+On Linux, the default configuration is `$XDG_CONFIG_HOME/warp-plus-connector/config.json`, or `$HOME/.config/warp-plus-connector/config.json` when `XDG_CONFIG_HOME` is unset. The file must be a regular file owned by your account, with no group or other access and no symlink. You can use file mode `0600`.
+
+For example, this configuration collects two channels and supports scheduled collection without Docker:
 
 ```json
 {
-  "state_dir": "/absolute/private/path/wpc",
+  "crawl_enabled": true,
+  "validation_enabled": false,
+  "crawl_interval": "1h",
   "recheck_interval": "6h",
-  "validator": "unsupported",
-  "check_workers": 2,
-  "check_max_attempts": 3,
-  "check_mutation_interval": "1s",
-  "check_candidate_timeout": "15m",
+  "failure_interval": "1h",
   "crawl_page_limit": 1,
   "sources": [
     {"channel": "warpplus", "page_limit": 2},
-    {"channel": "warppluscn", "enabled": false}
+    {"channel": "warppluscn"},
+    {"channel": "warpplushome", "enabled": false}
   ]
 }
 ```
 
-Omitting `sources` uses the four defaults. An explicit list replaces them, including an empty list. Channels use bare ASCII letters, digits, or underscores and normalize to lowercase. Duplicate channels are invalid. Up to 32 entries and page limits from 1 through 100 are accepted. Per channel limits override `crawl_page_limit`; an explicit `--page-limit` overrides selected limits. An empty enabled selection fails only for `crawl`, before opening state.
-
-Relative state paths resolve from your invocation directory. Shell expansions such as `~` are not performed. State defaults to your `Library/Application Support/warp-plus-connector` on macOS. Linux uses an absolute `XDG_STATE_HOME`, or your `.local/state`, followed by `warp-plus-connector`. State is private to your account. Opening a writer applies schema migrations and recovers interrupted local work; reading does neither.
-
-To select Docker in JSON, set `validator` to `docker` and add `validator_image` with the complete `sha256:` ID printed by the build script. Optional `validator_socket` is an absolute local Unix socket path. Otherwise the backend inspects your selected local Docker context. The recovery directory is `validator` beneath the platform default state directory, independent of a profile's `state_dir` override.
-
-`recheck_interval` controls evidence freshness and the routine validation schedule. `crawl_interval` and `failure_interval` default to `1h`. The routine interval defaults to `6h`. `run` requires all three intervals to be between `1m` and `720h`, including intervals for disabled lanes. Other commands retain positive freshness intervals outside that range. Configuration rejects unknown or duplicate fields, nulls, invalid values, extra JSON documents, and files larger than 64 KiB. Root invocation, help, and version bypass configuration and state.
-
-Results use stdout; fixed diagnostic reasons and structured run logs use stderr. Ordinary failures and unsupported checks exit 1. SIGINT and SIGTERM request cancellation and exit 130 and 143, with a bounded attempt to persist terminal state. A later writer recovers any unresolved local work.
-
-You can keep collection and validation running in the foreground:
+After saving it to your chosen path, you can set its permissions and inspect the resolved sources:
 
 ```sh
-bin/wpc run --validator docker --validator-image sha256:<image-id>
-bin/wpc run --validation-enabled=false
-bin/wpc schedule show
-bin/wpc schedule show 1 --format json
+chmod 600 /absolute/path/config.json
+./bin/wpc sources --config /absolute/path/config.json
+./bin/wpc run --config /absolute/path/config.json
 ```
 
-Both lanes are enabled by default. `--crawl-enabled=false` runs validation alone. The JSON fields `crawl_enabled` and `validation_enabled` accept the same controls. Automatic crawling uses all enabled configured sources and their page limits. Validation selects at most twice the worker count per batch, then reads the next due candidates from saved state. Ordinary failures receive a future attempt; restarts keep timing bases and coalesce missed intervals.
+### Settings reference
 
-`run` owns the profile writer until it stops. Saved reports, listing, export, and schedule inspection remain available, while other writers report busy. `schedule show` reads saved facts without applying current intervals or contacting Docker. A backward clock pauses automatic admission until the saved checkpoint is reached. Shared Docker throttling survives changes of profile and requires one successful, cleaned, durably saved probe before normal capacity resumes.
+| JSON field | Default | Meaning or corresponding flag |
+| --- | --- | --- |
+| `state_dir` | Platform state directory | Profile database location, `--state-dir` |
+| `validator` | `"unsupported"` | `unsupported` or `docker`, `--validator` |
+| `validator_image` | Unset | Complete immutable `sha256:` image ID, `--validator-image` |
+| `validator_socket` | Selected local Docker context | Absolute Unix socket path, `--validator-socket` |
+| `check_workers` | `2` | `--workers` |
+| `check_max_attempts` | `3` | `--max-attempts` |
+| `check_mutation_interval` | `"1s"` | `--mutation-interval` |
+| `check_candidate_timeout` | `"15m"` | `--candidate-timeout` |
+| `crawl_enabled` | `true` | Enable collection in `run`, `--crawl-enabled` |
+| `validation_enabled` | `true` | Enable validation in `run`, `--validation-enabled` |
+| `crawl_interval` | `"1h"` | Routine collection interval, `--crawl-interval` |
+| `recheck_interval` | `"6h"` | Evidence freshness and routine validation interval, `--recheck-interval` |
+| `failure_interval` | `"1h"` | Failed work recovery interval, `--failure-interval` |
+| `crawl_page_limit` | `1` | Default pages per configured channel |
+| `sources` | Four default channels | Replacement source list |
 
-The first writer upgrades SQLite to schema 5. Docker acquisition converts clean recovery state to registry 3; both versions reject older executables. Existing history is retained.
+To enable Docker in the example, you can set `validation_enabled` to `true`, set `validator` to `"docker"`, and add `validator_image` with the ID returned by the build script. An optional `validator_socket` selects an absolute local Unix socket path.
 
-## Background operation and diagnostics
+Omitting `sources` uses the defaults. An explicit list replaces them, including an empty list. Channel names use bare ASCII letters, digits, or underscores and normalize to lowercase. Duplicate channels are invalid. WPC accepts up to 32 entries and page limits from 1 through 100. A source's `page_limit` overrides `crawl_page_limit`; a crawl's explicit `--page-limit` overrides both. Disabled entries are validated too. `crawl` and `run` with crawling enabled reject an empty enabled selection.
 
-The service commands manage one systemd login service for your account on Linux amd64 or arm64. You can select an existing private configuration file at installation, then start work separately:
+Unknown or duplicate JSON fields, nulls, invalid values, extra JSON documents, and files larger than 64 KiB are rejected. Relative state paths resolve from the invocation directory. JSON values do not expand `~` or shell variables.
+
+### State and privacy
+
+On Linux, state defaults to an absolute `$XDG_STATE_HOME/warp-plus-connector`, or `$HOME/.local/state/warp-plus-connector`. `--state-dir` selects a separate profile. On a macOS development host, the default configuration and state base is `~/Library/Application Support`.
+
+State is private to your account and includes complete candidate keys. Hidden output is not encryption. The validator recovery directory remains under the platform default state directory, independent of a profile override. Service records live under the account home at `.local/state/warp-plus-connector/service`.
+
+Only one writer can own a profile. Writers apply migrations and recover interrupted local work; saved readers do neither. Current writes use SQLite schema 5, validator registry 3, and worker protocol 2. Older executables cannot use the upgraded state. Retained validator sessions are reconciled with their original image during recovery.
+
+## Scheduled operation
+
+`run` keeps independent crawl and validation lanes active until stopped. Both lanes are enabled by default, so an unconfigured `run` requires Docker validation setup. Collection alone is available explicitly:
 
 ```sh
-bin/wpc service install --config /absolute/path/config.json
-bin/wpc service start
-bin/wpc service status --format json
-bin/wpc service logs --lines 100 --follow
-bin/wpc service doctor --format json
-bin/wpc service stop
+./bin/wpc run --validation-enabled=false
 ```
 
-Installation enables startup at the next login. Stop preserves that setting. `service disable` changes future startup without stopping current work, and `service enable` restores it. `service restart` confirms stop before starting again. `service uninstall` requires a stopped service and retains your configuration, saved work, logs, and validator recovery state.
+For both lanes, you can use the image ID from the earlier setup:
 
-The installation binds executable, configuration, state, and validator paths. A validation service also binds the local Docker executable and socket. Settings are reread on start; changing bound paths requires a stopped uninstall and new installation. For collection alone, your file can set `validation_enabled` to `false`.
+```sh
+./bin/wpc run \
+  --validator docker --validator-image "$validator_image_id"
+```
 
-Status combines separately timed manager and runner observations with one snapshot of saved work. Due times describe eligibility. They do not promise execution while a lane is disabled or blocked. Status exits 0 when its report is delivered, including when the service is unhealthy. Doctor performs local inspection without repairs or container creation and exits 1 after delivering failed checks. Both support text and JSON. Logs retain at most 20 MiB across five private files and report gaps when following crosses lost or uncertain history.
+`--crawl-enabled=false` selects validation alone. Both lanes cannot be disabled together. You can change intervals with `--crawl-interval`, `--recheck-interval`, and `--failure-interval`. For `run`, all three must be between `1m` and `720h`, including intervals for disabled lanes.
 
-Linux arm64 native lifecycle evidence is retained in the scope. Native Linux amd64 lifecycle and provider proof, plus the remaining recovery and fault checks, are still pending. Docker tests cannot establish native user manager behavior. The full procedure is in [spec 0008 verification](docs/specs/0008-background-operation-diagnostics/verify.md).
+The scheduler persists timing across restarts and coalesces missed intervals. Validation admits at most twice the worker count per batch, then reads the next due candidates. Ordinary failures receive a future attempt. A backward clock pauses automatic admission until the saved checkpoint is reached.
 
-## Development checks
+From another terminal, you can inspect saved eligibility:
 
-The local gate uses Go `1.27.2`, `editorconfig-checker 4.0.2`, `golangci-lint 2.14.0`, and `pre-commit 4.6.2`, the versions tested for this project. You can make these tools available on your `PATH`, then enable the hook in each checkout:
+```sh
+./bin/wpc schedule show
+./bin/wpc schedule show 1 --format json
+```
+
+The report reads saved facts without applying current intervals or contacting Docker. A due time means eligible, not guaranteed execution while a lane is disabled or blocked. A running profile rejects other writers, including manual crawl and check commands, with `state_busy`.
+
+## Background service
+
+The service commands manage one systemd login service for your account on Linux amd64 or arm64. You need an existing private configuration file and an executable in a stable location. Installation binds the executable, configuration, state, and validator paths; Docker validation also binds the local Docker executable and socket.
+
+For collection alone, the configuration example above is sufficient:
+
+```sh
+./bin/wpc service install --config /absolute/path/config.json
+./bin/wpc service start
+./bin/wpc service status --format json
+./bin/wpc service logs --lines 100 --follow
+```
+
+You can stop following logs with Ctrl+C without stopping the service. Other controls are:
+
+```sh
+./bin/wpc service doctor --format json
+./bin/wpc service restart
+./bin/wpc service stop
+./bin/wpc service disable
+./bin/wpc service enable
+./bin/wpc service uninstall
+```
+
+Installation enables startup at the next login and does not start work immediately. `stop` preserves that setting. `disable` changes future startup without stopping current work; `enable` restores it. `restart` confirms a stop before starting again. `uninstall` requires a stopped service and retains configuration, saved work, logs, and recovery state. WPC does not manage boot services or Linux lingering.
+
+Settings are reread on start. Changing a bound path requires a stopped uninstall and new installation. Status reports native manager, runner, and saved work observations separately. A successful status command means its report was delivered, even if the service is unhealthy. Doctor performs local inspection without repairs, recovery, or container creation, and exits 1 when checks fail.
+
+Logs retain at most 20 MiB across five private files. Following reports gaps if rotation loses or obscures history. Status, logs, and doctor support text and JSON output. See the [service verification contract](docs/specs/0008-background-operation-diagnostics/verify.md) for native lifecycle and fault checks.
+
+## Troubleshooting
+
+| Symptom | Meaning and next step |
+| --- | --- |
+| `state_not_initialized` | No saved database exists for the selected profile. You can run `crawl` first. |
+| `state_busy` | Another writer owns the profile. You can stop its foreground runner or service before manual writes. Saved reads remain available. |
+| `validation_unsupported` | The default backend cannot validate. You can configure Docker, or use `run --validation-enabled=false` for collection. |
+| `validation_cleanup_pending` | Remote cleanup is uncertain. You can restore the original local Docker environment and run `validator recover`. Deleting retained state is not proof of cleanup. |
+| `device_limit` | The account has no available device capacity. This is inconclusive and is not retried by the check batch. |
+| `not_unlimited` | Matching account evidence was Free, so Plus entitlement was not confirmed. |
+| `validation_rate_limited` | The provider throttled validation. The pinned adapter stops the batch; scheduled operation retains shared throttling state. |
+| Configuration access error | You can check file ownership, regular file status, mode `0600`, and whether the supplied path exists without a symlink. |
+| Export destination exists | Named export never overwrites. You can choose a new path outside the state directory. |
+| Export error includes `published=true` | The complete destination file was already published and retained. You can inspect it before retrying. |
+| Output error includes `delivered=true` | Output delivery had already occurred before a later failure. You can account for that before retrying in a pipeline. |
+
+Results use stdout; diagnostics, completion summaries, and structured run logs use stderr. Ordinary command failures and inconclusive checks exit 1. Reading a historical failed check report exits 0 if the read succeeds. SIGINT and SIGTERM request cancellation and exit 130 and 143. Shutdown attempts to save terminal state and clean up remote work; forced termination does not establish remote cleanup.
+
+## Development
+
+WPC uses one Go module, Cobra for commands, SQLite through `database/sql` and `modernc.org/sqlite`, and goquery for public preview parsing. Exact dependencies are in [go.mod](go.mod) and [go.sum](go.sum). The build does not require a C compiler.
+
+| Path | Responsibility |
+| --- | --- |
+| `cmd/wpc` | Process exit, signals, and output streams |
+| `internal/cli` | Command parsing and rendering |
+| `internal/app` | Crawl, validation, and scheduling coordination |
+| `internal/config` | Private configuration and explicit overrides |
+| `internal/state` | Domain records |
+| `internal/store` | SQLite persistence, migrations, and recovery |
+| `internal/source` | Bounded public retrieval and candidate extraction |
+| `internal/validator` | Isolated Docker checks and remote recovery |
+| `internal/service` | Native service controls and diagnostics |
+
+### Local checks
+
+The local gate uses Go `1.27.2`, `editorconfig-checker 4.0.2`, `golangci-lint 2.14.0`, and `pre-commit 4.6.2`. With those tools on your `PATH`, you can install and run the hooks:
 
 ```sh
 pre-commit install
 pre-commit run --all-files
 ```
 
-Each commit checks formatting, then runs `go vet`, race tests, and lint across the module, stopping at the first failure. The formatting check runs `gofmt` and `editorconfig-checker` on every Go file under `cmd`, `internal`, and `scripts`, including new files. It reads the 120-character limit from `.editorconfig` and reports violations without changing files. Go indentation is checked by `gofmt`, since a plain text indentation check would also flag whitespace inside raw string data. The gate also runs when a commit changes only documentation. Local hooks use your installed tools and do not download separate hook environments.
-
-To apply the GoLand rules in `.editorconfig`, then run `gofmt` and the formatting check:
-
-```sh
-rtk proxy sh scripts/format.sh
-```
-
-This command uses GoLand's synchronous command line formatter (tested with GoLand `2026.2.0.1`). It finds the standard macOS app locations or `goland.sh` on `PATH`. For another installation, set `GOLAND_BIN` to the native GoLand executable or Linux `bin/goland.sh`. Close other GoLand instances before using the command line formatter, or run Reformat Code from the open IDE. Long string literals and conditions that the formatter cannot wrap still fail the final check; split strings with concatenation to preserve their contents.
-
-GoLand applies the IDE-specific `ij_*` settings; the portable checker enforces the supported EditorConfig properties. See the [GoLand formatter documentation](https://www.jetbrains.com/help/go/command-line-formatter.html) and [editorconfig-checker documentation](https://github.com/editorconfig-checker/editorconfig-checker).
-
-You can run the same checks separately from the repository root:
+The gate runs formatting, `go vet`, race tests, and lint in order, stopping at the first failure. It runs even for documentation changes. You can also run the checks separately:
 
 ```sh
 sh scripts/check-format.sh
@@ -189,8 +344,32 @@ go test -race ./...
 golangci-lint run ./...
 ```
 
-The [hook configuration](.pre-commit-config.yaml) follows the [pre-commit configuration reference](https://pre-commit.com/#pre-commit-configyaml---hooks). The [lint configuration](.golangci.yml) explicitly enables the five previously validated checks: `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`, using the [golangci-lint v2 configuration format](https://golangci-lint.run/docs/configuration/file/).
+Formatting checks Go files under `cmd`, `internal`, and `scripts` against gofmt and [.editorconfig](.editorconfig), including the 120 character limit. To apply the GoLand rules and gofmt before checking, you can use `sh scripts/format.sh`. It uses GoLand `2026.2.0.1`, detected from standard macOS app locations or `goland.sh` on `PATH`; `GOLAND_BIN` selects another installation. The command line formatter requires other GoLand instances to be closed. You can also reformat in the open IDE. Long strings may still need manual splitting without changing their values.
 
-CI remains pending until you select a provider. Its planned checks are the same local gate plus builds for Linux amd64 and arm64.
+The [tooling verification checklist](docs/reviews/tooling/verify.md) covers the gate and its failure cases. CI remains pending provider selection.
 
-You can repeat the gate and its failure cases with the [tooling verification checklist](docs/reviews/tooling/verify.md).
+### Release builds
+
+A local build reports `wpc dev`. You can supply actual release metadata through `main.version` and `main.commit`:
+
+```sh
+go build \
+  -ldflags '-X main.version=0.1.0 -X main.commit=abc1234' \
+  -o bin/wpc ./cmd/wpc
+```
+
+For Linux amd64 and arm64 snapshots, the repository uses GoReleaser `2.18.3`:
+
+```sh
+goreleaser check
+goreleaser build --snapshot --clean
+goreleaser release --snapshot --clean
+```
+
+The [release configuration](.goreleaser.yaml) disables CGO and embeds version metadata. Snapshot commands replace generated `dist/` output. The release command also creates local archives and SHA256 checksums without publishing. The validator image uses its separate build script.
+
+### Project records
+
+The [architecture](docs/specs/0001-stack-architecture/index.md) defines the package boundaries. The [scope](docs/scope/scope.md) records feature status, verification evidence, and deferred work. Feature contracts live under [docs/specs](docs/specs/).
+
+Automatic key application or rotation, private Telegram access, unlimited historical backfill, a public API or dashboard, notifications, and public release automation are outside the current scope.

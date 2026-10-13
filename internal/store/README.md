@@ -30,6 +30,6 @@ SQLite driver v1.60.1 can keep waiting inside its native busy handler after cont
 
 ## Development checks
 
-`rtk proxy go test ./internal/store -v` exercises the public interface, with narrow internal fixtures for SQL faults, migrations, and synchronized process crashes. The same suite has run on macOS arm64 and in a Linux arm64 container. The repository gate runs formatting, vet, race tests, and lint.
+`go test ./internal/store -v` exercises the public interface, with narrow internal fixtures for SQL faults, migrations, and synchronized process crashes. The same suite has run on macOS arm64 and in a Linux arm64 container. The repository gate runs formatting, vet, race tests, and lint.
 
 The Beta workflow still calls for the separate `/check verify persistent key state` and `/test persistent key state` passes.
