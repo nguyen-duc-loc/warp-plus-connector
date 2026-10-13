@@ -16,8 +16,8 @@ func NewRootCommand(version, commit string) *cobra.Command {
 		Use:   "wpc",
 		Short: "A personal CLI for publicly shared WARP Plus key candidates",
 		Long: "Collect and inspect publicly shared WARP Plus key " +
-			"candidates.\n\nReal validation is unsupported until isolation and " +
-			"cleanup are proven.",
+			"candidates.\n\nValidate Unlimited entitlement with a configured " +
+			"isolated Docker worker. Keys stay hidden unless explicitly requested.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,

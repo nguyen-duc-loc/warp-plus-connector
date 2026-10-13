@@ -49,10 +49,13 @@ Formatting passes when `scripts/check-format.sh` reports no gofmt or EditorConfi
 13. `internal/service` owns account scoped native controls and diagnostics under [spec 0008](docs/specs/0008-background-operation-diagnostics/index.md). Public service admission supports Linux amd64 and arm64; native state and saved observations remain separate evidence. Status and doctor perform bounded reads without migration, recovery, registration, or attachment. Detailed ownership, shutdown, privacy, and log contracts are in [internal/service/AGENTS.md](internal/service/AGENTS.md).
 
 ## Tooling
-The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. CI remains pending provider selection; its planned checks include the same gate and builds for Linux amd64 and arm64.
+The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. GitHub Actions now defines the same gate on native Linux amd64 and arm64, offline validator smoke checks, workflow validation, and GoReleaser snapshot archives. Hosted execution is verified only by an actual successful workflow run.
 The formatting gate uses `scripts/check-format.sh` to reject gofmt and EditorConfig violations in Go files under `cmd`, `internal`, and `scripts` without changing them. It requires `editorconfig-checker 4.0.2`; only its indentation check is disabled because gofmt owns Go indentation and raw string whitespace is data. `scripts/format.sh` uses GoLand `2026.2.0.1` (macOS app detection or `goland.sh` on PATH; override with `GOLAND_BIN`) before gofmt and the gate. `.golangci.yml` enables `errcheck`, `govet`, `ineffassign`, `staticcheck`, and `unused`. Repeatable hook checks are in [tooling verification](docs/reviews/tooling/verify.md).
 Observed tools: `golangci-lint 2.14.0`, `pre-commit 4.6.2`. Formatting, vet, race tests, lint, and configuration validation passed on macOS arm64. Sandbox runs of vet, race tests, and golangci encountered cache access or package loading errors; all passed with approved toolchain and cache access. Check the environment before changing dependencies to address those errors.
 GoReleaser `2.18.3` uses `.goreleaser.yaml` for Linux amd64 and arm64 builds with CGO disabled and version metadata. Snapshot builds replace generated `dist/` output. `rtk proxy goreleaser release --snapshot --clean` also creates local archives and SHA256 checksums without publishing; the Docker worker image keeps its separate build script.
+
+## Release automation
+The user selected GitHub Actions, GitHub Releases, and public GHCR validator images on 2026-10-13, extending earlier scope and architecture records that deferred publishing. `.github/workflows/ci.yml` is reused by `release.yml`; tagged releases require both native gates, snapshot packaging, image verification, and anonymous GHCR access before GoReleaser publishes. Version tags are `vMAJOR.MINOR.PATCH` or `-alpha.N`, `-beta.N`, `-rc.N` prereleases from main history. First publication requires setting the GHCR package public. The operational contract is [docs/releasing.md](docs/releasing.md); workflow files do not themselves prove hosted execution or live provider behavior.
 
 ## Git
 - integration: on
@@ -79,6 +82,7 @@ Current build and runtime pin: WARP `2026.8.2110.0`. See [validator verification
 Declined: additional community skills and MCP servers for this stack. Do not offer discovery again without a new request.
 
 ## Context files
+- [.github/AGENTS.md](.github/AGENTS.md): CI permissions, native checks, and versioned publication.
 - [internal/service/AGENTS.md](internal/service/AGENTS.md): Native service ownership, diagnostic reads, structured logs, and bounded shutdown.
 - [internal/app/AGENTS.md](internal/app/AGENTS.md): Crawl coordination, mutation failure boundaries, checks, and saved reads.
 - [internal/source/AGENTS.md](internal/source/AGENTS.md): Bounded public retrieval, exact candidate extraction, and source provenance.

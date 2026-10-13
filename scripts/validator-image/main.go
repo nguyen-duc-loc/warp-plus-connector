@@ -89,18 +89,20 @@ func build(ctx context.Context, args []string) error {
 	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), definition, 0600); err != nil {
 		return fmt.Errorf("stage image definition: %w", err)
 	}
-	imageIDPath := filepath.Join(dir, "image-id")
+	imageTag := "wpc-validator:" + protocol.WARPVersion + "-" + arch
 	prepare := docker(
-		"build", "--platform", "linux/"+arch, "--iidfile", imageIDPath,
-		"-t", "wpc-validator:"+protocol.WARPVersion+"-"+arch, "--provenance=false", dir,
+		"build", "--platform", "linux/"+arch, "--load",
+		"-t", imageTag, "--provenance=false", dir,
 	)
 	prepare.Stdout = os.Stderr
 	if err := prepare.Run(); err != nil {
 		return fmt.Errorf("build image: %w", err)
 	}
-	data, err = os.ReadFile(imageIDPath)
+	// BuildKit digests are not portable local image IDs across Docker stores.
+	// Resolve the loaded tag once, then inspect and run only its immutable ID.
+	data, err = docker("image", "inspect", imageTag, "--format", "{{.Id}}").Output()
 	if err != nil {
-		return fmt.Errorf("read image identity: %w", err)
+		return fmt.Errorf("resolve prepared image: %w", err)
 	}
 	id := strings.TrimSpace(string(data))
 	if !validator.ValidImage(id) {

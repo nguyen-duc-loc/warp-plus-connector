@@ -176,7 +176,7 @@ func addRuntimeCommands(root *cobra.Command, version string) {
 
 func validatorFlags(cmd *cobra.Command) {
 	cmd.Flags().String("validator", "unsupported", "Validator backend: unsupported or docker")
-	cmd.Flags().String("validator-image", "", "Immutable local Docker image ID from the validator build script")
+	cmd.Flags().String("validator-image", "", "Immutable local Docker image ID from a release image or local build")
 	cmd.Flags().String("validator-socket", "", "Absolute local Docker socket path (defaults to selected local context)")
 }
 

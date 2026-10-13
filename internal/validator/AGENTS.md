@@ -32,7 +32,7 @@ Cleanup requires the explicit tested success response and a subsequent missing r
 
 ## Commands
 
-Use `rtk proxy sh scripts/build-validator-image.sh` to build the pinned image and print its immutable ID. Checks do not install packages or pull images. `wpc validator recover` performs cleanup only; new checks also reconcile first.
+Use `rtk proxy sh scripts/build-validator-image.sh` to build the pinned image and print its immutable ID. Preparation explicitly loads the image and resolves its tag to the local immutable ID, then verifies metadata, the installed package, and worker bytes; BuildKit `--iidfile` output is not a portable local lookup key. Release users can pull the matching GHCR image and obtain its ID with `docker image inspect`. `scripts/smoke-validator-image.sh` checks readiness and local cancellation with networking disabled and synthetic input only. Checks do not install packages or pull images. `wpc validator recover` performs cleanup only; new checks also reconcile first.
 
 Focused checks are `rtk proxy go test -race ./internal/validator/... ./internal/app ./internal/config`. The repository gate also covers the worker command. Live fault experiments use private scratch profiles and explicitly authorized keys; retained tests use synthetic values.
 

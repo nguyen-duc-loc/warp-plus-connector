@@ -23,6 +23,11 @@ archives:
     formats:
       - tar.gz
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - README.md
+      - docs/configuration.md
+      - docs/development.md
+      - docs/releasing.md
 
 checksum:
   name_template: checksums.txt
@@ -31,4 +36,25 @@ snapshot:
   version_template: '{{ .Version }}-dev-{{ .ShortCommit }}'
 
 changelog:
-  disable: true
+  sort: asc
+
+release:
+  github:
+    owner: nguyen-duc-loc
+    name: warp-plus-connector
+  prerelease: auto
+  name_template: 'WPC {{ .Tag }}'
+  extra_files:
+    - glob: .release/validator-images.txt
+  footer: |
+    ## Install
+    Download the archive matching Linux amd64 or arm64 and verify it with `checksums.txt`.
+    See the [installation guide](https://github.com/nguyen-duc-loc/warp-plus-connector/blob/{{ .Tag }}/README.md#installation).
+
+    ## Validator image
+    `docker pull ghcr.io/nguyen-duc-loc/warp-plus-connector/validator:{{ .Tag }}`
+
+    The image supports Linux amd64 and arm64. Use `docker image inspect --format '{{ "{{.Id}}" }}'`
+    with that image reference to obtain the immutable local ID for `--validator-image`.
+    `validator-images.txt` records each architecture's registry digest.
+    Release automation checks the binaries and offline worker behavior; it does not activate real keys.

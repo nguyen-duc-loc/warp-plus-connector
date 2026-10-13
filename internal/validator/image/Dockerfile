@@ -12,5 +12,6 @@ RUN apt-get update -qq \
     && rm -rf /var/lib/apt/lists/* /tmp/cloudflare-pubkey.gpg
 
 LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2110.0"
+LABEL org.opencontainers.image.source="https://github.com/nguyen-duc-loc/warp-plus-connector"
 COPY wpc-worker /usr/local/bin/wpc-worker
 ENTRYPOINT ["/usr/local/bin/wpc-worker", "serve"]

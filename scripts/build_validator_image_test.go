@@ -31,6 +31,11 @@ func TestBuildValidatorImage(t *testing.T) {
 		{name: "amd64 default", daemon: "x86_64", arch: "amd64"},
 		{name: "arm64 explicit", daemon: "arm64", arch: "arm64", args: []string{"arm64"}},
 		{name: "amd64 explicit", daemon: "amd64", arch: "amd64", args: []string{"amd64"}},
+		{name: "build digest not locally addressable", daemon: "amd64", arch: "amd64", stage: "foreign digest"},
+		{name: "missing loaded image", daemon: "arm64", arch: "arm64", stage: "missing image",
+			want: "resolve prepared image"},
+		{name: "invalid local identity", daemon: "arm64", arch: "arm64", stage: "invalid identity",
+			want: "validator_image_required"},
 		{name: "mismatch", daemon: "arm64", arch: "arm64", args: []string{"amd64"}, want: "platform_unsupported"},
 		{name: "unknown daemon", daemon: "riscv64", arch: "arm64", want: "platform_unsupported"},
 		{name: "wrong OS", daemon: "arm64", arch: "arm64", stage: "wrong OS", want: "platform_unsupported"},
@@ -82,14 +87,27 @@ case "$1" in
   printf '{"OSType":"%s","Architecture":"%s"}\n' "$os" "$WPC_DAEMON";;
  build)
   [ "$2" = --platform ] && [ "$3" = "linux/$WPC_ARCH" ] || exit 12
-  [ "$6" = -t ] && [ "$7" = "wpc-validator:2026.8.2110.0-$WPC_ARCH" ] || exit 13
-  [ "$8" = --provenance=false ] && [ -f "$9/wpc-worker" ] && [ -f "$9/Dockerfile" ] || exit 14
-  grep -qx 'ARG WARP_VERSION=2026.8.2110.0' "$9/Dockerfile" || exit 16
-  grep -qx 'LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2110.0"' "$9/Dockerfile" || exit 17
+  [ "$4" = --load ] && [ "$5" = -t ] && [ "$6" = "wpc-validator:2026.8.2110.0-$WPC_ARCH" ] || exit 13
+  [ "$7" = --provenance=false ] && [ -f "$8/wpc-worker" ] && [ -f "$8/Dockerfile" ] || exit 14
+  grep -qx 'ARG WARP_VERSION=2026.8.2110.0' "$8/Dockerfile" || exit 16
+  grep -qx 'LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2110.0"' "$8/Dockerfile" || exit 17
   [ "$WPC_STAGE" != 'docker failure' ] || exit 22
   printf '%s\n' 'build diagnostic'
-  printf '%s\n' "$WPC_IMAGE" > "$5";;
+  digest="$WPC_IMAGE"
+  if [ "$WPC_STAGE" = 'foreign digest' ]; then
+    digest="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  fi
+  printf '%s\n' "$digest";;
  image)
+  if [ "$3" = "wpc-validator:2026.8.2110.0-$WPC_ARCH" ]; then
+    [ "$4" = --format ] && [ "$5" = '{{.Id}}' ] || exit 18
+    [ "$WPC_STAGE" != 'missing image' ] || exit 23
+    id="$WPC_IMAGE"
+    [ "$WPC_STAGE" != 'invalid identity' ] || id=invalid
+    printf '%s\n' "$id"
+    exit 0
+  fi
+  [ "$3" = "$WPC_IMAGE" ] || { printf 'No such image\n' >&2; exit 24; }
   arch="$WPC_ARCH"
   [ "$WPC_STAGE" != 'wrong image' ] || arch=wrong
   printf '[{"Id":"%s","Os":"linux","Architecture":"%s","Config":{"Labels":{
