@@ -101,7 +101,9 @@ validator_image_id=$(sh scripts/build-validator-image.sh)
 
 You can select saved candidates you are authorized to activate. A check creates a temporary WARP registration, attaches the candidate, inspects attributable account evidence, and deletes that registration. It does not change your host WARP registration or connect a host tunnel.
 
-Image preparation downloads the signed official WARP package pinned to `2026.8.2100.0`. The script detects the local daemon architecture, or accepts a matching `amd64` or `arm64` argument. It verifies the image, installed package, protocol labels, and worker bytes before printing the complete `sha256:` ID. Checks use the prepared local image without pulling or installing software. Image preparation is also possible on a development host with a matching local Linux daemon; validation itself requires Linux.
+Image preparation downloads the signed official WARP package pinned to `2026.8.2110.0`. The script detects the local daemon architecture, or accepts a matching `amd64` or `arm64` argument. It verifies the image, installed package, protocol labels, and worker bytes before printing the complete `sha256:` ID. Checks use the prepared local image without pulling or installing software. Image preparation is also possible on a development host with a matching local Linux daemon; validation itself requires Linux.
+
+The `2026.8.2110.0` pin replaces `2026.8.2100.0`, which was absent from the Bookworm package indexes on 2026-10-13. Rebuild both WPC and the validator image when updating, then use the new image ID. The new image passed Linux arm64 package and worker inspection and an offline startup and cancellation smoke check. Live Unlimited entitlement and remote deletion have not yet been reverified with this release.
 
 ### Outcomes and retries
 

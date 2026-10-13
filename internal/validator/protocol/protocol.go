@@ -7,10 +7,10 @@ import (
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 )
 
-// Version and WARPVersion identify the only tested worker and vendor contracts.
+// Version and WARPVersion identify the required worker protocol and pinned vendor version.
 const (
 	Version     = 2
-	WARPVersion = "2026.8.2100.0"
+	WARPVersion = "2026.8.2110.0"
 )
 
 // Request arrives through standard input; its key never belongs in arguments.

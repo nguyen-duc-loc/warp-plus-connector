@@ -57,7 +57,7 @@ func doctorDockerFixture(t *testing.T, daemon, image, delay string) (Account, Ma
 func doctorImageFixture(arch string) string {
 	return `[{"Id":"sha256:` + strings.Repeat("a", 64) + `","Architecture":"` + arch +
 		`","Os":"linux","Config":{"Labels":{"io.wpc.validator.protocol":"2",` +
-		`"io.wpc.validator.warp":"2026.8.2100.0"}}}]`
+		`"io.wpc.validator.warp":"2026.8.2110.0"}}}]`
 }
 
 // Spec 0008 AC-13, AC-19: effective platform and immutable worker checks are
@@ -89,7 +89,7 @@ func TestDoctorDockerContract(t *testing.T) {
 			strings.Repeat("b", 64)), "validator_version_mismatch"},
 		{"old worker protocol", daemon, strings.ReplaceAll(image, `protocol":"2`, `protocol":"1`),
 			"validator_version_mismatch"},
-		{"wrong WARP version", daemon, strings.ReplaceAll(image, "2026.8.2100.0", "other"),
+		{"wrong WARP version", daemon, strings.ReplaceAll(image, "2026.8.2110.0", "other"),
 			"validator_version_mismatch"},
 		{"missing labels", daemon, strings.ReplaceAll(image, "io.wpc.validator", "unrelated"),
 			"validator_version_mismatch"},

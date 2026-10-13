@@ -4,6 +4,8 @@ The governing contracts are [the Docker backend child](../../docs/specs/0003-sou
 
 Platform admission requires Linux amd64 or arm64 and agreement between executable, local daemon, immutable image, and worker. Daemon aliases `x86_64` and `aarch64` normalize to their canonical targets; image architecture must be canonical. `InspectLocal` permits only local daemon and image inspection, with no ownership acquisition, container creation, registration, or attachment. Retained sessions keep their exact daemon, image, and container identities in the shared registry; architecture changes never prove cleanup.
 
+Current build and runtime pin is `2026.8.2110.0`, following removal of the old version from the Bookworm indexes. Package and worker inspection and offline readiness and cancellation passed on Linux arm64; live entitlement and remote cleanup evidence above applies only to `2026.8.2100.0`. See [verification notes](README.md#package-availability-update-2026-10-13). The explicit old version pins in specs 0003 and 0005 need `/architect` reconciliation.
+
 ## Ownership
 
 [docker.go](docker.go) owns host subprocesses and container identity checks; [batch.go](batch.go) owns shared recovery and staged sessions. The journal is under the platform default state directory, independent of profile overrides. One owner lock covers reconciliation and the whole batch, including retry waits. Its version 3 registry retains up to four sessions, the clock checkpoint, and the shared admission gate. Reconcile every retained session and reject untracked labeled containers before new work, even when a known session has a cleanup receipt.

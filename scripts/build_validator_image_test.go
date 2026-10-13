@@ -82,8 +82,10 @@ case "$1" in
   printf '{"OSType":"%s","Architecture":"%s"}\n' "$os" "$WPC_DAEMON";;
  build)
   [ "$2" = --platform ] && [ "$3" = "linux/$WPC_ARCH" ] || exit 12
-  [ "$6" = -t ] && [ "$7" = "wpc-validator:2026.8.2100.0-$WPC_ARCH" ] || exit 13
+  [ "$6" = -t ] && [ "$7" = "wpc-validator:2026.8.2110.0-$WPC_ARCH" ] || exit 13
   [ "$8" = --provenance=false ] && [ -f "$9/wpc-worker" ] && [ -f "$9/Dockerfile" ] || exit 14
+  grep -qx 'ARG WARP_VERSION=2026.8.2110.0' "$9/Dockerfile" || exit 16
+  grep -qx 'LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2110.0"' "$9/Dockerfile" || exit 17
   [ "$WPC_STAGE" != 'docker failure' ] || exit 22
   printf '%s\n' 'build diagnostic'
   printf '%s\n' "$WPC_IMAGE" > "$5";;
@@ -91,9 +93,9 @@ case "$1" in
   arch="$WPC_ARCH"
   [ "$WPC_STAGE" != 'wrong image' ] || arch=wrong
   printf '[{"Id":"%s","Os":"linux","Architecture":"%s","Config":{"Labels":{
-"io.wpc.validator.protocol":"2","io.wpc.validator.warp":"2026.8.2100.0"}}}]\n' "$WPC_IMAGE" "$arch";;
+"io.wpc.validator.protocol":"2","io.wpc.validator.warp":"2026.8.2110.0"}}}]\n' "$WPC_IMAGE" "$arch";;
  run)
-  version=2026.8.2100.0
+  version=2026.8.2110.0
   hash="$WPC_HASH"
   [ "$WPC_STAGE" != 'wrong package' ] || version=wrong
   [ "$WPC_STAGE" != 'wrong bytes' ] || hash=wrong

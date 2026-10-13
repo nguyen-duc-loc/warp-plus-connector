@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 
-ARG WARP_VERSION=2026.8.2100.0
+ARG WARP_VERSION=2026.8.2110.0
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
@@ -11,6 +11,6 @@ RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends "cloudflare-warp=${WARP_VERSION}" \
     && rm -rf /var/lib/apt/lists/* /tmp/cloudflare-pubkey.gpg
 
-LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2100.0"
+LABEL io.wpc.validator.protocol="2" io.wpc.validator.warp="2026.8.2110.0"
 COPY wpc-worker /usr/local/bin/wpc-worker
 ENTRYPOINT ["/usr/local/bin/wpc-worker", "serve"]

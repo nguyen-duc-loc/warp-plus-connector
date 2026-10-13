@@ -63,6 +63,9 @@ Offer milestone commits for approval. Confirm pushes and PRs. Public repository 
 ## Specs
 Architecture: [0001 stack and architecture](docs/specs/0001-stack-architecture/index.md). Feature records live under `docs/specs/NNNN-name/`; scope lives in [docs/scope/scope.md](docs/scope/scope.md).
 
+## Validator package update
+Current build and runtime pin: WARP `2026.8.2110.0`. See [validator verification notes](internal/validator/README.md#package-availability-update-2026-10-13) for the package availability fix and verification limits. Older stack and spec references to `2026.8.2100.0` describe the earlier release; live entitlement and remote deletion verification have not yet been repeated for the new pin.
+
 ## Agent skills
 - [architect](.agents/skills/architect/): `JavaScript-Mastery-Pro/skills`, decisions and specs.
 - [audit](.agents/skills/audit/): `JavaScript-Mastery-Pro/skills`, initial project context.

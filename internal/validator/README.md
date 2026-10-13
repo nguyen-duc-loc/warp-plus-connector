@@ -23,3 +23,11 @@ The host accepts a confirmation only after matching input attribution, explicit 
 Missing local registration without a receipt is uncertain. A narrowly measured exception handles an explicit HTTP 429 rejection of the sole creation request, provided the retained log has exactly the matching failure and terminal events and local registration is absent. It reports `validation_rate_limited` and performs no automatic retry. Unknown cases stay blocked; there is no command that discards uncertainty merely to continue.
 
 Protocol 2 separates registration and attachment so the host can serialize vendor mutations across overlapping observations and cleanup. One owner spans the batch and retry waits. Registry replacement failures stop writes in that invocation, preserving the actual on disk journal for the next recovery. The batch implementation and controlled checks do not replace the separately authorized live acceptance in [spec 0005](../../docs/specs/0005-concurrent-checks-bounded-retries/verify.md).
+
+## Package availability update (2026-10-13)
+
+The build and runtime now pin WARP `2026.8.2110.0`. The official Bookworm indexes for amd64 and arm64 listed this version and no longer listed `2026.8.2100.0` when inspected. The image labels, worker readiness check, installed package inspection, and build and doctor fixtures use the new pin. Worker protocol remains 2.
+
+The real Linux arm64 image build succeeded with ID `sha256:ded134517782b4e4a6e195949d9487546aa12d6380d645f34d52a2939f332743`. With networking disabled and synthetic input, the worker passed readiness, initialization, cancellation, and recovery from `prepared` to `cleaned`. The smoke container was removed. No registration or license attachment was attempted. Formatting, vet, race tests, and lint passed on the macOS arm64 development host. An amd64 image build and live entitlement and remote deletion verification remain outstanding for this release.
+
+The pinned version statements in the Docker backend spec and spec 0005 still describe `2026.8.2100.0` and need reconciliation through `/architect`. Earlier live verification records remain evidence for that earlier release only.
