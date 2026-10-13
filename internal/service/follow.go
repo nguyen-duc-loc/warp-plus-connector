@@ -70,6 +70,9 @@ func FollowLogs(ctx context.Context, a Account, lines int, emit func(LogEnvelope
 			unknownIdentity = !found && len(view.Entries) > 0
 		}
 		for _, e := range view.Entries[start:] {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if seen[entryKey(e)] {
 				continue
 			}
@@ -94,6 +97,9 @@ func FollowLogs(ctx context.Context, a Account, lines int, emit func(LogEnvelope
 				}
 			}
 			entry := e
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err := emit(LogEnvelope{SchemaVersion: 1, Type: "entry", Entry: &entry}); err != nil {
 				return err
 			}

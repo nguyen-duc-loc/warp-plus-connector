@@ -85,6 +85,17 @@ func diagnosticCode(err error) string {
 }
 
 func runnerStatus(a Account, m *Manifest) Component {
+	out, observed, err := readRunnerStatus(a, m)
+	if err != nil {
+		return component(nil, err)
+	}
+	c := component(out, nil)
+	c.ObservedAt = observed
+	return c
+}
+
+// readRunnerStatus retains validated observation evidence if ownership is unavailable.
+func readRunnerStatus(a Account, m *Manifest) (RunnerStatus, time.Time, error) {
 	var out RunnerStatus
 	o, observationErr := readObservation(a.Root)
 	observed := timestamp()
@@ -101,11 +112,11 @@ func runnerStatus(a Account, m *Manifest) Component {
 			out.InstallationMatches = &matches
 		}
 	} else if !missing(observationErr) {
-		return component(nil, observationErr)
+		return out, observed, observationErr
 	}
 	pid, err := ownerPID(filepath.Join(a.Root, "runner.lock"))
 	if err != nil {
-		return component(nil, failure("service_owner_unknown"))
+		return out, observed, failure("service_owner_unknown")
 	}
 	if pid != nil {
 		held := *pid > 0
@@ -114,9 +125,7 @@ func runnerStatus(a Account, m *Manifest) Component {
 			out.OwnerPID = pid
 		}
 	}
-	c := component(out, nil)
-	c.ObservedAt = observed
-	return c
+	return out, observed, nil
 }
 
 func readWork(ctx context.Context, path string) (work state.OperationalWork, err error) {

@@ -28,6 +28,14 @@ type DoctorReport struct {
 
 // Doctor performs only bounded local reads and never acquires validator ownership.
 func Doctor(parent context.Context) DoctorReport {
+	return doctor(parent, ResolveAccount, inspect)
+}
+
+func doctor(
+	parent context.Context,
+	resolve func(context.Context) (Account, error),
+	inspectNative func(context.Context, Account, *Manifest) (ManagerState, error),
+) DoctorReport {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 	out := DoctorReport{SchemaVersion: 1, View: "service_doctor", OK: true, Checks: []Finding{}}
@@ -37,7 +45,7 @@ func Doctor(parent context.Context) DoctorReport {
 			out.OK = false
 		}
 	}
-	a, err := ResolveAccount(ctx)
+	a, err := resolve(ctx)
 	if err != nil {
 		add("installation", "fail", diagnosticCode(err), "repair_account_lookup")
 		for _, name := range []string{
@@ -68,7 +76,7 @@ func Doctor(parent context.Context) DoctorReport {
 	if manifestErr == nil {
 		binding = &m
 	}
-	nativeState, nativeErr = inspect(ctx, a, binding)
+	nativeState, nativeErr = inspectNative(ctx, a, binding)
 	for _, name := range []string{
 		"definition", "executable", "configuration", "manager", "runner", "state", "logs", "docker",
 	} {
@@ -89,7 +97,11 @@ func Doctor(parent context.Context) DoctorReport {
 					add(name, "skip", "prerequisite_unavailable", "resolve_prerequisite")
 				}
 			} else if err := verifyDefinition(m); err != nil {
-				add(name, "fail", "service_definition_changed", "inspect_native_definition")
+				code, action := "service_definition_changed", "inspect_native_definition"
+				if actual := diagnosticCode(err); oneOf(actual, "service_access_error", "service_record_invalid") {
+					code, action = actual, "inspect_private_files"
+				}
+				add(name, "fail", code, action)
 			} else if nativeErr == nil && nativeState.Identity == "unverified" {
 				action := "inspect_native_registration"
 				if m.Manager == "systemd" {
@@ -128,19 +140,26 @@ func Doctor(parent context.Context) DoctorReport {
 				add(name, "pass", "ok", "none")
 			}
 		case "runner":
-			c := runnerStatus(a, &m)
-			if c.Availability != "available" {
-				if codeValue(c.ErrorCode) == "service_owner_unknown" {
+			r, _, err := readRunnerStatus(a, &m)
+			if err != nil {
+				if diagnosticCode(err) == "service_owner_unknown" {
+					diagnoseRunner(r, nativeState, nativeErr, func(name, status, code, action string) {
+						if status != "pass" && code != "service_owner_unknown" {
+							add(name, status, code, action)
+						}
+					})
 					add(name, "warn", "service_owner_unknown", "open_supported_user_session")
 				} else {
-					add(name, "fail", codeValue(c.ErrorCode), "inspect_private_files")
+					add(name, "fail", diagnosticCode(err), "inspect_private_files")
 				}
 				continue
 			}
-			diagnoseRunner(c.Data.(RunnerStatus), nativeState, nativeErr, add)
+			diagnoseRunner(r, nativeState, nativeErr, add)
 		case "state":
 			_, err := readWork(ctx, m.StateDir)
-			if err != nil {
+			if ctx.Err() != nil {
+				add(name, "fail", "service_diagnostic_timeout", "retry_doctor")
+			} else if err != nil {
 				if diagnosticCode(err) == "state_not_initialized" {
 					add(name, "warn", "state_not_initialized", "start_service")
 				} else {
@@ -151,8 +170,14 @@ func Doctor(parent context.Context) DoctorReport {
 			}
 		case "logs":
 			view, err := ReadLogs(ctx, a, 10000)
-			if err != nil {
-				add(name, "fail", diagnosticCode(err), "inspect_service_logs")
+			if ctx.Err() != nil {
+				add(name, "fail", "service_diagnostic_timeout", "retry_doctor")
+			} else if err != nil {
+				code, action := diagnosticCode(err), "inspect_service_logs"
+				if oneOf(code, "service_access_error", "service_record_invalid") {
+					action = "inspect_private_files"
+				}
+				add(name, "fail", code, action)
 			} else if view.TruncatedTail || view.ContinuityUnknown {
 				add(name, "warn", "service_log_gap", "none")
 			} else if view.Returned == 0 {
@@ -175,7 +200,9 @@ func Doctor(parent context.Context) DoctorReport {
 				probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 				err := d.InspectLocal(probe)
 				cancel()
-				if err != nil {
+				if ctx.Err() != nil {
+					add(name, "fail", "service_diagnostic_timeout", "retry_doctor")
+				} else if err != nil {
 					add(name, "fail", diagnosticCode(err), "check_local_docker")
 				} else {
 					add(name, "pass", "ok", "none")

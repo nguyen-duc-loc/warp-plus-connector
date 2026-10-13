@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,4 +236,155 @@ func TestLogFollowReportsRetentionBeforeResuming(t *testing.T) {
 	})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, []string{"snapshot", "gap", "entry"}, types)
+}
+
+// AC-12 and AC-14: every event accepts its catalogue and rejects inapplicable
+// fields even when their values would disappear during typed JSON decoding.
+func TestLogReadRejectsFieldsOutsideEventCatalogue(t *testing.T) {
+	for _, tc := range []struct {
+		name, event string
+		extra       []string
+	}{
+		{"runner", `{"type":"runner_phase","status":"running"}`,
+			[]string{`"run_id":0`, `"lane":""`, `"origin":""`, `"channel":""`, `"counts":null`}},
+		{"lane", `{"type":"lane_phase","lane":"validation","status":"waiting","code":"backend_busy"}`,
+			[]string{`"run_id":0`, `"origin":""`, `"channel":""`, `"counts":null`}},
+		{"work", `{"type":"work_diagnostic","run_id":1,"code":"source_failed"}`,
+			[]string{`"status":""`, `"lane":""`, `"origin":""`, `"channel":""`, `"counts":null`}},
+		{"crawl", `{"type":"crawl_result","run_id":1,"origin":"scheduled","status":"completed",` +
+			`"counts":{"saved_candidates":0,"saved_sightings":0}}`,
+			[]string{`"lane":""`, `"channel":""`}},
+		{"source", `{"type":"source_result","run_id":1,"channel":"warpplus","status":"completed",` +
+			`"counts":{"saved_candidates":0,"saved_sightings":0}}`,
+			[]string{`"lane":""`, `"origin":""`}},
+		{"validation", `{"type":"validation_result","run_id":1,"origin":"manual","status":"completed",` +
+			`"counts":{"selected":0,"pending":0,"active":0,"completed":0,"skipped":0,"interrupted":0,` +
+			`"confirmed":0,"invalid":0,"inconclusive":0,"unresolved":0,"unstarted":0}}`,
+			[]string{`"lane":""`, `"channel":""`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.Chmod(dir, 0700))
+			require.NoError(t, os.Mkdir(filepath.Join(dir, "logs"), 0700))
+			path := filepath.Join(dir, "logs", "current.jsonl")
+			stream := "diagnostic"
+			if tc.name == "crawl" || tc.name == "source" || tc.name == "validation" {
+				stream = "result"
+			}
+			for _, extra := range append([]string{""}, tc.extra...) {
+				name := extra
+				if name == "" {
+					name = "valid catalogue"
+				}
+				t.Run(name, func(t *testing.T) {
+					event := tc.event
+					if extra != "" {
+						event = strings.TrimSuffix(event, "}") + "," + extra + "}"
+					}
+					// Different field order exercises compatible noncanonical JSON through the public reader.
+					data := []byte(`{"event":` + event + `,"stream":"` + stream +
+						`","at":"2026-10-13T00:00:00.000000Z","sequence":1,"schema_version":1,` +
+						`"installation_id":"` + strings.Repeat("a", 32) + `","invocation_id":"` +
+						strings.Repeat("b", 32) + `"}` + "\n")
+					require.NoError(t, os.WriteFile(path, data, 0600))
+					view, err := ReadLogs(t.Context(), Account{Root: dir}, 1)
+					if extra == "" {
+						require.NoError(t, err)
+						require.Equal(t, 1, view.Returned)
+						var want Event
+						require.NoError(t, json.Unmarshal([]byte(tc.event), &want))
+						require.Equal(t, want, view.Entries[0].Event)
+					} else {
+						require.EqualError(t, err, "service_log_invalid")
+						require.Equal(t, LogView{}, view)
+					}
+					after, err := os.ReadFile(path)
+					require.NoError(t, err)
+					require.Equal(t, data, after, "inspection must not repair rejected records")
+				})
+			}
+		})
+	}
+}
+
+// AC-11 and AC-12: cancellation during delivery stops before the next retained entry.
+func TestLogFollowCancellationStopsBacklogDelivery(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0700))
+	a, err := openArchive(dir, strings.Repeat("a", 32), strings.Repeat("b", 32))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, a.close()) }()
+	require.NoError(t, a.append(Event{Type: "runner_phase", Status: "running"}))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	entries := 0
+	err = FollowLogs(ctx, Account{Root: dir}, 1, func(envelope LogEnvelope) error {
+		if envelope.Type == "snapshot" {
+			for range 10 {
+				require.NoError(t, a.append(Event{Type: "runner_phase", Status: "running"}))
+			}
+		}
+		if envelope.Type == "entry" {
+			entries++
+			cancel()
+		}
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, entries)
+}
+
+// AC-11, AC-12 and AC-15: a cancelled or broken gap consumer receives no later entries.
+func TestFollowLogs_StopsAtGapCallback(t *testing.T) {
+	for _, reason := range []string{"retention", "continuity_unknown"} {
+		for _, stop := range []string{"cancel", "output error"} {
+			t.Run(reason+"/"+stop, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					dir := t.TempDir()
+					require.NoError(t, os.Chmod(dir, 0700))
+					a, err := openArchive(dir, strings.Repeat("a", 32), strings.Repeat("b", 32))
+					require.NoError(t, err)
+					require.NoError(t, a.append(Event{Type: "runner_phase", Status: "running"}))
+					require.NoError(t, a.close())
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					outputErr := errors.New("consumer closed")
+					var delivered []string
+					err = FollowLogs(ctx, Account{Root: dir}, 1, func(envelope LogEnvelope) error {
+						delivered = append(delivered, envelope.Type)
+						switch envelope.Type {
+						case "snapshot":
+							entry := envelope.Snapshot.Entries[0]
+							entry.Sequence = 5
+							if reason == "continuity_unknown" {
+								entry.InvocationID, entry.Sequence = strings.Repeat("c", 32), 1
+							}
+							data, err := json.Marshal(entry)
+							require.NoError(t, err)
+							path := filepath.Join(dir, "logs", "current.jsonl")
+							require.NoError(t, os.WriteFile(path, append(data, '\n'), 0600))
+						case "gap":
+							require.Equal(t, reason, envelope.Reason)
+							if stop == "output error" {
+								return outputErr
+							}
+							cancel()
+						case "entry":
+							cancel() // Bound a regression without hiding the unexpected delivery.
+						}
+						return nil
+					})
+					if stop == "cancel" {
+						require.ErrorIs(t, err, context.Canceled)
+					} else {
+						require.ErrorIs(t, err, outputErr)
+					}
+					require.Equal(t, []string{"snapshot", "gap"}, delivered)
+					view, err := ReadLogs(t.Context(), Account{Root: dir}, 1)
+					require.NoError(t, err)
+					require.Equal(t, 1, view.Returned, "reader shutdown must preserve the archive")
+				})
+			})
+		}
+	}
 }

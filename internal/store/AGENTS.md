@@ -52,6 +52,8 @@ Pages default to 100 rows and allow up to 1000 per call, with no total cap. The 
 
 [schedule_reads.go](schedule_reads.go) establishes its SQLite snapshot before sampling the supplied clock. `GetSchedule` derives counts and references from that snapshot without applying current settings. `DueCandidates` excludes active items and unresolved attempts, orders by due time and candidate ID, and accepts a selection limit from one through eight.
 
+[operational.go](operational.go) implements `GetOperationalWork` for service status: schedule, all candidate outcome counts, latest runs, complete prior terminal summaries, source results, and grouped validation failures share one established SQLite snapshot and evaluation time. Service reads add no schema version and never open a writer. SQLite WAL and shared memory coordination files are permitted by spec 0002; they do not imply application state initialization or recovery.
+
 ## Cancellation
 
 [context.go](context.go) lets callers observe cancellation while native SQLite work finishes cleanup. The five second busy timeout is shortened for earlier deadlines. Entered work retains resources and writer ownership until cleanup completes. Inputs captured by that work are copied before dispatch. `Close` waits for entered operations; callers cancel their contexts first when they need bounded shutdown.

@@ -221,8 +221,12 @@ Deliver matching Linux amd64 and arm64 releases and validator images. Run unatte
   - [x] Complete snapshot status across all 338 controlled candidates, preserving complete terminal summaries during active work and explicit unavailable components (AC-8, AC-9, AC-10, AC-11, AC-15).
   - [x] Add bounded logs, recent and following inspection, local doctor checks, and diagnostic failure handling (AC-11, AC-12, AC-13, AC-14, AC-15).
   - [x] Complete crash recovery, service identity checks, ownership races, interrupted controls, and bounded shutdown on Linux amd64 and Linux arm64 (AC-3, AC-4, AC-5, AC-6, AC-7, AC-14, AC-16, AC-18, AC-19).
-- [ ] Verify it: `/check verify background operation and diagnostics` (AC-1 through AC-19, including the [platform transition checklist](../specs/0001-stack-architecture/verify.md)).
-- [ ] Test it: `/test background operation and diagnostics` (both Linux architectures and the complete repository gate).
+- [x] Verify it: `/check verify background operation and diagnostics` (AC-1 through AC-19 and the [platform transition checklist](../specs/0001-stack-architecture/verify.md), within the verification boundary recorded below).
+- [x] Test it: `/test background operation and diagnostics` (both Linux architectures and the complete repository gate).
+
+**Verification, 2026-10-13:** You requested checking only Verify it. Runtime checks passed, including fresh CLI checks against the final Linux arm64 binary; the unchanged source also passed the full local and native Linux amd64 and arm64 test gates. New provider attachment and fresh Unlimited entitlement proof remain excluded at your request and unverified. This checkbox records the completed verification within that boundary, not full feature acceptance. The feature remains in progress. Evidence is retained in `/tmp/wpc-final-0008-20261013/REPORT.md` and `/tmp/wpc-final-0008-20261013/REVERIFY.md`.
+
+**Test pass, 2026-10-13:** Added 28 regression cases by extending the log event catalogue checks and adding gap callback cancellation, output failure, and public status isolation tests. Existing doctor regression coverage is retained and tagged to the acceptance criteria. The full race suite passed with 945 tests and subtests locally and 964 on native Linux arm64, across thirteen tested packages on each host. Formatting, vet, and lint passed. The updated service tests compile for Linux amd64; they were not newly executed on that architecture. The earlier native amd64 full gate is retained for the unchanged application code. Provider attachment remains excluded and unverified. Evidence is in `/tmp/wpc-test-0008-20261013/REPORT.md`. Only Test it is newly checked; the feature and spec remain in progress.
 
 ## Deferred
 

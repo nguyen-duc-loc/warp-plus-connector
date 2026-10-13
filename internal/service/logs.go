@@ -198,7 +198,34 @@ func decodeLogEntry(data []byte, entry *Entry) error {
 	if err == nil && bytes.Equal(data, canonical) {
 		return nil
 	}
-	return decode(data, entry)
+	if err := decode(data, entry); err != nil {
+		return err
+	}
+	var raw struct {
+		Event map[string]json.RawMessage `json:"event"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return failure("service_log_invalid")
+	}
+	allowed := []string{"type", "code"}
+	switch entry.Event.Type {
+	case "runner_phase":
+		allowed = append(allowed, "status")
+	case "lane_phase":
+		allowed = append(allowed, "status", "lane")
+	case "work_diagnostic":
+		allowed = append(allowed, "run_id")
+	case "crawl_result", "validation_result":
+		allowed = append(allowed, "run_id", "origin", "status", "counts")
+	case "source_result":
+		allowed = append(allowed, "run_id", "channel", "status", "counts")
+	}
+	for field := range raw.Event {
+		if !oneOf(field, allowed...) {
+			return failure("service_log_invalid")
+		}
+	}
+	return nil
 }
 
 type logArchive struct {
@@ -402,12 +429,18 @@ func archiveSnapshot(ctx context.Context, root string, lines int) (LogView, erro
 		if missing(err) {
 			continue
 		}
-		if err != nil || !private(info, false) || info.Size() > logLimit {
+		if err != nil || !private(info, false) {
+			return out, failure("service_access_error")
+		}
+		if info.Size() > logLimit {
 			return out, failure("service_log_invalid")
 		}
 		f, err := privateOpen(s.path, os.O_RDONLY)
-		if err != nil {
+		if missing(err) {
 			return out, failure("service_log_busy")
+		}
+		if err != nil {
+			return out, err
 		}
 		s.file, s.info = f, info
 		actual, err := f.Stat()

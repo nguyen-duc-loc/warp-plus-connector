@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -94,4 +95,47 @@ func TestRunnerLockReportsOwnerAcrossProcess(t *testing.T) {
 	var pid int
 	require.NoError(t, json.Unmarshal(data, &pid))
 	require.Equal(t, os.Getpid(), pid)
+}
+
+// AC-8, AC-10 and AC-14: invalid runner evidence stays unavailable while a valid
+// installation remains inspectable, even when the native manager cannot be queried.
+func TestStatus_UnreadableRunnerKeepsInstallationAvailable(t *testing.T) {
+	for _, kind := range []string{"unsafe owner", "invalid observation"} {
+		t.Run(kind, func(t *testing.T) {
+			a, m, _ := doctorFilesFixture(t)
+			o := observationFixture()
+			o.InstallationID = m.InstallationID
+			if kind == "invalid observation" {
+				o.SchemaVersion = 2
+			}
+			observationPath := filepath.Join(a.Root, "observation.json")
+			require.NoError(t, writeRecord(observationPath, o))
+			lockMode := os.FileMode(0600)
+			wantCode := "service_record_invalid"
+			if kind == "unsafe owner" {
+				lockMode, wantCode = 0644, "service_owner_unknown"
+			}
+			lockPath := filepath.Join(a.Root, "runner.lock")
+			require.NoError(t, os.WriteFile(lockPath, nil, lockMode))
+			before, err := os.ReadFile(observationPath)
+			require.NoError(t, err)
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel() // Keep native subprocesses from contacting the real account manager.
+			report := Status(ctx, a)
+			require.False(t, report.Complete)
+			require.Equal(t, "available", report.Installation.Availability)
+			require.Equal(t, m.InstallationID, report.Installation.Data.(map[string]any)["installation_id"])
+			require.Equal(t, "unavailable", report.Runner.Availability)
+			require.Equal(t, &wantCode, report.Runner.ErrorCode)
+			require.Nil(t, report.Runner.Data)
+			after, err := os.ReadFile(observationPath)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			info, err := os.Stat(lockPath)
+			require.NoError(t, err)
+			require.Equal(t, lockMode, info.Mode().Perm())
+			_, err = os.Stat(m.StateDir)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
 }
