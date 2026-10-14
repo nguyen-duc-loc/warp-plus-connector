@@ -35,7 +35,7 @@ On native `ubuntu-26.04` (amd64) and `ubuntu-26.04-arm` runners it, using the [s
 4. Builds the locked UI tree with bundled Node, runs UI tests, and exercises the package through PTYs on the native host and pinned Debian 10 baseline. The verified trees are passed to archive jobs as artifacts.
 5. Builds the native validator image, checks its installed package and worker, and exercises readiness and local cancellation with networking disabled.
 
-When both architectures pass, GoReleaser validates its configuration and creates snapshot archives. CI verifies their checksums and uploads a `linux-snapshot-<commit>` artifact retained for seven days. These are CI artifacts, not public releases or stable version tags.
+When both architectures pass, GoReleaser validates its configuration and creates snapshot archives. CI verifies their checksums and uploads a `linux-snapshot-<commit>` artifact retained for seven days. Two further native jobs extract those final archives and exercise them on Ubuntu 26.04 and the pinned Debian baseline. These are CI artifacts, not public releases or stable version tags.
 
 CI has `contents: read`, uses no publishing credentials, and never runs live Telegram crawls or key attachment. Pull requests from forks use the normal `pull_request` event. There are no path filters that silently skip checks for documentation changes.
 

@@ -42,3 +42,10 @@ The disposable baseline container was removed after the checks. The existing Ubu
 Native amd64 package execution and an actual successful hosted workflow remain pending at this entry. CI now prepares each architecture on its native Ubuntu 26.04 runner, runs the host and pinned Debian baseline PTY checks, and passes the verified UI trees to snapshot packaging.
 
 The original checklist remains the source for separate Beta verification. In particular, finish the installation and fallback fault matrix, full saved value comparisons, active service and identity changes during observation, refresh coalescing and clock changes, cancellation resistant reads, hung children, terminal hangup, failed diagnostics, and protocol fault injection. Compilation, a local archive, or these focused regressions do not close those acceptance checks.
+
+
+## Initial hosted build, 2026-10-14
+
+[CI run 38575421001](https://github.com/nguyen-duc-loc/warp-plus-connector/actions/runs/38575421001) passed for commit `4e33df712200402733ae39cec70a26bb596927ec`. Both native Ubuntu 26.04 quality jobs passed the full Go gate, UI build and tests, prepared package PTY checks on the host and Debian baseline, and offline validator checks. Snapshot packaging and final archive payload validation also passed.
+
+That run exercised prepared package directories on both native targets. It did not extract the completed snapshot archives on both native targets. A followup CI gate now downloads and extracts those exact archives, checks their hashes, and executes them on each native Ubuntu host and pinned Debian baseline with host Node unavailable on `PATH`. The first build milestone stays open until that stronger gate passes. The broader Beta checklist remains open.

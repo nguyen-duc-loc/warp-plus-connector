@@ -70,6 +70,7 @@ jobs:
           path: ui-${{ matrix.arch }}.tar
           if-no-files-found: error
           retention-days: 7
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           version: v0.38.0
@@ -125,3 +126,39 @@ jobs:
             dist/checksums.txt
           if-no-files-found: error
           retention-days: 7
+
+  terminal-archives:
+    name: Extracted terminal archive (${{ matrix.arch }})
+    needs: snapshot
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-26.04
+            arch: amd64
+          - runner: ubuntu-26.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: linux-snapshot-${{ github.sha }}
+          path: dist
+      - name: Verify downloaded archive checksums and payloads
+        run: |
+          (cd dist && sha256sum --check checksums.txt)
+          python3 scripts/check-ui-archives.py
+      - name: Exercise the extracted archive on the native host and baseline
+        env:
+          UI_ARCH: ${{ matrix.arch }}
+        run: |
+          set -- dist/*_linux_"$UI_ARCH".tar.gz
+          test "$#" -eq 1
+          sh scripts/check-ui-package.sh "$UI_ARCH" "$1"
