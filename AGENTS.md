@@ -47,6 +47,7 @@ Formatting passes when `scripts/check-format.sh` reports no gofmt or EditorConfi
 12. `run` owns one writer for independent crawl and validation lanes. Defaults are hourly crawling, six hour rechecks, and hourly failure recovery; runner intervals must be from `1m` through `720h`. Enabled validation requires Docker, while `--validation-enabled=false` permits collection alone. `schedule show [candidate-id]` reads saved facts as text or schema version 1 JSON without Docker, migration, or keys. Schema version 5 and shared validator registry version 3 implement [spec 0007](docs/specs/0007-scheduled-crawl-revalidation/index.md); worker protocol remains 2.
 
 13. `internal/service` owns account scoped native controls and diagnostics under [spec 0008](docs/specs/0008-background-operation-diagnostics/index.md). Public service admission supports Linux amd64 and arm64; native state and saved observations remain separate evidence. Status and doctor perform bounded reads without migration, recovery, registration, or attachment. Detailed ownership, shutdown, privacy, and log contracts are in [internal/service/AGENTS.md](internal/service/AGENTS.md).
+14. Current logging follows [spec 0009](docs/specs/0009-readable-development-logs/index.md), which replaces the earlier `log/slog` stack choice with zerolog `v1.35.1` and uses go-isatty `v0.0.24` for actual destination detection. `internal/diagnostic` owns safe event presentation and failure capture. `--log-level`, `--log-format`, and `--color` are invocation flags only; results remain on stdout and diagnostics on stderr. `service logs --format` controls its stdout independently, with filtering after archive selection and complete JSON output. Final rendering preserves typed delivery facts and never retries a failed diagnostic stream, including a failed result metadata write.
 
 ## Tooling
 The local gate in `.pre-commit-config.yaml` runs formatting, `go vet`, race tests, and `golangci-lint` in order and stops at the first failure. All four hooks use installed tools and run even for changes containing only documentation. GitHub Actions now defines the same gate on native Linux amd64 and arm64, offline validator smoke checks, workflow validation, and GoReleaser snapshot archives. Hosted execution is verified only by an actual successful workflow run.
@@ -82,6 +83,7 @@ Current build and runtime pin: WARP `2026.8.2110.0`. See [validator verification
 Declined: additional community skills and MCP servers for this stack. Do not offer discovery again without a new request.
 
 ## Context files
+- [internal/diagnostic/AGENTS.md](internal/diagnostic/AGENTS.md): Safe event fields, destination presentation, serialized writes, and diagnostic failure capture.
 - [.github/AGENTS.md](.github/AGENTS.md): CI permissions, native checks, and versioned publication.
 - [internal/service/AGENTS.md](internal/service/AGENTS.md): Native service ownership, diagnostic reads, structured logs, and bounded shutdown.
 - [internal/app/AGENTS.md](internal/app/AGENTS.md): Crawl coordination, mutation failure boundaries, checks, and saved reads.

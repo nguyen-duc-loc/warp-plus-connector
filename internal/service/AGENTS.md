@@ -28,6 +28,10 @@ The application shares one 60 second remote cleanup allowance across both lanes,
 
 ## Logs and privacy
 
+[Spec 0009](../../docs/specs/0009-readable-development-logs/index.md) extends presentation through `internal/cli/service_logs.go` and replaces managed slog capture with `diagnostic.NewCapture` in [run.go](run.go). Validate every transport event, then adapt only `work_diagnostic` run IDs and codes to the existing archive catalogue. The archive remains authoritative for timestamps, sequence, and identities; presentation flags never alter saved capture or schema version 1.
+
+A capture failure latches the archive failure, cancels managed work, and retains `service_log_failed` through finalization. Display filters run after the latest record selection, preserve original timestamps and continuity notices, and leave JSON complete. A failed display consumer stops only its reader.
+
 [logs.go](logs.go) keeps current plus four archives, each at most 4 MiB, with complete records no larger than 16 KiB. Event fields and count names follow a closed catalogue; inapplicable zero, empty, or null fields are invalid. No raw vendor output, keys, credentials, or arbitrary error chains belong in records. Readers can ignore only an incomplete current tail; complete corrupt records remain errors.
 
 Read snapshots capture identities and byte bounds and retry rotation at most three times within five seconds, without partial delivery. [follow.go](follow.go) emits a finite snapshot, later entries, and explicit gaps. Deduplication retains only the current archive view and last delivered position. Cancellation or a failed consumer ends delivery immediately, including after a gap callback, without stopping the service.

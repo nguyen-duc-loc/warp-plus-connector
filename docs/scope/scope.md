@@ -15,7 +15,11 @@ Your selected boundary is personal use on Linux amd64 and Linux arm64 only, with
 
 **Platform transition:** Release builds, installation, the validator, background operation, and runtime verification must cover both Linux architectures. Existing macOS checks remain historical evidence only. Completed feature records retain their original verification results; they do not establish Linux amd64 support. Building a binary alone does not establish runtime support.
 
-**Next recommended step:** `/develop readable development logs`. On 2026-10-14, you selected development experience and the user interface as the next priority and confirmed spec 0009 after independent review. Feature 9 retains its recorded verification limits and status; this change in priority does not claim new backend acceptance.
+**Next recommended step:** `/architect terminal foundation and overview`. On 2026-10-14, you selected development experience and the user interface as the next priority and confirmed spec 0009 after independent review. Feature 9 retains its recorded verification limits and status; this change in priority does not claim new backend acceptance.
+
+**Terminal experience, 2026-10-14:** You requested readable development logs using the supplied zerolog console example as a visual reference, plus Ink (React in the terminal) for the user interface. Spec 0009 confirms zerolog throughout application logging, readable terminal presentation, and preserved service archives. Go and Cobra retain the backend and explicit command paths. Architecture will define how your requested UI works with that backend and how it is installed on both supported Linux architectures.
+
+You selected an interactive UI that opens when you run `wpc` in a supported terminal, with result browsing, export, manual crawls, selected checks, and progress. Explicit commands remain available for scripts. The proposed sequence is readable logs, a real terminal overview, complete result browsing, then interactive work. Each slice inherits Tracer Bullet and Beta. The scope contains no reference notes.
 
 The first architecture decision is how to confirm actual WARP Plus entitlement with isolated validation state. A format match, source label, or ordinary WARP connection does not establish Plus entitlement. A successful check describes evidence at a particular time, not a promise that another device can activate the key later.
 
@@ -36,7 +40,11 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 7 | Complete results and export | Slice 4 | done |
 | 8 | Scheduled crawl and revalidation | Slice 5 | done |
 | 9 | Background operation and diagnostics | Slice 6 | in-progress |
-| 11 | Readable development logs | Slice 7 | in-progress |
+| 10 | Release automation | Release | in-progress |
+| 11 | Readable development logs | Slice 7 | done |
+| 12 | Terminal foundation and overview | Slice 8 | planned |
+| 13 | Terminal results and export | Slice 9 | planned |
+| 14 | Terminal crawl and check controls | Slice 10 | planned |
 
 ## Foundations
 
@@ -229,15 +237,27 @@ Deliver matching Linux amd64 and arm64 releases and validator images. Run unatte
 
 **Test pass, 2026-10-13:** Added 28 regression cases by extending the log event catalogue checks and adding gap callback cancellation, output failure, and public status isolation tests. Existing doctor regression coverage is retained and tagged to the acceptance criteria. The full race suite passed with 945 tests and subtests locally and 964 on native Linux arm64, across thirteen tested packages on each host. Formatting, vet, and lint passed. The updated service tests compile for Linux amd64; they were not newly executed on that architecture. The earlier native amd64 full gate is retained for the unchanged application code. Provider attachment remains excluded and unverified. Evidence is in `/tmp/wpc-test-0008-20261013/REPORT.md`. Only Test it is newly checked; the feature and spec remain in progress.
 
+## Release: Existing automation
+
+### 10. Release automation · in-progress
+
+Build and publish matching Linux binaries and validator images through the release workflow you selected on 2026-10-13. This entry reconciles automation already present in the repository with the earlier deferred scope.
+
+**Done when:** actual hosted execution proves both native gates, packaged releases, and anonymous access to matching validator images; configuration files alone do not establish publication.
+
+**Code:** `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and `.goreleaser.yaml`. The operational contract is `docs/releasing.md`. Hosted completion is not established by the local evidence inspected in this scope pass.
+
+- [ ] Verify it: `/check verify release automation`
+
 ## Slice 7: Read development activity at a glance
 
-### 11. Readable development logs · in-progress
+### 11. Readable development logs · done
 
 Help you follow development runs with compact local times, distinct level labels and colors, clear messages, and quieter supporting fields. Keep run and attempt identity available when concurrent work needs diagnosis.
 
 **Done when:** foreground diagnostics and displayed service logs are easy to scan; verbosity is selectable; date and timezone context remain discoverable; warnings and failures are understandable without color; redirected output and saved service records contain no terminal styling; keys remain private and command results stay separate from diagnostics.
 
-**Spec:** [0009. Readable development logs](../specs/0009-readable-development-logs/index.md), confirmed on 2026-10-14 after independent review and application of its recommended fixes. The build is complete; native runtime verification on both Linux architectures remains pending.
+**Spec:** [0009. Readable development logs](../specs/0009-readable-development-logs/index.md), confirmed on 2026-10-14 after independent review and application of its recommended fixes. The build is complete. Native logging verification passed on Linux amd64 and arm64 on 2026-10-14.
 
 **Code:** `internal/diagnostic`, `internal/app`, `internal/cli/diagnostics.go`, `internal/cli/service_logs.go`, `internal/service/run.go`, and `cmd/wpc/main.go`. Local build evidence and tested dependencies are recorded in `internal/diagnostic/README.md`.
 
@@ -246,14 +266,48 @@ Help you follow development runs with compact local times, distinct level labels
   - [x] Prove one crawl through zerolog, presentation flags, readable and redirected output, safe final errors, and diagnostic failure handling (AC-1 through AC-6, AC-9 through AC-11).
   - [x] Complete concurrent check and foreground runner logging, exact event fields and severity, and cancellation integration (AC-1, AC-4, AC-6, AC-9 through AC-11).
   - [x] Preserve managed service capture and add readable finite and following service logs with filtering and complete retention context (AC-3, AC-7 through AC-11).
-- [ ] Verify it: `/check verify readable development logs` (AC-1 through AC-12, including both Linux architectures).
-- [ ] Test it: `/test readable development logs`
+- [x] Verify it: `/check verify readable development logs` (AC-1 through AC-12, including both Linux architectures).
+- [x] Test it: `/test readable development logs`
+
+**Test pass, 2026-10-14:** Added 19 regression cases to `internal/cli/results_diagnostics_test.go` for spec 0009 AC-6, AC-9, and AC-10. They cover errors reported after accepting all metadata bytes, wrapped failure suppression, private writer error text, and healthy signal diagnostics at error verbosity when cancellation occurs before or after metadata delivery. Formatting, vet, the full race suite, and lint passed on macOS arm64 through `rtk proxy pre-commit run --all-files`. Native Linux execution was not repeated in this test pass; the earlier verification remains recorded in spec 0009. Only Test it is newly checked. The feature and spec remain in progress.
+
+## Slice 8: Open a useful terminal overview
+
+### 12. Terminal foundation and overview · planned · needs a decision
+
+Give you one keyboard driven home screen showing real collection totals, freshness, recent work, schedules, and service health. Establish the visual language and backend connection through this usable first screen.
+
+**Done when:** bare `wpc` opens the UI in a supported interactive terminal on Linux amd64 and arm64; installation and startup work on both; scripts retain explicit commands and a deterministic plain fallback; help and version retain their existing isolation; navigation, focus, resizing, no color use, loading, empty state, stale data, and unavailable components are clear; opening or leaving the overview does not start or stop background work.
+
+- [ ] Design it (spec): `/architect terminal foundation and overview`
+
+## Slice 9: Browse and export every result
+
+### 13. Terminal results and export · planned · needs a decision
+
+Let you browse saved candidates, filter by outcome and freshness, inspect details, and export the matching collection through the terminal interface. Build on the terminal foundation and existing complete result behavior.
+
+**Done when:** every record in the 338 candidate fixture is reachable without silent truncation; selection survives navigation predictably; freshness and confirmation time are clear; keys are hidden until explicit disclosure; export selection, destination, completion, and failure are understandable and preserve existing privacy and publication guarantees.
+
+- [ ] Design it (spec): `/architect terminal results and export`
+
+## Slice 10: Run work and understand its progress
+
+### 14. Terminal crawl and check controls · planned · needs a decision
+
+Let you start a crawl or check selected candidates, follow concurrent progress, and inspect the saved outcome. Present meaningful activity and recovery guidance in the main view, with technical details available when needed.
+
+**Done when:** you can choose configured sources or saved candidates, start work, follow counts and attempts, and request cancellation; rate limits, retries, partial success, and unstarted work are distinct from invalid keys; saved results remain inspectable after exit; background ownership conflicts give clear guidance; exit and cancellation preserve existing cleanup and recovery rules without launching a second writer or duplicating scheduling logic.
+
+- [ ] Design it (spec): `/architect terminal crawl and check controls`
 
 ## Deferred
 
 macOS support, release artifacts, and native service verification are outside the first version as of 2026-10-12. Existing macOS implementation and evidence do not create a completion requirement. Linux amd64 is now in scope; no 32 bit architecture is included.
 
-Billing, a hosted service, and product analytics are unnecessary for the selected personal CLI. Automatic key application and rotation, private Telegram access, unlimited historical backfill, a public API or dashboard, notifications, and public release automation are outside this initial slice. They can be enrolled later if you need them.
+Billing, a hosted service, and product analytics are unnecessary for the selected personal CLI. Automatic key application and rotation, private Telegram access, unlimited historical backfill, a public API or web dashboard, and notifications are outside this initial slice. They can be enrolled later if you need them. Public release automation was brought into scope on 2026-10-13 and is tracked in feature 10.
+
+For the first terminal UI, configuration editing, service installation and lifecycle controls, and additional interface languages remain deferred. Existing commands and configuration files continue to cover setup and service management. The first UI uses English, matching the current commands.
 
 From spec 0006: provenance exports, complete history archives, CSV, saved export jobs, source and date filters, overwrite flags, and resumable public cursors remain deferred. None blocks complete candidate summaries and export.
 

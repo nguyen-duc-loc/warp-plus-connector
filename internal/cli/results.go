@@ -149,40 +149,47 @@ func deliverCandidates(
 		if published {
 			line += fmt.Sprintf(" output=%q published=true", stage.destination)
 		}
-		if err := writeOutput(ctx, stderr, []byte(line+"\n")); err != nil {
+		if err := writeResultDiagnostic(ctx, stderr, []byte(line+"\n")); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeOutput(ctx context.Context, w io.Writer, p []byte) error {
+func writeResultDiagnostic(ctx context.Context, w io.Writer, p []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	n, err := w.Write(p)
+	failed := err != nil || n != len(p)
 	if cancelled := ctx.Err(); cancelled != nil {
-		return cancelled
+		failure := deliveryFailure(cancelled)
+		failure.diagnosticFailed = failed
+		return failure
 	}
-	if err != nil || n != len(p) {
-		return &deliveryError{code: "output_error"}
+	if failed {
+		return &deliveryError{code: "output_error", diagnosticFailed: true}
 	}
 	return nil
 }
 
 type deliveryError struct {
-	code        string
-	cause       error
-	published   bool
-	delivered   bool
-	destination string
-	remaining   string
-	candidateID int64
-	omitOutput  bool
+	code             string
+	cause            error
+	published        bool
+	delivered        bool
+	destination      string
+	remaining        string
+	candidateID      int64
+	omitOutput       bool
+	diagnosticFailed bool
 }
 
 func (e *deliveryError) Error() string { return e.code }
 func (e *deliveryError) Unwrap() error { return e.cause }
+
+// DiagnosticFailed prevents final rendering from retrying failed stderr metadata delivery.
+func (e *deliveryError) DiagnosticFailed() bool { return e.diagnosticFailed }
 
 func deliveryFailure(err error) *deliveryError {
 	var own *deliveryError
