@@ -169,7 +169,7 @@ func TestServiceEventSeverity(t *testing.T) {
 
 // Spec 0009 AC-5: help and version do not evaluate unused runtime presentation settings.
 func TestHelpAndVersionIgnoreUnusedPresentation(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"version"}, {"service"}, {}} {
+	for _, args := range [][]string{{"--help"}, {"version"}, {"service"}} {
 		root := NewRootCommand("dev", "")
 		var out, diagnostics bytes.Buffer
 		root.SetOut(&out)

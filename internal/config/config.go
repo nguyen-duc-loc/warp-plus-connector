@@ -29,6 +29,8 @@ var (
 
 // Settings are fully validated runtime inputs.
 type Settings struct {
+	// ConfigPath identifies the private file actually read, if any.
+	ConfigPath                      *string
 	CrawlEnabled, ValidationEnabled bool
 	CrawlInterval, FailureInterval  time.Duration
 	CheckPolicy                     state.CheckPolicy
@@ -113,6 +115,11 @@ func ResolveAt(in Overrides, location ResolutionContext) (Settings, error) {
 		return zero, ErrAccess
 	}
 	if err == nil {
+		resolved, pathErr := filepath.Abs(path)
+		if pathErr != nil {
+			return zero, ErrAccess
+		}
+		out.ConfigPath = &resolved
 		values, err := decode(data)
 		if err != nil {
 			return zero, err

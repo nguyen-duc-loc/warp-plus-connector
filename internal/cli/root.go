@@ -25,7 +25,7 @@ func NewRootCommand(version, commit string) *cobra.Command {
 			DisableDefaultCmd: true,
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
+			return openTerminal(cmd, version, commit)
 		},
 	}
 
@@ -45,6 +45,7 @@ func NewRootCommand(version, commit string) *cobra.Command {
 		},
 	)
 
+	commonFlags(root)
 	addRuntimeCommands(root, version)
 	addServiceCommands(root, version)
 	diagnosticFlags(root)

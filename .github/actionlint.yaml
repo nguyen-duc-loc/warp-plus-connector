@@ -1,0 +1,6 @@
+# Official hosted labels newer than the pinned actionlint 1.7.7 catalogue.
+# This adds label validation only. These jobs still use GitHub hosted runners.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

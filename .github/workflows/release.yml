@@ -114,6 +114,17 @@ jobs:
           go-version-file: go.mod
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
+          pattern: ui-*-${{ github.sha }}
+          path: .ui-build/artifacts
+          merge-multiple: true
+      - name: Restore verified UI trees
+        run: |
+          for arch in amd64 arm64; do
+            mkdir -p ".ui-build/$arch"
+            tar -xf ".ui-build/artifacts/ui-$arch.tar" -C ".ui-build/$arch"
+          done
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
           pattern: validator-*
           path: .release
           merge-multiple: true

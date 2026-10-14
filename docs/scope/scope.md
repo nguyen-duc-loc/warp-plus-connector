@@ -42,7 +42,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 9 | Background operation and diagnostics | Slice 6 | in-progress |
 | 10 | Release automation | Release | in-progress |
 | 11 | Readable development logs | Slice 7 | done |
-| 12 | Terminal foundation and overview | Slice 8 | planned |
+| 12 | Terminal foundation and overview | Slice 8 | in-progress |
 | 13 | Terminal results and export | Slice 9 | planned |
 | 14 | Terminal crawl and check controls | Slice 10 | planned |
 
@@ -273,13 +273,21 @@ Help you follow development runs with compact local times, distinct level labels
 
 ## Slice 8: Open a useful terminal overview
 
-### 12. Terminal foundation and overview · planned · needs a decision
+### 12. Terminal foundation and overview · in-progress
 
 Give you one keyboard driven home screen showing real collection totals, freshness, recent work, schedules, and service health. Establish the visual language and backend connection through this usable first screen.
 
 **Done when:** bare `wpc` opens the UI in a supported interactive terminal on Linux amd64 and arm64; installation and startup work on both; scripts retain explicit commands and a deterministic plain fallback; help and version retain their existing isolation; navigation, focus, resizing, no color use, loading, empty state, stale data, and unavailable components are clear; opening or leaving the overview does not start or stop background work.
 
-- [ ] Design it (spec): `/architect terminal foundation and overview`
+**Spec:** [0010. Terminal foundation and overview](../specs/0010-terminal-foundation-overview/index.md), confirmed on 2026-10-14 after independent review. Code in `internal/terminal`, `internal/app/overview.go`, `internal/store/overview.go`, `internal/service/overview.go`, `internal/cli/terminal.go`, and `ui/` implements the private Go and Ink connection, complete collection snapshot, independent service evidence, and compact screen. Both Linux archives build and pass payload integrity checks. The real arm64 package passes PTY checks on stock Debian 10 with glibc 2.28 and native Ubuntu 26.04.1, covering 105 saved candidates, absent state, navigation, refresh, resize, no color, quit, signals, and child crash restoration. Local formatting, vet, race tests, lint, UI checks, GoReleaser validation, and workflow validation pass. Native amd64 runtime proof and hosted CI execution remain pending, so the first build milestone and Build it stay open. The spec remains In Progress; separate Beta verification and test workflow closure remain pending.
+
+- [x] Design it (spec): `/architect terminal foundation and overview`
+- [ ] Build it: `/develop terminal foundation and overview`
+  - [ ] Prove the packaged Go and Ink path with one real collection total, private protocol, terminal startup and exit, and both Linux runtime targets (AC-1 through AC-3, AC-12 through AC-15).
+  - [x] Complete collection freshness, recent runs, saved schedules, independent service observations, and bounded refresh with clear missing or stale data (AC-4 through AC-9, AC-12, AC-14).
+  - [x] Complete keyboard navigation, resizing, no color presentation, failure and signal cleanup, and release verification integration (AC-8 through AC-15).
+- [ ] Verify it: `/check verify terminal foundation and overview`
+- [ ] Test it: `/test terminal foundation and overview`
 
 ## Slice 9: Browse and export every result
 

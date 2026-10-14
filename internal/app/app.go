@@ -47,6 +47,8 @@ type App struct {
 	Observe func(RunnerState) error
 	// Finalize runs after entered work closes, under the shared local cleanup deadline.
 	Finalize func(context.Context, error) error
+	// OverviewService supplies the account observation boundary without a service import cycle.
+	OverviewService func(context.Context) state.OverviewService
 }
 
 func (a *App) evaluation() state.Evaluation {

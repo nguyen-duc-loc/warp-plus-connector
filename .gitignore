@@ -2,3 +2,6 @@
 /dist/
 /wpc
 /.release/
+/ui/node_modules/
+/ui/dist/
+/.ui-build/

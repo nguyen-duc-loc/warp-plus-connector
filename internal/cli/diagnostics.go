@@ -9,6 +9,7 @@ import (
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/terminal"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -113,6 +114,10 @@ func RenderFailure(cmd *cobra.Command, err error, exitCode int) {
 }
 
 func diagnosticDetails(err error) (string, []diagnostic.Field, bool) {
+	var ui *terminal.Error
+	if errors.As(err, &ui) {
+		return safeDiagnosticCode(ui.Code), nil, false
+	}
 	var control *controlDeliveryError
 	if errors.As(err, &control) {
 		r := control.result

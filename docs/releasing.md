@@ -27,12 +27,13 @@ flowchart TD
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs for pull requests, pushes to `main` or `feat/**` branches, manual dispatch, and calls from the release workflow.
 
-On native `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` runners it:
+On native `ubuntu-26.04` (amd64) and `ubuntu-26.04-arm` runners it, using the [supported GitHub runner labels](https://github.com/actions/runner-images):
 
 1. Installs the Go version from `go.mod` and the repository's pinned check tools.
 2. Runs formatting, vet, race tests, and lint in the same order as the local gate.
 3. Validates workflows with actionlint and runs the native binary's help and version commands.
-4. Builds the native validator image, checks its installed package and worker, and exercises readiness and local cancellation with networking disabled.
+4. Builds the locked UI tree with bundled Node, runs UI tests, and exercises the package through PTYs on the native host and pinned Debian 10 baseline. The verified trees are passed to archive jobs as artifacts.
+5. Builds the native validator image, checks its installed package and worker, and exercises readiness and local cancellation with networking disabled.
 
 When both architectures pass, GoReleaser validates its configuration and creates snapshot archives. CI verifies their checksums and uploads a `linux-snapshot-<commit>` artifact retained for seven days. These are CI artifacts, not public releases or stable version tags.
 
@@ -58,7 +59,7 @@ The workflow reruns CI for the tagged commit. It then builds and smoke checks ea
 | Shared image tag | `ghcr.io/nguyen-duc-loc/warp-plus-connector/validator:v0.1.0` |
 | Native image tags | `.../validator:v0.1.0-amd64`, `.../validator:v0.1.0-arm64` |
 
-Archives include the CLI and user documentation. The worker is distributed inside the image. Version and commit metadata come from the tag and Git commit. GoReleaser marks prerelease tags as prereleases and generates a changelog from commit history.
+Archives include the CLI, the matching bundled Node and UI tree, licenses, and user documentation. Final snapshot checks verify every UI payload digest and directory path. The worker is distributed inside the image. Version and commit metadata come from the tag and Git commit. GoReleaser marks prerelease tags as prereleases and generates a changelog from commit history. Local archive rehearsals first prepare both UI targets using the [terminal packaging commands](terminal.md#local-packaging).
 
 ## One time repository setup
 

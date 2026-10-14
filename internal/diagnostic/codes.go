@@ -23,6 +23,8 @@ func SafeCode(code string) bool {
 			"source_selection_empty source_selection_invalid source_timeout source_transport_error "+
 			"state_busy state_error state_invalid_input state_migration_required state_not_initialized "+
 			"state_record_not_found state_schema_too_new temporary_error timeout unknown_response "+
+			"ui_installation_invalid ui_version_mismatch ui_protocol_invalid ui_startup_timeout "+
+			"ui_startup_failed ui_read_timeout ui_child_failed service_diagnostic_timeout "+
 			"validation_batch_inconclusive validation_batch_required validation_batch_stopped "+
 			"validation_cleanup_pending validation_interrupted validation_invalid_input "+
 			"validation_observation_timeout validation_probe_failed validation_provider_error "+
@@ -32,5 +34,6 @@ func SafeCode(code string) bool {
 			"validator_image_unavailable validator_local_socket_required validator_not_ready "+
 			"validator_orphaned_session validator_output_error validator_permission_error "+
 			"validator_platform_unsupported validator_probe_required validator_protocol_error "+
-			"validator_runtime_error validator_state_error validator_version_mismatch ", code)
+			"validator_runtime_error validator_state_error validator_version_mismatch ", code,
+	)
 }

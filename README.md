@@ -35,7 +35,7 @@ Choose a published version from [GitHub Releases](https://github.com/nguyen-duc-
 | `checksums.txt` | SHA256 checksums for the archives |
 | `validator-images.txt` | Matching registry image digests for both architectures |
 
-The archive contains `wpc` and documentation. **No Go installation, Git, or repository clone is needed.** Docker is optional for collection and saved reads, and required for validation. A systemd user manager is needed only for `service` commands.
+The archive contains `wpc`, its bundled terminal UI runtime under `lib/`, and documentation. **No Go, Node, npm, Git, or repository clone is needed.** The overview requires Linux kernel 4.18 or newer and glibc 2.28 or newer. Docker is optional for collection and saved reads, and required for validation. A systemd user manager is needed only for `service` commands.
 
 For terminal installation, use an empty download directory and replace `0.1.0` below with an actual published version. The example does not mean that this release already exists. Stop if a download or checksum check fails.
 
@@ -52,14 +52,18 @@ release_url="https://github.com/nguyen-duc-loc/warp-plus-connector/releases/down
 curl -fLO "$release_url/$archive" || exit 1
 curl -fLO "$release_url/checksums.txt" || exit 1
 awk -v file="$archive" '$2 == file {print}' checksums.txt | sha256sum --check - || exit 1
-tar -xzf "$archive"
+WPC_INSTALL_DIR="$HOME/.local/lib/warp-plus-connector/$WPC_VERSION"
+mkdir -p "$WPC_INSTALL_DIR"
+tar -xzf "$archive" -C "$WPC_INSTALL_DIR"
 mkdir -p "$HOME/.local/bin"
-install -m 755 wpc "$HOME/.local/bin/wpc"
+ln -sfn "$WPC_INSTALL_DIR/wpc" "$HOME/.local/bin/wpc"
 export PATH="$HOME/.local/bin:$PATH"
 wpc version
 ```
 
 Keep `~/.local/bin` on your shell's `PATH` for future terminals. Before the first published release, use the [source build instructions](docs/development.md#build-and-run).
+
+Run bare `wpc` to open the [terminal overview](docs/terminal.md). Keep the complete version directory together. A launcher symlink is supported; copying only the executable retains explicit commands but cannot open the overview. Updating this launcher does not change a service's bound executable.
 
 ### Prepare the validator
 

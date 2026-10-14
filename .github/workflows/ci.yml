@@ -21,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-26.04
             arch: amd64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-26.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -54,6 +54,22 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -o bin/wpc ./cmd/wpc
           ./bin/wpc version
           ./bin/wpc --help
+      - name: Install pinned UI build tools
+        run: sh scripts/install-ui-tools.sh
+      - name: Build and verify the native terminal package
+        env:
+          UI_ARCH: ${{ matrix.arch }}
+        run: |
+          python3 scripts/prepare-ui.py --arch "$UI_ARCH"
+          npm --prefix ui test
+          sh scripts/check-ui-package.sh "$UI_ARCH"
+          tar -cf "ui-$UI_ARCH.tar" -C ".ui-build/$UI_ARCH" lib
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ui-${{ matrix.arch }}-${{ github.sha }}
+          path: ui-${{ matrix.arch }}.tar
+          if-no-files-found: error
+          retention-days: 7
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           version: v0.38.0
@@ -76,6 +92,17 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: ui-*-${{ github.sha }}
+          path: .ui-build/artifacts
+          merge-multiple: true
+      - name: Restore verified UI trees
+        run: |
+          for arch in amd64 arm64; do
+            mkdir -p ".ui-build/$arch"
+            tar -xf ".ui-build/artifacts/ui-$arch.tar" -C ".ui-build/$arch"
+          done
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: v2.18.3
@@ -88,6 +115,8 @@ jobs:
       - name: Verify archive checksums
         working-directory: dist
         run: sha256sum --check checksums.txt
+      - name: Verify final UI layout and payload digests
+        run: python3 scripts/check-ui-archives.py
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: linux-snapshot-${{ github.sha }}

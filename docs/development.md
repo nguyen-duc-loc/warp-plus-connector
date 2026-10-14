@@ -16,6 +16,7 @@ Release users can download a binary and a validator image. This guide is for cha
 | pre-commit | `4.6.2` | Optional local hook runner |
 | GoReleaser | `2.18.3` | Linux archives and release validation |
 | actionlint | `1.7.7` | GitHub Actions workflow validation |
+| Node and npm | `24.20.0` and `12.0.2` | Building the bundled terminal UI |
 | Docker Engine, CLI, Buildx | CI installs Buildx `0.38.0` | Validator image builds and offline smoke checks |
 
 Linux amd64 and arm64 are release targets. macOS can be a development host for builds, collection, saved reads, and tests. Validation and native service commands require Linux. A macOS test pass does not establish Linux runtime behavior.
@@ -51,6 +52,8 @@ A local build reports `wpc dev`. The normal user commands in the README work wit
 ```
 
 Use a separate absolute `--state-dir` for experiments instead of your normal profile. Tests create their own temporary state and use synthetic keys and controlled external boundaries.
+
+Bare terminal startup also needs the packaged `lib/wpc-ui` tree. See [terminal packaging](terminal.md#local-packaging) for the locked build commands, supported runtime baseline, and native PTY checks. Building only the Go executable supports explicit commands and help.
 
 The agent workspace uses RTK as a command wrapper, for example `rtk proxy go test ./...`. RTK is not a build or runtime dependency; ordinary terminals and CI use the underlying commands directly.
 

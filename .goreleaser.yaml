@@ -1,6 +1,10 @@
 version: 2
 project_name: warp-plus-connector
 
+before:
+  hooks:
+    - python3 scripts/stamp-ui.py --release {{ .Version }} --commit {{ .Commit }}
+
 builds:
   - id: wpc
     main: ./cmd/wpc
@@ -28,6 +32,9 @@ archives:
       - docs/configuration.md
       - docs/development.md
       - docs/releasing.md
+      - docs/terminal.md
+      - src: '.ui-build/{{ .Arch }}/lib/wpc-ui'
+        dst: lib/wpc-ui
 
 checksum:
   name_template: checksums.txt

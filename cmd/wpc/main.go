@@ -11,6 +11,7 @@ import (
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/cli"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/terminal"
 )
 
 // Release builds supply these values through the Go linker.
@@ -34,6 +35,28 @@ func run() int {
 	var exitCode atomic.Int32
 	var managed atomic.Bool
 	var watchdog sync.Once
+	var terminalWatchdog sync.Once
+	var terminalResult atomic.Int32
+	var terminalActive atomic.Bool
+	terminalShutdown := func(result int) {
+		terminalResult.Store(int32(result))
+		terminalWatchdog.Do(
+			func() {
+				go func() {
+					time.Sleep(5 * time.Second)
+					code := exitCode.Load()
+					if code == 0 {
+						code = terminalResult.Load()
+					}
+					os.Exit(int(code))
+				}()
+			},
+		)
+	}
+	ctx = terminal.WithLifecycle(
+		ctx, func() { terminalActive.Store(true) }, terminalShutdown,
+		func() int { return int(exitCode.Load()) },
+	)
 	ctx = service.WithLifecycle(
 		ctx, func() { managed.Store(true) }, func() {
 			watchdog.Do(func() { go func() { time.Sleep(75 * time.Second); os.Exit(0) }() })
@@ -48,10 +71,14 @@ func run() int {
 			}
 			exitCode.Store(code)
 			cancel()
+			if terminalActive.Load() {
+				terminalShutdown(1)
+			}
 		case <-ctx.Done():
 		}
 	}()
 	cmd := cli.NewRootCommand(version, commit)
+	cmd.SetIn(os.Stdin)
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 	err := cmd.ExecuteContext(ctx)
