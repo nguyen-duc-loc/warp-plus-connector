@@ -83,7 +83,12 @@ func strictJSON(raw []byte, out any) error {
 		if err != nil || json.Unmarshal(encoded, &expected) != nil || len(actual) != len(expected) {
 			return failure("ui_protocol_invalid")
 		}
-		for key := range actual {
+		for key, value := range actual {
+			// Input and manifest fields are required and nonnullable. Go otherwise
+			// silently decodes null into a scalar's zero value, including an empty commit.
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return failure("ui_protocol_invalid")
+			}
 			if _, ok := expected[key]; !ok {
 				return failure("ui_protocol_invalid")
 			}

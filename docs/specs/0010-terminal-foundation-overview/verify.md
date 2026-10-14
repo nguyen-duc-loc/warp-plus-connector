@@ -49,3 +49,17 @@ The original checklist remains the source for separate Beta verification. In par
 [CI run 38575421001](https://github.com/nguyen-duc-loc/warp-plus-connector/actions/runs/38575421001) passed for commit `4e33df712200402733ae39cec70a26bb596927ec`. Both native Ubuntu 26.04 quality jobs passed the full Go gate, UI build and tests, prepared package PTY checks on the host and Debian baseline, and offline validator checks. Snapshot packaging and final archive payload validation also passed.
 
 That run exercised prepared package directories on both native targets. It did not extract the completed snapshot archives on both native targets. A followup CI gate now downloads and extracts those exact archives, checks their hashes, and executes them on each native Ubuntu host and pinned Debian baseline with host Node unavailable on `PATH`. The first build milestone stays open until that stronger gate passes. The broader Beta checklist remains open.
+
+
+## Final archive proof, 2026-10-14
+
+[CI run 38577012410](https://github.com/nguyen-duc-loc/warp-plus-connector/actions/runs/38577012410) passed all five jobs for commit `7f48d82ed3bb4cc5c69f1c64046ce6a1beeee37d`: both native quality jobs, snapshot packaging, and both extracted archive jobs. The extracted archive jobs checked downloaded checksums and all manifest payload digests, then ran the real packaged executable on the native Ubuntu host and the pinned Debian baseline. Host Node was unavailable on `PATH`, and the baseline containers had networking disabled.
+
+| Final archive | Native host | Stock baseline | PTY suite result |
+| --- | --- | --- | --- |
+| amd64 | Ubuntu 26.04.1, kernel `7.0.0-1012-azure`, glibc 2.43 | Same native kernel, glibc 2.28, `libc6 2.28-10+deb10u3`, `libstdc++6 8.3.0-6`, `libgcc1 1:8.3.0-6` | All five cases passed on both host and baseline, in 7.63 seconds and 7.65 seconds. |
+| arm64 | Ubuntu 26.04.1, kernel `7.0.0-1012-azure`, glibc 2.43 | Same native kernel and stock library versions as the amd64 baseline | All five cases passed on both host and baseline, in 8.34 seconds and 8.47 seconds. |
+
+Both runs used bundled Node 24.20.0. The first build milestone and Build it are now checked in scope. This does not close the broader Beta acceptance checklist above or the separate test workflow.
+
+The final protocol review also reproduced a JSON type error: a null commit field was decoded as an empty string during a development handshake. `TestHelloRequiresStringCommit` failed before the correction. The input decoder now rejects null required fields, while retaining the valid empty string case. The protocol, CLI, and process race suites pass with that regression.
