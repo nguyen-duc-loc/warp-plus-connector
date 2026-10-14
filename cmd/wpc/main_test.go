@@ -51,7 +51,7 @@ func TestCLI_ExposesHelpVersionAndErrors(t *testing.T) {
 				stdout, stderr, code := runCLI(t, binary, tt.args...)
 				require.Equal(t, tt.code, code, "stderr = %q", stderr)
 				if tt.err != "" {
-					if stdout != "" || !strings.HasPrefix(stderr, "Error: ") || !strings.Contains(
+					if stdout != "" || !strings.Contains(stderr, "level=ERROR") || !strings.Contains(
 						stderr,
 						tt.err,
 					) || strings.Contains(stderr, "Usage:") {
@@ -286,7 +286,7 @@ func TestCLI_ListsEveryCandidateAndReadsCheckAfterRestart(t *testing.T) {
 	out, diagnostic, code = invoke("check", "1")
 	require.Equal(t, 1, code)
 	require.Contains(t, out, "outcome=inconclusive reason=validation_unsupported")
-	require.Contains(t, diagnostic, "Error: validation_batch_inconclusive")
+	require.Contains(t, diagnostic, "code=validation_batch_inconclusive")
 	require.NotContains(t, out+diagnostic, keys[0])
 	out, diagnostic, code = invoke("list")
 	require.Zero(t, code, diagnostic)

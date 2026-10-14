@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
@@ -198,10 +198,20 @@ func runManaged(
 			},
 		}
 	}
+	capture := diagnostic.NewCapture(
+		func(p []byte) error {
+			err := captureDiagnostic(p, archive.append)
+			if err != nil {
+				archive.latch(err)
+			}
+			return err
+		},
+		func() { cancel(failure("service_log_failed")) },
+	)
 	last := app.RunnerState{Phase: "starting", CrawlPhase: "unknown", ValidationPhase: "unknown"}
 	coordinator := app.App{
 		Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend,
-		Clock: time.Now, Logger: slog.New(&managedHandler{emit: log}),
+		Clock: time.Now, Logger: diagnostic.NewLogger(capture, time.Now),
 	}
 	coordinator.Observe = func(s app.RunnerState) error {
 		if s == last {
@@ -236,6 +246,9 @@ func runManaged(
 		return nil
 	}
 	coordinator.Finalize = func(final context.Context, runErr error) error {
+		if capture.Err() != nil {
+			runErr = failure("service_log_failed")
+		}
 		e := finish(final, runErr)
 		if e == runErr {
 			return nil
@@ -321,30 +334,26 @@ func emitSummary(emit func(Event) error, s app.RunSummary) error {
 	return nil
 }
 
-type managedHandler struct{ emit func(Event) error }
-
-func (h *managedHandler) Enabled(context.Context, slog.Level) bool { return true }
-func (h *managedHandler) Handle(_ context.Context, r slog.Record) error {
-	if r.Message != "run" {
+// captureDiagnostic adapts transport facts, leaving archive time and identity authority here.
+func captureDiagnostic(p []byte, emit func(Event) error) error {
+	r, err := diagnostic.Decode(p)
+	if err != nil {
+		return failure("service_log_invalid")
+	}
+	if r.Event != "work_diagnostic" {
 		return nil
 	}
 	e := Event{Type: "work_diagnostic"}
-	r.Attrs(
-		func(a slog.Attr) bool {
-			switch a.Key {
-			case "run_id":
-				if a.Value.Kind() == slog.KindInt64 {
-					e.RunID = a.Value.Int64()
-				}
-			case "result":
-				if a.Value.Kind() == slog.KindString {
-					e.Code = a.Value.String()
-				}
-			}
-			return true
-		},
-	)
-	return h.emit(e)
+	for _, f := range r.Fields {
+		switch f.Name {
+		case "run_id":
+			e.RunID = f.Value.(int64)
+		case "code":
+			e.Code = f.Value.(string)
+		}
+	}
+	if e.RunID <= 0 || e.Code == "" || !validCode(e.Code) {
+		return failure("service_log_invalid")
+	}
+	return emit(e)
 }
-func (h *managedHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *managedHandler) WithGroup(string) slog.Handler      { return h }

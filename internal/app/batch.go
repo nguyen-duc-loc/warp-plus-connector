@@ -7,6 +7,7 @@ import (
 	randv2 "math/rand/v2"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
@@ -194,7 +195,11 @@ func (a *App) checkOwned(
 	}
 	b.cleanup, b.cancelCleanup = context.WithCancel(cleanupParent)
 	defer b.cancelCleanup()
-	a.log(report.Run.ID, "batch_admitted")
+	diagnostic.Emit(
+		a.Logger, "work_diagnostic", diagnostic.Int("run_id", report.Run.ID),
+		diagnostic.String("code", "batch_admitted"), diagnostic.String("result", "batch_admitted"),
+		diagnostic.String("origin", report.Run.Origin), diagnostic.Int("selected", int64(report.Totals.Selected)),
+	)
 	entered = true
 	return b.run()
 }
@@ -264,12 +269,7 @@ func (b *batchCoordinator) start(j *checkJob) {
 	}
 	active, cancel := context.WithTimeout(b.ctx, j.activeDeadline.Sub(b.now()))
 	j.cancel = cancel
-	if b.app.Logger != nil {
-		b.app.Logger.Info(
-			"attempt admitted", "run_id", b.report.Run.ID, "candidate_id", j.candidate.ID,
-			"attempt_id", j.attempt.ID, "attempt_number", j.number, "active", b.active, "ceiling", b.policy.Workers,
-		)
-	}
+	diagnostic.Emit(b.app.Logger, "attempt_admitted", b.attemptFields(j)...)
 	go func() {
 		input := validator.Input{
 			Key: j.candidate.Key, StateDir: b.app.Settings.StateDir, CandidateID: j.candidate.ID,
@@ -353,12 +353,11 @@ func (b *batchCoordinator) admission() {
 		b.admissions = b.admissions[1:]
 		b.mutation = e.job
 		b.mutationStarted = now
-		if b.app.Logger != nil {
-			b.app.Logger.Info(
-				"mutation admitted", "run_id", b.report.Run.ID,
-				"attempt_id", e.job.attempt.ID, "operation", e.operation, "session", e.job.session,
-			)
-		}
+		diagnostic.Emit(
+			b.app.Logger, "mutation_admitted",
+			diagnostic.Int("run_id", b.report.Run.ID), diagnostic.Int("candidate_id", e.job.candidate.ID),
+			diagnostic.Int("attempt_id", e.job.attempt.ID), diagnostic.String("operation", e.operation),
+		)
 		e.reply <- nil
 		return
 	}
@@ -414,13 +413,8 @@ func (b *batchCoordinator) finish(e checkEvent) {
 	j := e.job
 	j.running = false
 	b.active--
-	if b.app.Logger != nil {
-		b.app.Logger.Info(
-			"attempt completed", "run_id", b.report.Run.ID,
-			"candidate_id", j.candidate.ID, "attempt_id", j.attempt.ID, "attempt_number", j.number,
-			"session", j.session, "active", b.active, "ceiling", b.policy.Workers, "elapsed", b.now().Sub(j.admitted),
-		)
-	}
+	fields := append(b.attemptFields(j), diagnostic.String("elapsed", b.now().Sub(j.admitted).String()))
+	diagnostic.Emit(b.app.Logger, "attempt_completed", append(fields, observationFields(e.result, e.err)...)...)
 	r := e.result
 	if r.ProviderResponsive && r.CleanupProven && r.Removed && e.err == nil {
 		b.healthy = true
@@ -525,16 +519,19 @@ func (b *batchCoordinator) finish(e checkEvent) {
 	if completion.RetryWait == 0 {
 		j.done = true
 		b.output(ctx, j)
-	} else if b.app.Logger != nil {
-		b.app.Logger.Info(
-			"retry planned",
-			"run_id",
-			b.report.Run.ID,
-			"attempt_id",
-			j.attempt.ID,
-			"wait",
-			completion.RetryWait,
-		)
+	} else {
+		fields := []diagnostic.Field{
+			diagnostic.Int("run_id", b.report.Run.ID),
+			diagnostic.Int("candidate_id", j.candidate.ID), diagnostic.Int("attempt_id", j.attempt.ID),
+			diagnostic.Int("attempt_number", int64(j.number)), diagnostic.String("wait", completion.RetryWait.String()),
+		}
+		if completion.FailureClass != "" {
+			fields = append(fields, diagnostic.String("failure_class", string(completion.FailureClass)))
+		}
+		if completion.ReasonCode != "" {
+			fields = append(fields, diagnostic.String("code", completion.ReasonCode))
+		}
+		diagnostic.Emit(b.app.Logger, "retry_planned", fields...)
 	}
 }
 
@@ -656,19 +653,17 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 			case "mutation":
 				b.classifyMutation(e.result, e.err)
 				if b.mutation == e.job {
-					if b.app.Logger != nil {
-						b.app.Logger.Info(
-							"mutation completed",
-							"run_id",
-							b.report.Run.ID,
-							"attempt_id",
-							e.job.attempt.ID,
-							"session",
-							e.job.session,
-							"elapsed",
-							b.now().Sub(b.mutationStarted),
-						)
+					fields := []diagnostic.Field{
+						diagnostic.Int("run_id", b.report.Run.ID),
+						diagnostic.Int("candidate_id", e.job.candidate.ID),
+						diagnostic.Int("attempt_id", e.job.attempt.ID),
+						diagnostic.String("elapsed", b.now().Sub(b.mutationStarted).String()),
 					}
+					diagnostic.Emit(
+						b.app.Logger,
+						"mutation_completed",
+						append(fields, observationFields(e.result, e.err)...)...,
+					)
 					b.mutation = nil
 					b.nextMutation = b.now().Add(time.Duration(b.policy.MutationIntervalUS) * time.Microsecond)
 				}
@@ -754,6 +749,7 @@ func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
 		if err != nil {
 			b.storeFailed(err)
 		} else {
+			b.app.logValidation(b.report)
 			for _, j := range b.jobs {
 				if !j.done {
 					j.done = true
@@ -785,4 +781,47 @@ func (b *batchCoordinator) finalize() (state.ValidationReport, error) {
 		return b.report, &Error{Code: "validation_batch_inconclusive"}
 	}
 	return b.report, nil
+}
+
+func (b *batchCoordinator) attemptFields(j *checkJob) []diagnostic.Field {
+	return []diagnostic.Field{
+		diagnostic.Int("run_id", b.report.Run.ID), diagnostic.Int("candidate_id", j.candidate.ID),
+		diagnostic.Int("attempt_id", j.attempt.ID), diagnostic.Int("attempt_number", int64(j.number)),
+		diagnostic.Int("active", int64(b.active)), diagnostic.Int("ceiling", int64(b.policy.Workers)),
+	}
+}
+func observationFields(r validator.Result, err error) []diagnostic.Field {
+	if r.ReasonCode == "" && err != nil {
+		r.ReasonCode = classified(err).(*Error).Code
+	}
+	fields := []diagnostic.Field{
+		diagnostic.Bool("cleanup_proven", r.CleanupProven), diagnostic.Bool("removed", r.Removed),
+	}
+	if r.Outcome != "" {
+		fields = append(fields, diagnostic.String("outcome", string(r.Outcome)))
+	}
+	if r.FailureClass != "" {
+		fields = append(fields, diagnostic.String("failure_class", string(r.FailureClass)))
+	}
+	if r.ReasonCode != "" {
+		fields = append(fields, diagnostic.String("code", r.ReasonCode))
+	}
+	return fields
+}
+func (a *App) logValidation(r state.ValidationReport) {
+	t := r.Totals
+	fields := []diagnostic.Field{
+		diagnostic.Int("run_id", r.Run.ID), diagnostic.String("origin", r.Run.Origin),
+		diagnostic.String("status", string(r.Run.Status)), diagnostic.Int("selected", int64(t.Selected)),
+		diagnostic.Int("pending", int64(t.Pending)), diagnostic.Int("active", int64(t.Active)),
+		diagnostic.Int("completed", int64(t.Completed)),
+		diagnostic.Int("skipped", int64(t.Skipped)), diagnostic.Int("interrupted", int64(t.Interrupted)),
+		diagnostic.Int("confirmed", int64(t.Confirmed)), diagnostic.Int("invalid", int64(t.Invalid)),
+		diagnostic.Int("inconclusive", int64(t.Inconclusive)), diagnostic.Int("unresolved", int64(t.Unresolved)),
+		diagnostic.Int("unstarted", int64(t.Unstarted)),
+	}
+	if r.Run.ReasonCode != nil {
+		fields = append(fields, diagnostic.String("code", *r.Run.ReasonCode))
+	}
+	diagnostic.Emit(a.Logger, "run_completed", fields...)
 }

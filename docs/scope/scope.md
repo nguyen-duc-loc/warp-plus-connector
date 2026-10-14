@@ -237,13 +237,15 @@ Help you follow development runs with compact local times, distinct level labels
 
 **Done when:** foreground diagnostics and displayed service logs are easy to scan; verbosity is selectable; date and timezone context remain discoverable; warnings and failures are understandable without color; redirected output and saved service records contain no terminal styling; keys remain private and command results stay separate from diagnostics.
 
-**Spec:** [0009. Readable development logs](../specs/0009-readable-development-logs/index.md), confirmed on 2026-10-14 after independent review and application of its recommended fixes. The design is complete; implementation and runtime verification remain pending.
+**Spec:** [0009. Readable development logs](../specs/0009-readable-development-logs/index.md), confirmed on 2026-10-14 after independent review and application of its recommended fixes. The build is complete; native runtime verification on both Linux architectures remains pending.
+
+**Code:** `internal/diagnostic`, `internal/app`, `internal/cli/diagnostics.go`, `internal/cli/service_logs.go`, `internal/service/run.go`, and `cmd/wpc/main.go`. Local build evidence and tested dependencies are recorded in `internal/diagnostic/README.md`.
 
 - [x] Design it (spec): `/architect readable development logs`
-- [ ] Build it: `/develop readable development logs`
-  - [ ] Prove one crawl through zerolog, presentation flags, readable and redirected output, safe final errors, and diagnostic failure handling (AC-1 through AC-6, AC-9 through AC-11).
-  - [ ] Complete concurrent check and foreground runner logging, exact event fields and severity, and cancellation integration (AC-1, AC-4, AC-6, AC-9 through AC-11).
-  - [ ] Preserve managed service capture and add readable finite and following service logs with filtering and complete retention context (AC-3, AC-7 through AC-11).
+- [x] Build it: `/develop readable development logs`
+  - [x] Prove one crawl through zerolog, presentation flags, readable and redirected output, safe final errors, and diagnostic failure handling (AC-1 through AC-6, AC-9 through AC-11).
+  - [x] Complete concurrent check and foreground runner logging, exact event fields and severity, and cancellation integration (AC-1, AC-4, AC-6, AC-9 through AC-11).
+  - [x] Preserve managed service capture and add readable finite and following service logs with filtering and complete retention context (AC-3, AC-7 through AC-11).
 - [ ] Verify it: `/check verify readable development logs` (AC-1 through AC-12, including both Linux architectures).
 - [ ] Test it: `/test readable development logs`
 

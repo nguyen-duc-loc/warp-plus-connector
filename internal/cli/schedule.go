@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,13 +32,8 @@ func addScheduleCommands(root *cobra.Command, version string) {
 		}
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
-		diagnostics := &checkedStream{writer: cmd.ErrOrStderr(), cancel: cancel}
 		output := &checkedStream{writer: cmd.OutOrStdout(), cancel: cancel}
-		a.Logger = slog.New(slog.NewTextHandler(diagnostics, nil))
 		err = a.Run(ctx, func(s app.RunSummary) error { return renderRunSummary(output, s) })
-		if diagnostics.failed() {
-			return &failedDiagnostic{}
-		}
 		if output.failed() {
 			return &app.Error{Code: "output_error"}
 		}

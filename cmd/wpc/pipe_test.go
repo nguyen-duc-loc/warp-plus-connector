@@ -82,7 +82,7 @@ func TestCLI_ClosedPipePreservesBatchFinalization(t *testing.T) {
 			require.Zero(t, report.Totals.Active)
 			require.Zero(t, report.Totals.Unresolved)
 			if stream == "stdout" {
-				require.Contains(t, stderr.String(), "Error: output_error")
+				require.Contains(t, stderr.String(), "code=output_error")
 				require.Equal(t, state.Failed, report.Run.Status)
 				require.NotNil(t, report.Run.ReasonCode)
 				require.Equal(t, "output_error", *report.Run.ReasonCode)
@@ -90,8 +90,10 @@ func TestCLI_ClosedPipePreservesBatchFinalization(t *testing.T) {
 				require.Equal(t, 3, report.Totals.Skipped)
 			} else {
 				require.Contains(t, stdout.String(), "selected=5")
-				require.Equal(t, state.Completed, report.Run.Status)
-				require.Equal(t, 5, report.Totals.Completed)
+				// Spec 0009 AC-10: the first failed diagnostic write cancels admission.
+				require.Equal(t, state.Cancelled, report.Run.Status)
+				require.Zero(t, report.Totals.Completed)
+				require.Equal(t, 5, report.Totals.Skipped)
 			}
 		})
 	}

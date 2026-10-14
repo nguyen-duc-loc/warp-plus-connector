@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
@@ -125,7 +125,7 @@ func TestCrawl_PreservesProgressAndSanitizesFailures(t *testing.T) {
 			mode, func(t *testing.T) {
 				a := crawlApp(t)
 				var logs bytes.Buffer
-				a.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+				a.Logger = diagnostic.NewLogger(&logs, time.Now)
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				a.Source = sourceFunc(

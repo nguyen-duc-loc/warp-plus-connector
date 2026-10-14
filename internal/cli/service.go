@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/spf13/cobra"
@@ -46,10 +47,16 @@ func addServiceCommands(root *cobra.Command, version string) {
 	}
 	for _, action := range []string{"status", "doctor", "logs"} {
 		cmd := &cobra.Command{Use: action, Short: "Inspect service " + action, Args: noArguments}
-		cmd.Flags().String("format", "text", "Output format: text or json")
 		if action == "logs" {
+			cmd.Flags().String(
+				"format",
+				"auto",
+				"Output format: auto, pretty, text, json; JSON is complete and ignores --log-level",
+			)
 			cmd.Flags().Int("lines", 100, "Recent entries (1 through 10000)")
 			cmd.Flags().Bool("follow", false, "Follow later entries and report archive gaps")
+		} else {
+			cmd.Flags().String("format", "text", "Output format: text or json")
 		}
 		cmd.RunE = serviceRead
 		parent.AddCommand(cmd)
@@ -82,8 +89,10 @@ func renderControl(w io.Writer, r service.ControlResult) error {
 type controlDeliveryError struct{ result service.ControlResult }
 
 func (e *controlDeliveryError) Error() string {
-	return fmt.Sprintf("output_error action=%s changed=%t installation_id=%s state=%s",
-		e.result.Action, e.result.Changed, e.result.InstallationID, e.result.State)
+	return fmt.Sprintf(
+		"output_error action=%s changed=%t installation_id=%s state=%s",
+		e.result.Action, e.result.Changed, e.result.InstallationID, e.result.State,
+	)
 }
 
 type doctorFailed struct{}
@@ -93,7 +102,7 @@ func (*doctorFailed) DiagnosticFailed() bool { return true }
 
 func serviceRead(cmd *cobra.Command, _ []string) error {
 	format, _ := cmd.Flags().GetString("format")
-	if format != "text" && format != "json" {
+	if format != "text" && format != "json" && (cmd.Name() != "logs" || (format != "auto" && format != "pretty")) {
 		return errArguments
 	}
 	lines, follow := 100, false
@@ -125,10 +134,11 @@ func serviceRead(cmd *cobra.Command, _ []string) error {
 		}
 		return deliverService(cmd.OutOrStdout(), format, report)
 	}
+	display := newServiceDisplay(cmd, format)
 	if follow {
 		return service.FollowLogs(
 			cmd.Context(), a, lines, func(e service.LogEnvelope) error {
-				return deliverService(cmd.OutOrStdout(), format, e)
+				return display.envelope(e)
 			},
 		)
 	}
@@ -136,7 +146,7 @@ func serviceRead(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return deliverService(cmd.OutOrStdout(), format, view)
+	return display.snapshot(view, "")
 }
 
 func deliverService(w io.Writer, format string, object any) error {
@@ -196,6 +206,9 @@ func renderDiagnosticText(w io.Writer, prefix string, value any) error {
 			}
 		}
 		return nil
+	case string:
+		_, err := fmt.Fprintf(w, "%s=%s\n", prefix, diagnostic.Quote(v))
+		return err
 	case nil:
 		_, err := fmt.Fprintf(w, "%s=unknown\n", prefix)
 		return err

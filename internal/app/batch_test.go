@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
@@ -333,21 +332,25 @@ func TestBatchEvidenceEligibilityAcrossCancellation(t *testing.T) {
 	}
 }
 
-type retryClockHandler struct {
-	slog.Handler
-	advance func(time.Duration)
-}
+type retryClockWriter struct{ advance func(time.Duration) }
 
-func (h retryClockHandler) Handle(ctx context.Context, record slog.Record) error {
-	if record.Message == "retry planned" {
-		record.Attrs(func(attr slog.Attr) bool {
-			if attr.Key == "wait" {
-				h.advance(attr.Value.Duration())
-			}
-			return true
-		})
+func (h retryClockWriter) Write(p []byte) (int, error) {
+	record, err := diagnostic.Decode(p)
+	if err != nil {
+		return 0, err
 	}
-	return h.Handler.Handle(ctx, record)
+	if record.Event == "retry_planned" {
+		for _, f := range record.Fields {
+			if f.Name == "wait" {
+				wait, err := time.ParseDuration(f.Value.(string))
+				if err != nil {
+					return 0, err
+				}
+				h.advance(wait)
+			}
+		}
+	}
+	return len(p), nil
 }
 
 // Move the injected clock only after the retry plan has committed.
@@ -356,10 +359,9 @@ func advanceBatchRetryClock(a *app.App) {
 	var elapsed atomic.Int64
 	a.Clock = func() time.Time { return base.Add(time.Duration(elapsed.Load())) }
 	a.Monotonic = a.Clock
-	a.Logger = slog.New(retryClockHandler{
-		Handler: slog.NewTextHandler(io.Discard, nil),
+	a.Logger = diagnostic.NewLogger(retryClockWriter{
 		advance: func(wait time.Duration) { elapsed.Add(int64(wait)) },
-	})
+	}, a.Clock)
 }
 
 // covers: spec 0005 AC-6. Definitive results stop immediately, including a capable backend's rejection.

@@ -2,27 +2,27 @@ package app_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
 	"github.com/stretchr/testify/require"
 )
 
-type cancelRetryHandler struct {
-	slog.Handler
-	cancel context.CancelFunc
-}
+type cancelRetryWriter struct{ cancel context.CancelFunc }
 
-func (h cancelRetryHandler) Handle(ctx context.Context, record slog.Record) error {
-	if record.Message == "retry planned" {
+func (h cancelRetryWriter) Write(p []byte) (int, error) {
+	record, err := diagnostic.Decode(p)
+	if err != nil {
+		return 0, err
+	}
+	if record.Event == "retry_planned" {
 		h.cancel()
 	}
-	return h.Handler.Handle(ctx, record)
+	return len(p), nil
 }
 
 // Spec 0005 AC-4 and AC-7: cancellation after a committed retry plan preserves the plan without retrying.
@@ -31,7 +31,7 @@ func TestBatchCancellationDuringSavedRetryWait(t *testing.T) {
 	a.Settings.CheckPolicy.Workers = 1
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	a.Logger = slog.New(cancelRetryHandler{Handler: slog.NewTextHandler(io.Discard, nil), cancel: cancel})
+	a.Logger = diagnostic.NewLogger(cancelRetryWriter{cancel: cancel}, time.Now)
 	a.RetryDraw = func(low, _ time.Duration) time.Duration { return low }
 	var calls atomic.Int32
 	a.Validator = &batchFixture{run: func(context.Context, validator.Input, validator.Hooks) (validator.Result, error) {

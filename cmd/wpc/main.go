@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -60,18 +58,12 @@ func run() int {
 	if managed.Load() {
 		return 0
 	}
-	var failed interface{ DiagnosticFailed() bool }
-	diagnosticOK := !errors.As(err, &failed) || !failed.DiagnosticFailed()
 	if code := exitCode.Load(); code != 0 {
-		if diagnosticOK {
-			fmt.Fprintln(os.Stderr, "Error: cancelled")
-		}
+		cli.RenderFailure(cmd, err, int(code))
 		return int(code)
 	}
 	if err != nil {
-		if diagnosticOK {
-			fmt.Fprintln(os.Stderr, "Error:", cli.Diagnostic(err))
-		}
+		cli.RenderFailure(cmd, err, 0)
 		return 1
 	}
 	return 0

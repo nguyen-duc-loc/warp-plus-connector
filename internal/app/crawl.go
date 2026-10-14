@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 )
@@ -44,18 +45,40 @@ func (a *App) crawlOwned(
 	if err != nil {
 		return report, classified(err)
 	}
+	admitted := report
 	id := report.Run.ID
+	diagnostic.Emit(
+		a.Logger, "crawl_started", diagnostic.Int("run_id", id),
+		diagnostic.String("origin", report.Run.Origin),
+	)
 	// A mutation error may be an uncertain commit. Never perform cleanup writes
 	// after it. Only external failures and cancellation between known commits abort.
 	defer func() {
 		readCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if saved, readErr := w.GetCrawlReport(readCtx, id); readErr == nil {
+		saved, readErr := w.GetCrawlReport(readCtx, id)
+		if readErr == nil {
 			report = saved
 		} else if err == nil {
 			err = classified(readErr)
 		}
-		a.log(id, string(report.Run.Status))
+		if report.Run.ID == 0 {
+			report = admitted
+		}
+		fields := []diagnostic.Field{
+			diagnostic.Int("run_id", id),
+			diagnostic.String("code", string(report.Run.Status)), diagnostic.String("result", string(report.Run.Status)),
+		}
+		if readErr == nil {
+			fields = append(
+				fields,
+				diagnostic.String("origin", report.Run.Origin),
+				diagnostic.String("status", string(report.Run.Status)),
+				diagnostic.Int("saved_candidates", int64(report.SavedCandidates)),
+				diagnostic.Int("saved_sightings", int64(report.SavedSightings)),
+			)
+		}
+		diagnostic.Emit(a.Logger, "work_diagnostic", fields...)
 	}()
 	abort := func(cause error) error {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -238,7 +261,9 @@ func pace(ctx context.Context, last time.Time) error {
 }
 
 func (a *App) logPage(runID int64, source string, number int, code string) {
-	if a.Logger != nil {
-		a.Logger.Info("crawl page", "run_id", runID, "source_id", source, "page_number", number, "result", code)
-	}
+	diagnostic.Emit(
+		a.Logger, "crawl_page", diagnostic.Int("run_id", runID),
+		diagnostic.String("source_id", source), diagnostic.Int("page_number", int64(number)),
+		diagnostic.String("result", code),
+	)
 }

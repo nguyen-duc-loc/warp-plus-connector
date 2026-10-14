@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
@@ -44,7 +44,7 @@ func TestCrawl_PageBudgetsAndLaterPageFailures(t *testing.T) {
 					)
 				}
 				var logs bytes.Buffer
-				a.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+				a.Logger = diagnostic.NewLogger(&logs, time.Now)
 				var urls []string
 				a.Source = telegram.New(
 					"test", a.Clock, httpFunc(

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
@@ -62,6 +63,17 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 	if e := a.Settings.ValidateRun(); e != nil {
 		return e
 	}
+	started := false
+	defer func() {
+		if !started {
+			return
+		}
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			diagnostic.Emit(a.Logger, "scheduler", diagnostic.String("code", classified(err).(*Error).Code))
+		} else {
+			diagnostic.Emit(a.Logger, "scheduler", diagnostic.String("code", "schedule_stopped"))
+		}
+	}()
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	a.shutdown = newShutdownWindow(ctx)
@@ -175,17 +187,31 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 			}
 		}
 	}
+	lastCode := ""
 	log := func(code string) {
-		if a.Logger != nil {
-			a.Logger.Info("scheduler", "code", code)
+		if code != lastCode {
+			diagnostic.Emit(a.Logger, "scheduler", diagnostic.String("code", code))
+			lastCode = code
 		}
 	}
+	started = true
 	log("schedule_starting")
+	if paused {
+		log("clock_paused")
+	}
+	stopping := false
 	for {
+		if ctx.Err() != nil && !stopping {
+			log("schedule_stopping")
+			stopping = true
+		}
 		if e := observe(); e != nil && ctx.Err() == nil {
 			stop(e)
 		}
 		if ctx.Err() != nil && !activeCrawl && !activeValidation {
+			if !stopping {
+				log("schedule_stopping")
+			}
 			if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				err = classified(context.Cause(ctx))
 			}
@@ -306,8 +332,18 @@ func (a *App) Run(parent context.Context, emit func(RunSummary) error) (err erro
 				stop(e)
 				continue
 			}
+			if !activeCrawl && !activeValidation && !paused {
+				code := "schedule_waiting"
+				if a.Settings.ValidationEnabled && snapshot.ValidationWait != nil {
+					code = snapshot.ValidationWait.Reason
+				}
+				log(code)
+			} else if activeCrawl || activeValidation {
+				lastCode = ""
+			}
 			wake.Reset(delay)
 		}
+
 		select {
 		case <-ctx.Done():
 			laneCancel()

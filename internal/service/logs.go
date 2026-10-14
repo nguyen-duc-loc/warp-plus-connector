@@ -269,6 +269,15 @@ func openArchive(root, installation, invocation string) (*logArchive, error) {
 	return &logArchive{dir: dir, installation: installation, invocation: invocation, file: f, size: n}, nil
 }
 
+// latch prevents typed emitters from writing after a transport formatting failure.
+func (a *logArchive) latch(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.failed == nil {
+		a.failed = err
+	}
+}
+
 func (a *logArchive) append(event Event) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

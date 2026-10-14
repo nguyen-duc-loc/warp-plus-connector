@@ -4,14 +4,15 @@ package app
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/store"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
+	"github.com/rs/zerolog"
 )
 
 // Source retrieves one fully parsed bounded page.
@@ -41,7 +42,7 @@ type App struct {
 	Clock        func() time.Time
 	Monotonic    func() time.Time
 	RetryDraw    func(time.Duration, time.Duration) time.Duration
-	Logger       *slog.Logger
+	Logger       *zerolog.Logger
 	// Observe runs only in the scheduler coordinator.
 	Observe func(RunnerState) error
 	// Finalize runs after entered work closes, under the shared local cleanup deadline.
@@ -90,9 +91,10 @@ func classified(err error) error {
 func closeStore(r *store.Reader, err *error) { *err = classified(errors.Join(*err, r.Close())) }
 
 func (a *App) log(runID int64, code string) {
-	if a.Logger != nil {
-		a.Logger.Info("run", "run_id", runID, "result", code)
-	}
+	diagnostic.Emit(
+		a.Logger, "work_diagnostic", diagnostic.Int("run_id", runID),
+		diagnostic.String("code", code), diagnostic.String("result", code),
+	)
 }
 
 // Check uses the batch engine for compatibility with single candidate callers.

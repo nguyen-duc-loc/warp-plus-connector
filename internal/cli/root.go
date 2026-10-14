@@ -47,5 +47,6 @@ func NewRootCommand(version, commit string) *cobra.Command {
 
 	addRuntimeCommands(root, version)
 	addServiceCommands(root, version)
+	diagnosticFlags(root)
 	return root
 }

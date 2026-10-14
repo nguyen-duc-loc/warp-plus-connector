@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -264,7 +263,7 @@ func application(cmd *cobra.Command, version string) (*app.App, error) {
 	}
 	return &app.App{
 		Settings: settings, Source: telegram.New(version, time.Now, nil), Validator: backend, Clock: time.Now,
-		Logger: slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)),
+		Logger: invocation(cmd).logger,
 	}, nil
 }
 
