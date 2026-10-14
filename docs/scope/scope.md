@@ -15,7 +15,7 @@ Your selected boundary is personal use on Linux amd64 and Linux arm64 only, with
 
 **Platform transition:** Release builds, installation, the validator, background operation, and runtime verification must cover both Linux architectures. Existing macOS checks remain historical evidence only. Completed feature records retain their original verification results; they do not establish Linux amd64 support. Building a binary alone does not establish runtime support.
 
-**Next recommended step:** `/develop background operation and diagnostics`. You confirmed the platform amendment in spec 0001 and the related validator and service contracts on 2026-10-12 after independent review. Feature 9 carries the remaining release, validator, service, and runtime work under spec 0008 AC-17 through AC-19. Implementation updates the build configuration and platform guards; `/sync` then reconciles project instructions with the actual supported targets.
+**Next recommended step:** `/develop readable development logs`. On 2026-10-14, you selected development experience and the user interface as the next priority and confirmed spec 0009 after independent review. Feature 9 retains its recorded verification limits and status; this change in priority does not claim new backend acceptance.
 
 The first architecture decision is how to confirm actual WARP Plus entitlement with isolated validation state. A format match, source label, or ordinary WARP connection does not establish Plus entitlement. A successful check describes evidence at a particular time, not a promise that another device can activate the key later.
 
@@ -36,6 +36,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 7 | Complete results and export | Slice 4 | done |
 | 8 | Scheduled crawl and revalidation | Slice 5 | done |
 | 9 | Background operation and diagnostics | Slice 6 | in-progress |
+| 11 | Readable development logs | Slice 7 | in-progress |
 
 ## Foundations
 
@@ -227,6 +228,24 @@ Deliver matching Linux amd64 and arm64 releases and validator images. Run unatte
 **Verification, 2026-10-13:** You requested checking only Verify it. Runtime checks passed, including fresh CLI checks against the final Linux arm64 binary; the unchanged source also passed the full local and native Linux amd64 and arm64 test gates. New provider attachment and fresh Unlimited entitlement proof remain excluded at your request and unverified. This checkbox records the completed verification within that boundary, not full feature acceptance. The feature remains in progress. Evidence is retained in `/tmp/wpc-final-0008-20261013/REPORT.md` and `/tmp/wpc-final-0008-20261013/REVERIFY.md`.
 
 **Test pass, 2026-10-13:** Added 28 regression cases by extending the log event catalogue checks and adding gap callback cancellation, output failure, and public status isolation tests. Existing doctor regression coverage is retained and tagged to the acceptance criteria. The full race suite passed with 945 tests and subtests locally and 964 on native Linux arm64, across thirteen tested packages on each host. Formatting, vet, and lint passed. The updated service tests compile for Linux amd64; they were not newly executed on that architecture. The earlier native amd64 full gate is retained for the unchanged application code. Provider attachment remains excluded and unverified. Evidence is in `/tmp/wpc-test-0008-20261013/REPORT.md`. Only Test it is newly checked; the feature and spec remain in progress.
+
+## Slice 7: Read development activity at a glance
+
+### 11. Readable development logs · in-progress
+
+Help you follow development runs with compact local times, distinct level labels and colors, clear messages, and quieter supporting fields. Keep run and attempt identity available when concurrent work needs diagnosis.
+
+**Done when:** foreground diagnostics and displayed service logs are easy to scan; verbosity is selectable; date and timezone context remain discoverable; warnings and failures are understandable without color; redirected output and saved service records contain no terminal styling; keys remain private and command results stay separate from diagnostics.
+
+**Spec:** [0009. Readable development logs](../specs/0009-readable-development-logs/index.md), confirmed on 2026-10-14 after independent review and application of its recommended fixes. The design is complete; implementation and runtime verification remain pending.
+
+- [x] Design it (spec): `/architect readable development logs`
+- [ ] Build it: `/develop readable development logs`
+  - [ ] Prove one crawl through zerolog, presentation flags, readable and redirected output, safe final errors, and diagnostic failure handling (AC-1 through AC-6, AC-9 through AC-11).
+  - [ ] Complete concurrent check and foreground runner logging, exact event fields and severity, and cancellation integration (AC-1, AC-4, AC-6, AC-9 through AC-11).
+  - [ ] Preserve managed service capture and add readable finite and following service logs with filtering and complete retention context (AC-3, AC-7 through AC-11).
+- [ ] Verify it: `/check verify readable development logs` (AC-1 through AC-12, including both Linux architectures).
+- [ ] Test it: `/test readable development logs`
 
 ## Deferred
 
