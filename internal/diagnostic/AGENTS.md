@@ -16,6 +16,8 @@ Pretty rows retain full IDs, local milliseconds, full level labels, and date and
 
 Minimum levels filter activity, but `command_cancelled` remains visible even at error verbosity. Service archive selection and adaptation belong to the caller; this package does not add missing historical events or change retention.
 
+The `terminal_export` event also bypasses level filtering. Its typed publication value is `true`, `false`, or `unknown`, separate from durability and cleanup. Final rendering uses the parent receipt after terminal restoration, including forced shutdown, and never infers that cancellation means no file exists. Keys and raw errors remain excluded.
+
 ## Failure handling
 
 `Capture` serializes consumption, retains the first failure, and invokes its cancellation callback once after unlocking. That callback should only cancel work. Transport `Write` deliberately acknowledges all bytes even after failure to contain zerolog fallback output; `Capture.Err` is the authoritative result. Never retry the destination after a short write, formatting failure, or write error.

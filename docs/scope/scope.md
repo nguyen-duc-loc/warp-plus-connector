@@ -43,7 +43,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 10 | Release automation | Release | in-progress |
 | 11 | Readable development logs | Slice 7 | done |
 | 12 | Terminal foundation and overview | Slice 8 | done |
-| 13 | Terminal results and export | Slice 9 | in-progress |
+| 13 | Terminal results and export | Slice 9 | done |
 | 14 | Terminal crawl and check controls | Slice 10 | planned |
 
 ## Foundations
@@ -291,7 +291,7 @@ Give you one keyboard driven home screen showing real collection totals, freshne
 
 ## Slice 9: Browse and export every result
 
-### 13. Terminal results and export · in-progress
+### 13. Terminal results and export · done
 
 Let you browse saved candidates, filter by outcome and freshness, inspect details, and export the matching collection through the terminal interface. Build on the terminal foundation and existing complete result behavior.
 

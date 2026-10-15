@@ -46,6 +46,10 @@ Major work transitions appear at info, successful page and attempt details at de
 
 [overview.go](overview.go) implements `ReadOverview` under [spec 0010](../../docs/specs/0010-terminal-foundation-overview/index.md). It reads the selected collection and the injected `OverviewService` boundary independently, with five seconds per section inside a ten second request context. It waits for entered work and reader closure before preparing the header time; the terminal supervisor owns the independent watchdog for reads that resist cancellation. Missing collection state discards cached data, other failures permit clearly stale retention, and service failure never hides available collection data. This path opens no writer and invokes no source or validator.
 
+[results_session.go](results_session.go) implements [spec 0011](../../docs/specs/0011-terminal-results-export/index.md) with private complete snapshots and fixed evaluation times. Filters use saved summaries; changed filters clear marks, while equivalent filters preserve them. Refresh retains marks and focus only for matching candidate IDs and exact key identities. Failed refresh preserves the old view and evaluation with a retained marker. Detail preparation captures a separate live snapshot after checking collection identity and never replaces Results evidence.
+
+The session owner serializes calls and waits for entered work before closing. `ResultsCommit` binds view and mark activation to cancellation admission. Failed cleanup remains visible and blocks new preparation until it succeeds. `VisitExport` streams matching or marked rows from the fixed view, preserves callback errors, and holds the snapshot until callbacks return. Reads use `OpenSnapshotReader` without writer ownership, migration, or recovery; live readers close before browsing or file publication.
+
 You can run `rtk proxy go test -race ./internal/app` for focused checks. Tests use synthetic source or validator responses with the real store. Live behavior remains recorded in the feature verification files.
 
 _Drafted by /sync from the introducing change, worth a quick human pass._
