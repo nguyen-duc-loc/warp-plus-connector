@@ -319,19 +319,19 @@ Let you start a crawl or check selected candidates, follow concurrent progress, 
 
 **Done when:** you can choose configured sources or saved candidates, start work, follow counts and attempts, and request cancellation; rate limits, retries, partial success, and unstarted work are distinct from invalid keys; saved results remain inspectable after exit; background ownership conflicts give clear guidance; exit and cancellation preserve existing cleanup and recovery rules without launching a second writer or duplicating scheduling logic.
 
-**Spec:** [0012. Terminal crawl and check controls](../specs/0012-terminal-crawl-check-controls/index.md), confirmed on 2026-10-15 after independent review, application of both approved fixes, and a focused recheck. The design adds one reviewed manual operation, typed progress, independent browsing and export, complete fixed report snapshots, and bounded cleanup through the existing Go engines. Protocol 3 extends the terminal connection; the live database remains schema 5. Implementation is present in the working tree; final native amd64 and live provider verification remain pending.
+**Spec:** [0012. Terminal crawl and check controls](../specs/0012-terminal-crawl-check-controls/index.md), confirmed on 2026-10-15 after independent review, application of both approved fixes, and a focused recheck. The design adds one reviewed manual operation, typed progress, independent browsing and export, complete fixed report snapshots, and bounded cleanup through the existing Go engines. Protocol 3 extends the terminal connection; the live database remains schema 5. Implementation is present in the working tree. Native amd64 and arm64 archive verification and current pinned live validator cleanup passed on 2026-10-15; the observed sourced candidate was inconclusive, not confirmed Unlimited. Evidence is in the feature verification record.
 
 - [x] Design it (spec): `/architect terminal crawl and check controls`
-- [ ] Build it: `/develop terminal crawl and check controls`
+- [x] Build it: `/develop terminal crawl and check controls`
   - [x] Prove one reviewed crawl through protocol 3, real saved progress, cancellation, outcome, and process deadlines (AC-1, AC-2, AC-5, AC-6, AC-8, AC-9, AC-14, AC-15).
   - [x] Prove a focused candidate check with frozen identity admission, configured policy, shared ownership, cleanup, and truthful receipts (AC-3 through AC-6, AC-8 through AC-10, AC-14, AC-15).
   - [x] Complete source and batch selection, concurrent progress, retry guidance, independent cancellation, browsing, and export (AC-2 through AC-8, AC-10, AC-13 through AC-15).
   - [x] Complete recent and older saved reports, fixed snapshots, every bounded detail page, legacy data, retained failures, and outcome acknowledgement (AC-6, AC-7, AC-11 through AC-15).
-  - [ ] Complete keyboard, privacy, uncertainty, shutdown, explicit command compatibility, and final native Linux archive integration (AC-1 through AC-16).
+  - [x] Complete keyboard, privacy, uncertainty, shutdown, explicit command compatibility, and final native Linux archive integration (AC-1 through AC-16).
 
 **Code:** `internal/app/work.go`, `internal/app/reports.go`, `internal/terminal/work_dispatch.go`, `internal/terminal/report_dispatch.go`, and `ui/src/controls.tsx`. Protocol 3 bundles build for both architectures. Controlled protocol and native arm64 terminal journeys cover saved work, cancellation, ownership conflicts, and complete reports.
 
-- [ ] Verify it: `/check verify terminal crawl and check controls`
+- [x] Verify it: `/check verify terminal crawl and check controls`
 - [ ] Test it: `/test terminal crawl and check controls`
 
 ## Deferred

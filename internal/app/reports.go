@@ -140,10 +140,14 @@ func (s *ReportSession) Require(id int64) error {
 	if s.View == nil || s.View.ID != id {
 		return &Error{Code: "ui_handle_stale"}
 	}
-	if !s.identity.Same(s.app.Settings.StateDir) {
+	if err := s.identity.Check(s.app.Settings.StateDir); errors.Is(err, store.ErrCollectionChanged) {
 		s.View = nil
 		return &Error{Code: "ui_collection_changed"}
+	} else if err != nil && !errors.Is(err, store.ErrStateAccess) {
+		return classified(err)
 	}
+	// Cached reads remain available after failed live admission. Refresh still
+	// requires private admission and records its failure on the retained view.
 	return nil
 }
 
@@ -157,10 +161,18 @@ func (s *ReportSession) Open(
 	}
 	old := s.View
 	defer func() {
+		if errors.Is(err, store.ErrCollectionChanged) {
+			s.View = nil
+		}
 		if err != nil && focus != nil && old != nil && s.View == old {
 			old.Retained, old.ErrorCode = true, classified(err).(*Error).Code
 		}
 	}()
+	if focus != nil && old != nil {
+		if err = s.identity.Check(s.app.Settings.StateDir); err != nil {
+			return classified(err)
+		}
+	}
 	identity, err := store.IdentifyCollection(s.app.Settings.StateDir)
 	if err != nil {
 		return classified(err)
@@ -226,9 +238,13 @@ func (s *ReportSession) Open(
 	if err != nil {
 		return classified(err)
 	}
-	if !identity.Same(s.app.Settings.StateDir) {
-		s.View = nil
-		return &Error{Code: "ui_collection_changed"}
+	if err = identity.Check(s.app.Settings.StateDir); err != nil {
+		return classified(err)
+	}
+	if focus != nil && old != nil {
+		if err = s.identity.Check(s.app.Settings.StateDir); err != nil {
+			return classified(err)
+		}
 	}
 	if focus != nil {
 		v.Focus = *focus

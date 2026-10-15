@@ -41,4 +41,37 @@ After behavior verification, add regression tests for the actual boundaries and 
 
 ## Evidence record
 
-Implementation and verification are pending. No acceptance criterion is marked passed by this document.
+Runtime verification passed on 2026-10-15 after fixing the focused candidate review and failed report refresh.
+The tested tree is commit `60df41e93916ee7d35a6061470c9fc1904015463` plus the uncommitted fixes and regression tests.
+The exact source hashes, commands, acceptance matrix and evidence paths are in
+`/private/tmp/wpc-debug-0012.nYyquq/verification.json` and its adjacent `source-identity.json`.
+
+| Final snapshot archive | SHA256 |
+| --- | --- |
+| `warp-plus-connector_0.1.0-dev-60df41e_linux_amd64.tar.gz` | `88d8d2364788c430a19390f467950793b59960ebf3278b6884214113d1cb3424` |
+| `warp-plus-connector_0.1.0-dev-60df41e_linux_arm64.tar.gz` | `03490e5723747f3d319464d1120f088f2bd2573be1d9e43e627be59c279c8b2d` |
+
+| Criteria | Runtime evidence |
+| --- | --- |
+| AC-1, AC-2 | Read admission, source selection and override isolation, plus a public Telegram crawl saving 100 candidates without validation. |
+| AC-3, AC-4 | Exact focused ID at both terminal sizes, marked membership across pages, all 338 selected records, saved policy, overlapping workers, pacing, retries and explicit probe admission. |
+| AC-5, AC-6 | Real parent protocol exercises consumed reviews, busy and stale handles, abandoned Start replies, committed counts, mixed outcomes, partial source failure and rate limits. |
+| AC-7, AC-8 | Browsing and reports during work, independent export and work cancellation in help and small terminals, preserved evidence and cleanup ownership. |
+| AC-9 | Quit defaults, signals and restoration. A held disk synchronization restored the terminal in 0.101 seconds and requested exit 143 at 75.006 seconds. A repeated signal did not extend the deadline. |
+| AC-10 | A real writer lock and 11 service observation cases produced service guidance only for verified matching ownership. No source or validator calls started. |
+| AC-11, AC-12 | Complete bounded item and attempt traversal, fixed observations under concurrent writes, legacy reports, retained access failure, restored refresh and real replacement invalidation. |
+| AC-13, AC-14 | Native keyboard journeys at 60 by 16 and wide sizes, no color, small help, text entry, exact decimal IDs, private ordinary replies and fatal malformed records. |
+| AC-15 | Preserved originating cleanup receipt, authoritative matching recovery, refusal of missing or wrong ownership evidence, independent SQL uncertainty, abandoned replies and separate export receipts. |
+| AC-16 | Both native archives passed the package journeys and glibc 2.28 baseline. The full local gate passed, including 60 UI tests. The current WARP image completed live checks and explicit recovery. |
+
+Controlled source and validator boundaries supplied deterministic failure and retry scenarios. The actual sourced
+candidate returned `inconclusive` with `not_unlimited`; this run does not claim Unlimited entitlement. Cancellation
+during live registration correctly retained an unresolved obligation, and `validator recover` later returned
+`cleanup=complete`. The shared registry retained version 3 with zero sessions, no validator container remained,
+and no Linux host registration was present. The provider cooldown remained enforced. Same session recovery
+proofs used the real Docker adapter with a private fake executable and registry, without bypassing that cooldown.
+
+Native amd64 initially hit startup timeouts when concurrent suites exhausted the small VM's CPU allowance.
+Serial runs with burst CPU passed without a code change. The temporary AWS instance, disk, security group and
+key pair were removed, with cleanup evidence at `/private/tmp/wpc-amd64-verify.iuawHD/cleanup.json`.
+No hosted workflow execution or release publication is claimed.

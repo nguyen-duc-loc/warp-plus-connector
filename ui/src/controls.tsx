@@ -672,6 +672,7 @@ export function Controls({
                   ]
                 : [
                       `Selection ${review.selection} | ${review.selected_count} candidates`,
+                      ...(review.candidate_id === null ? [] : [`Candidate ${review.candidate_id}`]),
                       `Results observed ${review.as_of?.local}`,
                       `Docker configured, not yet contacted.`,
                       `Image ${review.image?.text}`,

@@ -32,8 +32,8 @@ func (r *Reader) VisitReport(
 			if err != nil {
 				return struct{}{}, err
 			}
-			if !identity.Same(path) {
-				return struct{}{}, ErrCollectionChanged
+			if err = identity.Check(path); err != nil {
+				return struct{}{}, err
 			}
 			h := ReportHeader{Run: run, AsOf: clock().UTC().Truncate(time.Microsecond)}
 			if run.Run.Kind == state.Crawl {

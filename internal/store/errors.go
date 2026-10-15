@@ -38,7 +38,7 @@ func safeError(ctx context.Context, op string, err error) error {
 	for _, known := range []error{
 		ErrBusy, ErrStateAccess, ErrSchemaTooNew,
 		ErrMigrationRequired, ErrNotInitialized, ErrInvalidInput, ErrConflict,
-		ErrRunClosed, ErrRunActive, ErrAttemptActive, ErrNotFound, ErrInvalidCursor, ErrClosed,
+		ErrRunClosed, ErrRunActive, ErrAttemptActive, ErrNotFound, ErrInvalidCursor, ErrClosed, ErrCollectionChanged,
 		context.Canceled, context.DeadlineExceeded,
 	} {
 		if errors.Is(err, known) {

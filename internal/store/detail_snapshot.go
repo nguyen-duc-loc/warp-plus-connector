@@ -42,6 +42,44 @@ func (i CollectionIdentity) Same(path string) bool {
 	return err == nil && n.Directory == i.Directory && os.SameFile(i.File, n.File)
 }
 
+// Check distinguishes a missing or replaced collection from failed private admission.
+func (i CollectionIdentity) Check(path string) error {
+	if !filepath.IsAbs(path) {
+		return ErrInvalidInput
+	}
+	dir, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrCollectionChanged
+	}
+	if err != nil {
+		return ErrStateAccess
+	}
+	if dir != i.Directory {
+		return ErrCollectionChanged
+	}
+	info, err := os.Lstat(filepath.Join(dir, "state.db"))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrCollectionChanged
+	}
+	if err != nil {
+		return ErrStateAccess
+	}
+	if i.File == nil || !os.SameFile(i.File, info) {
+		return ErrCollectionChanged
+	}
+	n, err := IdentifyCollection(path)
+	if errors.Is(err, ErrNotInitialized) {
+		return ErrCollectionChanged
+	}
+	if err != nil {
+		return err
+	}
+	if n.Directory != i.Directory || !os.SameFile(i.File, n.File) {
+		return ErrCollectionChanged
+	}
+	return nil
+}
+
 // DetailAttempt preserves nullable saved retry facts alongside an attempt.
 type DetailAttempt struct {
 	Attempt state.Attempt
