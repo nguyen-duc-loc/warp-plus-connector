@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="657" viewBox="0 0 1180 657" role="img" aria-labelledby="title desc">
+<title id="title">wpc  /  Overview</title>
+<desc id="desc">Collection freshness, recent saved runs, and terminal navigation. Synthetic sample data, not a live capture.</desc>
+<rect width="1180" height="657" rx="16" fill="#101820"/>
+<path d="M16 0h1148a16 16 0 0 1 16 16v40H0V16A16 16 0 0 1 16 0" fill="#1c2935"/>
+<circle cx="28" cy="28" r="6" fill="#f87171"/><circle cx="50" cy="28" r="6" fill="#fbbf24"/><circle cx="72" cy="28" r="6" fill="#4ade80"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
+<text x="104" y="34" fill="#d3e1ec">wpc  /  Overview</text>
+<text x="1144" y="34" text-anchor="end" fill="#94aabb" font-size="13">ILLUSTRATIVE PREVIEW</text>
+<text x="36" y="91" fill="#f0f6fc" font-weight="600" xml:space="preserve">WPC dev  Overview  | Ready</text>
+<text x="36" y="116" fill="#94aabb" xml:space="preserve">Collection /home/demo/.local/state/warp-plus-connector</text>
+<text x="36" y="141" fill="#94aabb" xml:space="preserve">2026-10-16 09:30:00 UTC+00:00</text>
+<text x="36" y="166" fill="#d3e1ec" xml:space="preserve"></text>
+<rect x="24" y="172" width="1132" height="25" rx="4" fill="#16333d"/>
+<text x="36" y="191" fill="#67e8f9" font-weight="600" xml:space="preserve">&gt; Collection</text>
+<text x="36" y="216" fill="#f0f6fc" font-weight="600" xml:space="preserve">24 FRESH CONFIRMED          338 TOTAL CANDIDATES</text>
+<text x="36" y="241" fill="#d3e1ec" xml:space="preserve">Stale confirmations 8   Unknown freshness 0</text>
+<text x="36" y="266" fill="#94aabb" xml:space="preserve">Latest completed outcomes</text>
+<text x="36" y="291" fill="#d3e1ec" xml:space="preserve">Unchecked 240  Confirmed 32  Invalid 18  Inconclusive 48</text>
+<text x="36" y="316" fill="#94aabb" xml:space="preserve">Fresh evidence and latest outcomes answer different questions. These groups are not additive.</text>
+<text x="36" y="341" fill="#d3e1ec" xml:space="preserve"></text>
+<text x="36" y="366" fill="#f0f6fc" font-weight="600" xml:space="preserve">  Recent work</text>
+<text x="36" y="391" fill="#94aabb" xml:space="preserve">RUN ID         KIND        ORIGIN      SAVED STATUS</text>
+<text x="36" y="416" fill="#d3e1ec" xml:space="preserve">42             validation  manual      completed</text>
+<text x="36" y="441" fill="#94aabb" xml:space="preserve">  Started 2026-10-16 09:20:00 UTC+00:00</text>
+<text x="36" y="466" fill="#94aabb" xml:space="preserve">  Finished 2026-10-16 09:24:00 UTC+00:00</text>
+<text x="36" y="491" fill="#d3e1ec" xml:space="preserve">41             crawl       manual      completed</text>
+<text x="36" y="516" fill="#d3e1ec" xml:space="preserve">  Saved candidates 338, sightings 412</text>
+<text x="36" y="541" fill="#d3e1ec" xml:space="preserve"></text>
+<text x="36" y="566" fill="#67e8f9" font-weight="600" xml:space="preserve">b Results | c Crawl | w Work | r refresh | ? help | q quit</text>
+<text x="36" y="591" fill="#94aabb" xml:space="preserve">Ctrl+X Cancel work | Ctrl+G Cancel preparation</text>
+</g>
+</svg>

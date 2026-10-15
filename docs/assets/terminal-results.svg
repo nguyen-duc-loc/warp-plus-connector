@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="482" viewBox="0 0 1180 482" role="img" aria-labelledby="title desc">
+<title id="title">wpc  /  Results</title>
+<desc id="desc">Browse and mark candidates, inspect evidence, and review checks or exports without displaying keys. Synthetic sample data, not a live capture.</desc>
+<rect width="1180" height="482" rx="16" fill="#101820"/>
+<path d="M16 0h1148a16 16 0 0 1 16 16v40H0V16A16 16 0 0 1 16 0" fill="#1c2935"/>
+<circle cx="28" cy="28" r="6" fill="#f87171"/><circle cx="50" cy="28" r="6" fill="#fbbf24"/><circle cx="72" cy="28" r="6" fill="#4ade80"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
+<text x="104" y="34" fill="#d3e1ec">wpc  /  Results</text>
+<text x="1144" y="34" text-anchor="end" fill="#94aabb" font-size="13">ILLUSTRATIVE PREVIEW</text>
+<text x="36" y="91" fill="#f0f6fc" font-weight="600" xml:space="preserve">WPC Results  | 338 matching | 2 marked</text>
+<text x="36" y="116" fill="#94aabb" xml:space="preserve">Collection /home/demo/.local/state/warp-plus-connector | UTC</text>
+<text x="36" y="141" fill="#94aabb" xml:space="preserve">As of 2026-10-16 09:30:00 | Fixed snapshot</text>
+<text x="36" y="166" fill="#d3e1ec" xml:space="preserve"></text>
+<rect x="24" y="172" width="1132" height="25" rx="4" fill="#16333d"/>
+<text x="36" y="191" fill="#67e8f9" font-weight="600" xml:space="preserve">&gt; [x] 101                 confirmed    confirmed 2026-10-16 09:24:00 fresh</text>
+<text x="36" y="216" fill="#d3e1ec" xml:space="preserve">  [x] 102                 confirmed    confirmed 2026-10-16 09:23:00 fresh</text>
+<text x="36" y="241" fill="#d3e1ec" xml:space="preserve">  [ ] 103                 inconclusive confirmed 2026-10-15 01:20:00 stale</text>
+<text x="36" y="266" fill="#d3e1ec" xml:space="preserve">  [ ] 104                 unchecked    none      No evidence not_applicable</text>
+<text x="36" y="291" fill="#d3e1ec" xml:space="preserve">  [ ] 105                 invalid      invalid   2026-10-16 09:22:00 fresh</text>
+<text x="36" y="316" fill="#d3e1ec" xml:space="preserve">  [ ] 106                 inconclusive none      No evidence not_applicable</text>
+<text x="36" y="341" fill="#d3e1ec" xml:space="preserve"></text>
+<text x="36" y="366" fill="#67e8f9" font-weight="600" xml:space="preserve">Enter details | Space mark | c Check | w Work | e export | f filters</text>
+<text x="36" y="391" fill="#94aabb" xml:space="preserve">Rows 1 to 6 of 338</text>
+<text x="36" y="416" fill="#94aabb" xml:space="preserve">Ctrl+X Cancel work | Ctrl+G Cancel preparation</text>
+</g>
+</svg>

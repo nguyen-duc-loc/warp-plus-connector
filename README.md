@@ -1,14 +1,25 @@
 # Warp Plus Connector
 
-**Collect publicly shared WARP Plus key candidates, check for Unlimited entitlement, and keep the results current.**
+[![CI](https://github.com/nguyen-duc-loc/warp-plus-connector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nguyen-duc-loc/warp-plus-connector/actions/workflows/ci.yml)
+[![Releases](https://img.shields.io/github/v/release/nguyen-duc-loc/warp-plus-connector?include_prereleases)](https://github.com/nguyen-duc-loc/warp-plus-connector/releases)
+![Linux amd64 and arm64](https://img.shields.io/badge/Linux-amd64%20%7C%20arm64-22d3ee)
+
+**Your WARP Plus collection, in one terminal. Collect, check, browse, and export.**
 
 Warp Plus Connector (`wpc`) is a personal CLI for Linux amd64 and arm64. It reads public Telegram previews without a Telegram account, saves discovered keys in a private SQLite database, and validates selected candidates with isolated Docker workers. You can inspect results, export keys, or leave collection and validation running on a schedule.
+
+![Illustrative WPC terminal overview showing collection totals, freshness, recent work, and keyboard navigation. All values are synthetic.](docs/assets/terminal-overview.svg)
+
+*Illustrative terminal preview with synthetic data, not live entitlement evidence. Colors depend on your terminal theme.*
+
+**[Explore the terminal UI](#terminal-ui) · [Install WPC](#installation) · [Get a confirmed key](#get-a-confirmed-key) · [Run continuously](#run-continuously)**
 
 WPC answers **“Which collected keys were recently confirmed as Unlimited?”** It does not generate subscriptions, guarantee that a shared key will remain available, apply a key to your device, or connect a WARP tunnel. You apply a selected key yourself. Validation uses a temporary container registration and does not reuse your host WARP registration.
 
 ## Contents
 
 - [Installation](#installation)
+- [Terminal UI](#terminal-ui)
 - [Get a confirmed key](#get-a-confirmed-key)
 - [Run continuously](#run-continuously)
 - [Commands](#commands)
@@ -79,7 +90,64 @@ validator_image_id=$(docker image inspect "$validator_image" --format '{{.Id}}')
 
 Docker selects its native architecture. WPC requires the complete local `sha256:` ID, not a tag, registry URL, or multi architecture manifest reference. Pulling a release image does not require Go or Buildx. The variable belongs to the current terminal; use a [private configuration file](docs/configuration.md) to retain the ID across sessions.
 
-Building your own image is a [development option](docs/development.md#build-the-validator-image). The vendor pin is WARP `2026.8.2110.0`. Package installation and offline worker behavior have been checked on Linux arm64; fresh live Unlimited confirmation and remote deletion remain unverified for this vendor update. CI does not activate real keys.
+Building your own image is a [development option](docs/development.md#build-the-validator-image). The vendor pin is WARP `2026.8.2110.0`. [Terminal verification](docs/specs/0012-terminal-crawl-check-controls/verify.md#evidence-record) includes a live check and completed remote cleanup recovery with this pin. The candidate returned `not_unlimited`; fresh live Unlimited confirmation remains unverified. CI does not activate real keys.
+
+## Terminal UI
+
+Run **`wpc`** with no subcommand to open the interactive terminal UI. The complete release archive includes its runtime, so you do not need to install Node or pnpm.
+
+```sh
+wpc
+# Or open a specific profile:
+wpc --config /absolute/path/config.json
+```
+
+### See your collection at a glance
+
+The overview brings collection totals, fresh confirmations, recent runs, saved schedules, and service observations into one place. It refreshes automatically, with explicit labels for stale or unavailable observations. Opening it only reads saved information; work begins when you choose **Start** in a review.
+
+### Browse, select, and act
+
+![Illustrative WPC Results view showing synthetic candidates with different outcomes and freshness, session marks, and check and export shortcuts. No keys are displayed.](docs/assets/terminal-results.svg)
+
+*Illustrative Results preview. Candidate IDs, counts, and timestamps are synthetic; keys stay hidden.*
+
+| From the terminal | What you can do |
+| --- | --- |
+| **Overview** | See collection health, inspect recent work, and read saved schedule and service observations |
+| **Results** | Filter by outcome, definitive result, and freshness; browse every matching candidate; mark selections across pages |
+| **Candidate details** | Inspect provenance and validation evidence, then explicitly reveal or hide one key |
+| **Crawl** | Choose configured sources and page limits, review the request, and start collection |
+| **Check** | Review the focused candidate, marked candidates, or all matching candidates before starting Docker validation |
+| **Work and reports** | Follow committed progress, cancel work, and inspect saved source coverage and complete validation attempts |
+| **Export** | Review a JSON or key file export from a fixed snapshot, with a separate choice to include keys |
+
+Results stay fixed while you browse, even if work saves new data. Refresh to pick up changes. You can keep browsing and prepare an export while a manual operation runs. Existing export files are never overwritten.
+
+### A keyboard journey
+
+1. From Overview, press **`c`** to choose crawl sources, open the review, then select **Start**.
+2. Press **`b`** from Overview to browse Results. Use **`f`** for filters and **Space** to mark candidates.
+3. Press **`c`** from Results to choose a focused, marked, or matching check. Review the selection and configured policy, then select **Start**.
+4. Open **`w`** for work progress. Return to Results and press **`r`** to refresh saved results after completion.
+5. Press **Enter** for candidate details and **`k`** to reveal or hide its key, or **`e`** from Results to prepare a reviewed file export.
+
+Docker checks use the validator settings in your [private configuration](docs/configuration.md). Collection and saved reads do not require Docker. Stop an existing runner or service before starting manual work for the same profile.
+
+| Key | Context and action |
+| --- | --- |
+| `b` / `Esc` | Open Results from Overview / return from Results |
+| `c` | Crawl setup from Overview; check selection from Results or details |
+| `w` | Open work progress |
+| `f` / Space / Enter | Filter Results / mark a candidate / open details |
+| `k` / `e` | Reveal or hide a key in details / prepare export from Results |
+| Tab / Shift+Tab | Move between sections or fields |
+| Arrow keys / Page Up / Page Down | Navigate or scroll the current view |
+| `r` / `?` | Refresh the current saved view / open keyboard help |
+| Ctrl+X / Ctrl+G | Cancel operational work / cancel preparation independently |
+| `q` / Ctrl+C | Quit, with confirmation for active work / interrupt |
+
+The UI requires an actual Linux terminal of at least **60 columns × 16 rows**; **100 or more columns** gives you the wide Results layout. Set `--color never` or `NO_COLOR` for plain styling. Redirected input or output, unsupported platforms, and `TERM=dumb` show root help instead. See the [terminal guide](docs/terminal.md) for installation and runtime details.
 
 ## Get a confirmed key
 
@@ -117,7 +185,7 @@ To save all freshly confirmed keys, one per line:
 wpc export --format keys --status confirmed --freshness fresh --output confirmed-keys.txt
 ```
 
-Named exports create a private file and refuse to overwrite an existing destination. Keys remain hidden unless you explicitly use `--show-keys` or `--format keys`.
+Named exports create a private file and refuse to overwrite an existing destination. CLI keys remain hidden unless you explicitly use `--show-keys` or `--format keys`. In the terminal UI, key reveal and export disclosure are separate explicit choices.
 
 ## Run continuously
 
@@ -160,6 +228,7 @@ Use `wpc <command> --help` for flags. Candidate IDs come from `list`; run IDs co
 
 | Command | Description |
 | --- | --- |
+| `wpc` | Open the interactive terminal overview on a supported Linux terminal |
 | `wpc --help` | Show help without reading configuration, opening state, or contacting the network |
 | `wpc version` | Show binary version and source commit |
 | `wpc sources` | Show configured channels and effective page limits without crawling |
@@ -235,6 +304,7 @@ Settings are reread on start. Changing a bound executable, configuration, state,
 flowchart LR
     User[User or systemd user service] --> CLI[Cobra CLI]
     Config[Private JSON configuration] --> CLI
+    CLI <--> Terminal[Bundled Ink terminal UI]
     CLI --> App[Application coordinator and scheduler]
     App --> Source[Telegram public preview adapter]
     Source --> Telegram[Public Telegram pages]
@@ -259,6 +329,8 @@ One process owns database writes for a profile. Other processes can read saved r
 | `internal/source/telegram` | Bounded retrieval, page parsing, and exact extraction |
 | `internal/validator`, `cmd/wpc-worker` | Isolated checks, attributable evidence, and remote recovery |
 | `internal/service` | systemd user controls, status, logs, and diagnostics |
+| `internal/terminal`, `ui` | Bundled Ink interface, private protocol, reviewed actions, and terminal supervision |
+| `internal/diagnostic` | Safe structured events, console presentation, and diagnostic failure handling |
 
 ## Main algorithm
 
@@ -278,14 +350,17 @@ Public previews never establish complete channel history. Retrieval uses a 20 se
 | Cobra `1.10.2` | Commands, flags, and help |
 | SQLite via `modernc.org/sqlite 1.60.1` | Persistence without a C compiler for release builds |
 | goquery `1.13.0`, `x/net 0.58.0` | HTML parsing and candidate extraction |
-| `log/slog`, `encoding/json`, `database/sql` | Structured logs, configuration/evidence, and explicit SQL |
+| zerolog `1.35.1`, go-isatty `0.0.24` | Structured diagnostics and actual terminal destination detection |
+| `encoding/json`, `database/sql` | Configuration, evidence, and explicit SQL |
+| Ink `7.1.1`, React `19.2.8`, TypeScript `7.0.2` | Interactive terminal views and reviewed crawl, check, and export flows |
+| Bundled Node `24.20.0` | Pinned UI runtime shipped in each Linux archive |
 | Docker and official WARP `2026.8.2110.0` | Isolated entitlement checks |
 | systemd user services | Optional Linux background operation |
 | Go testing, Testify `1.11.1`, race detector | Unit, integration, subprocess, and concurrency checks |
 | GitHub Actions and GoReleaser `2.18.3` | CI, Linux archives, checksums, and GitHub Releases |
 | GitHub Container Registry | Matching versioned validator images |
 
-Exact dependencies are in [go.mod](go.mod) and [go.sum](go.sum).
+Exact dependencies are in [go.mod](go.mod), [go.sum](go.sum), [ui/package.json](ui/package.json), and [ui/pnpm-lock.yaml](ui/pnpm-lock.yaml).
 
 ## Troubleshooting
 
