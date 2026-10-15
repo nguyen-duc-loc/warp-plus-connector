@@ -1,8 +1,8 @@
 # 0010. Terminal foundation and overview
 
 **Date**: 2026-10-14
-**Status**: In Progress
-**Content confirmed**: 2026-10-14, after independent review and application of the five recommended fixes. Implementation and runtime verification remain pending.
+**Status**: Accepted
+**Content confirmed**: 2026-10-14, after independent review and application of the five recommended fixes. Implementation, runtime verification, and the Beta test workflow are complete. You accepted the feature on 2026-10-15.
 
 ## Summary
 

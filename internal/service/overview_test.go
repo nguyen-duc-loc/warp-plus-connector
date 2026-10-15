@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,6 +24,30 @@ func TestOverviewServiceDoesNotOpenBoundCollection(t *testing.T) {
 	data, err := os.ReadFile(m.StateDir)
 	require.NoError(t, err)
 	require.Equal(t, "not a collection directory", string(data))
+}
+
+// Spec 0010 AC-7, AC-14: aliases of absent paths compare without creating either collection.
+func TestCompareOverviewCollection_CanonicalAliasesAndUnknownIdentity(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Mkdir(real, 0700))
+	require.NoError(t, os.Symlink(real, alias))
+	bound := filepath.Join(real, "absent", "state")
+	for _, tc := range []struct{ name, selected, identity, want string }{
+		{"same alias", filepath.Join(alias, "absent", "state"), "verified", "match"},
+		{"different collection", filepath.Join(alias, "other"), "verified", "different"},
+		{"unverified service", bound, "unknown", "unknown"},
+		{"invalid selected path", "relative", "verified", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := state.OverviewService{IdentityState: tc.identity, BoundStateDir: &bound, CollectionMatch: "unknown"}
+			CompareOverviewCollection(tc.selected, &out)
+			require.Equal(t, tc.want, out.CollectionMatch)
+			_, err := os.Stat(bound)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
 }
 
 // Spec 0010 AC-9: missing and unreadable identities discard every cached service component.

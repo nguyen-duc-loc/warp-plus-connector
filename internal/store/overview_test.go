@@ -45,6 +45,42 @@ func TestOverviewSnapshotAndHistory(t *testing.T) {
 	require.True(t, o.OlderRunsAvailable)
 	require.Equal(t, run.ID, o.RecentRuns[0].Run.ID)
 	require.Equal(t, int64(338), o.RecentRuns[0].SavedCandidates)
+	next, err := r.GetOverview(t.Context(), func() time.Time { return fixtureTime }, time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, int64(339), next.Outcomes.Total)
+	require.Equal(t, next.Outcomes.Total, next.Schedule.Candidates.Total)
+	require.Equal(t, int64(339), next.RecentRuns[0].SavedCandidates)
+}
+
+// Spec 0010 AC-5: the limit notice needs an eleventh row, across both kinds of work.
+func TestOverview_HistoryBoundaryAndMixedKinds(t *testing.T) {
+	for _, count := range []int{0, 10, 11} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			w, _ := openWriter(t)
+			var runs []state.Run
+			for i := range count {
+				kind := state.Crawl
+				if i%2 == 1 {
+					kind = state.Validation
+				}
+				run, err := w.StartRun(t.Context(), state.RunInput{
+					RequestID: fmt.Sprintf("history_%d", i), Kind: kind,
+					StartedAt: fixtureTime.Add(-time.Duration(i) * time.Minute),
+				})
+				require.NoError(t, err)
+				runs = append(runs, run)
+			}
+			out, err := w.GetOverview(t.Context(), func() time.Time { return fixtureTime }, time.Hour)
+			require.NoError(t, err)
+			require.Len(t, out.RecentRuns, min(count, 10))
+			require.Equal(t, count > 10, out.OlderRunsAvailable)
+			for i, recent := range out.RecentRuns {
+				want := runs[count-1-i]
+				require.Equal(t, want, recent.Run, "order follows saved IDs, not timestamps")
+				require.Nil(t, recent.Totals, "legacy selection facts must stay unavailable")
+			}
+		})
+	}
 }
 
 // Spec 0010 AC-4: later uncertainty, the exact boundary, and future evidence remain distinct.
