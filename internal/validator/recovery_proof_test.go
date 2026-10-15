@@ -41,11 +41,9 @@ func TestReviewedAcquisition_DoesNotNestWorkerJournalWrites(t *testing.T) {
 // Spec 0012 AC-15: real reconciliation can clear a retained obligation before
 // image admission fails, while a missing journal never counts as cleanup proof.
 func TestReviewedAcquisition_RequiresOriginatingRecoveryProof(t *testing.T) {
-	for _, missing := range []bool{false, true} {
-		name := "reconciled before image failure"
-		if missing {
-			name = "missing journal"
-		}
+	for _, name := range []string{
+		"reconciled before image failure", "missing journal", "different journal owner", "different daemon",
+	} {
 		t.Run(name, func(t *testing.T) {
 			d, f := dockerFixture(t)
 			owner, err := d.acquire(t.Context(), true)
@@ -71,8 +69,14 @@ func TestReviewedAcquisition_RequiresOriginatingRecoveryProof(t *testing.T) {
 			binding := owner.CleanupBinding()
 			require.NotNil(t, binding)
 			require.NoError(t, owner.Close())
-			if missing {
+			if name == "missing journal" {
 				require.NoError(t, os.Remove(d.path()))
+			}
+			if name == "different journal owner" {
+				binding.path = t.TempDir()
+			}
+			if name == "different daemon" {
+				binding.daemon = "another-daemon"
 			}
 			f.recoveryError = nil
 			d.run = func(ctx context.Context, input []byte, args ...string) ([]byte, error) {
@@ -85,7 +89,12 @@ func TestReviewedAcquisition_RequiresOriginatingRecoveryProof(t *testing.T) {
 			_, err = d.AcquireReviewed(t.Context(), time.Now, time.Hour, func(fn func() error) error { return fn() },
 				binding, func() { resolved = true })
 			require.Error(t, err)
-			require.Equal(t, !missing, resolved)
+			require.Equal(t, name == "reconciled before image failure", resolved)
+			if name != "reconciled before image failure" {
+				var failure *Error
+				require.ErrorAs(t, err, &failure)
+				require.Equal(t, "validation_cleanup_pending", failure.Code)
+			}
 		})
 	}
 }

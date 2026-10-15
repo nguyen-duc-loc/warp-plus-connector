@@ -19,6 +19,7 @@ import (
 
 // Spec 0010 AC-3, AC-12: asset admission uses the real executable and rejects unsafe bundles.
 // Cancellation after admission proves the bundle passed without executing the fixture runtime.
+// Spec 0012 AC-16: an earlier protocol bundle cannot enter the controls session.
 func TestRun_BundleAdmission(t *testing.T) {
 	if want := os.Getenv("WPC_TEST_BUNDLE_RESULT"); want != "" {
 		ctx, cancel := context.WithCancel(t.Context())
@@ -48,7 +49,7 @@ func TestRun_BundleAdmission(t *testing.T) {
 	root := filepath.Join(dir, "lib", "wpc-ui")
 	for _, mode := range []string{
 		"valid symlink launcher", "missing asset", "changed payload", "wrong release", "wrong architecture",
-		"wrong lock", "unlisted module", "symlink asset", "path escape", "unknown field", "null commit",
+		"wrong lock", "unlisted module", "symlink asset", "path escape", "unknown field", "null commit", "old protocol",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			require.NoError(t, os.RemoveAll(root))
@@ -79,6 +80,8 @@ func TestRun_BundleAdmission(t *testing.T) {
 				manifest["release"], want = "other", "ui_version_mismatch"
 			case "wrong architecture":
 				manifest["arch"], want = "other", "ui_version_mismatch"
+			case "old protocol":
+				manifest["protocol_version"], want = 2, "ui_version_mismatch"
 			case "wrong lock":
 				manifest["lock_sha256"] = files["app/dist/main.js"]
 			case "unlisted module":

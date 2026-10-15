@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -11,11 +12,124 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/diagnostic"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/terminal"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+// Spec 0012 AC-7, AC-14 and AC-15: final output retains the originating cleanup
+// failure, newer saved work and independent publication, even at error verbosity.
+func TestTerminalWorkDiagnostic_PreservesIndependentReceipts(t *testing.T) {
+	var out bytes.Buffer
+	root := NewRootCommand("dev", "")
+	root.SetErr(&out)
+	require.NoError(t, root.PersistentFlags().Set("log-format", "json"))
+	require.NoError(t, root.PersistentFlags().Set("log-level", "error"))
+	timeout := PrepareTerminalTimeout(root)
+	inv := invocation(root)
+	inv.work.Store(&app.WorkState{
+		ID: 2, Kind: "crawl", RunID: 9007199254740994, RunCreated: "true", RunStatus: state.Completed,
+		Persistence: "known", Cleanup: "not_needed",
+		Unresolved: &app.WorkState{
+			ID: 1, Kind: "check", RunID: 9007199254740993, RunCreated: "true", RunStatus: state.Cancelled,
+			CancellationRequested: true, Persistence: "known", Cleanup: "unresolved",
+			ErrorCode: "validation_cleanup_pending",
+		},
+	})
+	inv.export.Store(&terminal.ExportReceipt{
+		Destination: "/tmp/reviewed.json", Published: new(true), Durability: "confirmed", Count: 3, Prepared: 3,
+	})
+	RenderFailure(root, nil, 0)
+	first := out.String()
+	RenderFailure(root, errors.New("private provider text"), 143)
+	timeout()
+	require.Equal(t, first, out.String())
+	lines := strings.Split(strings.TrimSpace(first), "\n")
+	require.Len(t, lines, 3)
+	var receipts [3]struct {
+		Event       string `json:"event"`
+		RunID       int64  `json:"run_id"`
+		Kind        string `json:"operation_kind"`
+		Cleanup     string `json:"cleanup"`
+		Publication string `json:"publication"`
+	}
+	for i, line := range lines {
+		require.NoError(t, json.Unmarshal([]byte(line), &receipts[i]))
+	}
+	require.Equal(t, "terminal_work", receipts[0].Event)
+	require.EqualValues(t, 9007199254740993, receipts[0].RunID)
+	require.Equal(t, "check", receipts[0].Kind)
+	require.Equal(t, "unresolved", receipts[0].Cleanup)
+	require.Equal(t, "terminal_work", receipts[1].Event)
+	require.EqualValues(t, 9007199254740994, receipts[1].RunID)
+	require.Equal(t, "crawl", receipts[1].Kind)
+	require.Equal(t, "terminal_export", receipts[2].Event)
+	require.Equal(t, "true", receipts[2].Publication)
+	require.NotContains(t, first, "private")
+	require.NotContains(t, first, "operation_id")
+}
+
+// Spec 0012 AC-15: one originating operation is emitted once, without guessing
+// an identity when the acknowledgement of run creation was lost.
+func TestTerminalWorkDiagnostic_UnknownOriginIsNotDuplicated(t *testing.T) {
+	root := NewRootCommand("dev", "")
+	var out bytes.Buffer
+	root.SetErr(&out)
+	require.NoError(t, root.PersistentFlags().Set("log-format", "json"))
+	PrepareTerminalTimeout(root)
+	work := app.WorkState{
+		ID: 1, Kind: "check", RunCreated: "unknown", Persistence: "uncertain", Cleanup: "unresolved",
+		ErrorCode: "ui_work_recovery_required",
+	}
+	retained := work
+	work.Unresolved = &retained
+	invocation(root).work.Store(&work)
+	RenderFailure(root, nil, 0)
+	require.Equal(t, 1, strings.Count(out.String(), `"event":"terminal_work"`))
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
+	require.Equal(t, `"unknown"`, string(fields["run_created"]))
+	require.Equal(t, `"uncertain"`, string(fields["persistence"]))
+	require.Equal(t, `"unresolved"`, string(fields["cleanup"]))
+	require.NotContains(t, fields, "run_id")
+	require.NotContains(t, fields, "run_status")
+}
+
+// Spec 0012 AC-15: failure on the first work receipt suppresses all later records.
+func TestTerminalWorkDiagnostic_FailedReceiptStopsAllOutput(t *testing.T) {
+	for _, fault := range []struct {
+		name  string
+		write func([]byte) (int, error)
+	}{
+		{"broken", func([]byte) (int, error) { return 0, io.ErrClosedPipe }},
+		{"short", func(p []byte) (int, error) { return len(p) - 1, nil }},
+		{"accepted with error", func(p []byte) (int, error) { return len(p), errors.New("private error") }},
+	} {
+		t.Run(fault.name, func(t *testing.T) {
+			writer := &metadataWriter{first: fault.write}
+			root := NewRootCommand("dev", "")
+			root.SetErr(writer)
+			timeout := PrepareTerminalTimeout(root)
+			inv := invocation(root)
+			inv.work.Store(&app.WorkState{
+				ID: 2, Kind: "crawl", RunCreated: "false", Persistence: "known", Cleanup: "not_needed",
+				Unresolved: &app.WorkState{
+					ID: 1, Kind: "check", RunCreated: "unknown", Persistence: "uncertain", Cleanup: "unresolved",
+				},
+			})
+			inv.export.Store(&terminal.ExportReceipt{Durability: "unknown"})
+			RenderFailure(root, errors.New("private error"), 143)
+			RenderFailure(root, nil, 0)
+			timeout()
+			require.Equal(t, 1, writer.writes)
+			require.Error(t, inv.sink.Err())
+		})
+	}
+}
 
 // Spec 0010 AC-13: timeout output keeps its prepared destination and invocation failure latch.
 func TestTerminalTimeoutDiagnostic(t *testing.T) {

@@ -44,7 +44,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 11 | Readable development logs | Slice 7 | done |
 | 12 | Terminal foundation and overview | Slice 8 | done |
 | 13 | Terminal results and export | Slice 9 | done |
-| 14 | Terminal crawl and check controls | Slice 10 | in-progress |
+| 14 | Terminal crawl and check controls | Slice 10 | done |
 
 ## Foundations
 
@@ -313,7 +313,7 @@ Let you browse saved candidates, filter by outcome and freshness, inspect detail
 
 ## Slice 10: Run work and understand its progress
 
-### 14. Terminal crawl and check controls · in-progress
+### 14. Terminal crawl and check controls · done
 
 Let you start a crawl or check selected candidates, follow concurrent progress, and inspect the saved outcome. Present meaningful activity and recovery guidance in the main view, with technical details available when needed.
 
@@ -332,7 +332,9 @@ Let you start a crawl or check selected candidates, follow concurrent progress, 
 **Code:** `internal/app/work.go`, `internal/app/reports.go`, `internal/terminal/work_dispatch.go`, `internal/terminal/report_dispatch.go`, and `ui/src/controls.tsx`. Protocol 3 bundles build for both architectures. Controlled protocol and native arm64 terminal journeys cover saved work, cancellation, ownership conflicts, and complete reports.
 
 - [x] Verify it: `/check verify terminal crawl and check controls`
-- [ ] Test it: `/test terminal crawl and check controls`
+- [x] Test it: `/test terminal crawl and check controls`
+
+**Test pass, 2026-10-16:** Added 62 regression cases across nine test files, with acceptance criteria in test comments. Coverage includes configured crawl reviews, exact marked selection, changed candidate identity, stale reviews, cancellation ownership, verified service guidance, fixed reports, cancelled activation, originating recovery proofs, independent final receipts, closed protocol records, bundle compatibility, and keyboard controls. Formatting, vet, lint, the full Go race suite (1246 tests and subtests passed, four skipped), and the UI gate (67 tests passed) pass on macOS arm64. Native Linux archives, terminal restoration deadlines, and live provider checks retain the existing spec 0012 verification evidence and were not repeated in this test pass. Test it is checked. The user approved marking the feature done and the spec Accepted.
 
 ## Deferred
 
