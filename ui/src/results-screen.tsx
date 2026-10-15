@@ -79,6 +79,7 @@ export function ResultsScreen({channel,hello,active,onOverview,quit}:Props) {
   const [historyUnavailable,setHistoryUnavailable]=useState(false);
   const sectionPositions=useRef([0n,0n,0n]);const sectionScroll=useRef([0,0,0]);
   const [revealedKey,setRevealedKey]=useState<string|null>(null);const revealGeneration=useRef(0);
+  const revealPending=useRef(false);const pendingDetailAction=useRef<(()=>void)|null>(null);
   const [selection,setSelection]=useState<'matching'|'marked'>('matching');
   const [format,setFormat]=useState<'json'|'keys'>('json');const [includeKeys,setIncludeKeys]=useState(false);
   const [path,setPath]=useState('');const [field,setField]=useState(0);
@@ -98,7 +99,10 @@ export function ResultsScreen({channel,hello,active,onOverview,quit}:Props) {
       if(!mounted.current)return;
       if(e instanceof wire.OperationError) setMessage(`${explain(e.message)}${retryPosition.current!==null ? " t retries the page." : ""}`);else quit(1);
     }).finally(()=>{
-      entered.current=false;if(!mounted.current)return;setBusy(false);
+      entered.current=false;if(!mounted.current)return;
+      const detailAction=pendingDetailAction.current;pendingDetailAction.current=null;
+      if(detailAction && channel.connected){detailAction();return}
+      setBusy(false);
       const next=pendingPosition.current;pendingPosition.current=null;
       if(next!==null) navigateRef.current(next);
     });
@@ -235,6 +239,12 @@ export function ResultsScreen({channel,hello,active,onOverview,quit}:Props) {
       return;
     }
     if(busy){
+      if(revealPending.current && (key.escape || input==='c' || input==='k' || (input==='r' && !small))){
+        clearKey();
+        if(key.escape)pendingDetailAction.current=leaveDetails;
+        else if(input==='r')pendingDetailAction.current=openDetail;
+        setMessage('Cancellation requested');return;
+      }
       if(input==='c' || key.escape){cancelWanted.current=true;setMessage('Cancellation requested')}
       else if(surface==='results' && !job?.state.match(/running|cancelling/) && view){
         const base=pendingPosition.current ?? desiredPosition.current;
@@ -287,9 +297,12 @@ export function ResultsScreen({channel,hello,active,onOverview,quit}:Props) {
         if(revealedKey!==null){clearKey();return}
         const generation=++revealGeneration.current,d=detail;
         perform(async()=>{
-          const r=await rpc('candidate.reveal',{view_id:d.view_id,detail_id:d.detail_id,candidate_id:d.candidate_id},wire.revealed);
-          if(r.view_id!==d.view_id || r.detail_id!==d.detail_id || r.candidate_id!==d.candidate_id)invalid();
-          if(generation===revealGeneration.current && detailRef.current?.detail_id===d.detail_id)setRevealedKey(r.key);
+          revealPending.current=true;
+          try {
+            const r=await rpc('candidate.reveal',{view_id:d.view_id,detail_id:d.detail_id,candidate_id:d.candidate_id},wire.revealed);
+            if(r.view_id!==d.view_id || r.detail_id!==d.detail_id || r.candidate_id!==d.candidate_id)invalid();
+            if(generation===revealGeneration.current && detailRef.current?.detail_id===d.detail_id)setRevealedKey(r.key);
+          }finally {revealPending.current=false}
         });return;
       }
       if(section!==0 && detail && (key.pageUp || key.pageDown || key.home || key.end)){

@@ -80,6 +80,12 @@ func terminalExport(
 		Destination: review.Destination, Selection: review.Selection, Format: review.Format,
 		IncludeKeys: review.IncludeKeys, Count: review.Count, Published: new(false), Durability: "not_published",
 	}
+	phase := "destination"
+	progress := func(next string) {
+		phase = next
+		observe(next, receipt)
+	}
+	progress(phase)
 	fail := func(err error) {
 		failure := deliveryFailure(err)
 		receipt.ErrorCode, receipt.Remaining = failure.code, failure.remaining
@@ -98,25 +104,35 @@ func terminalExport(
 		receipt.ErrorCode = "export_destination_invalid"
 		return
 	}
+	progress("encoding")
 	stage, err := stageDestination(dest)
 	if err != nil {
 		fail(err)
 		return
 	}
 	defer func() {
-		observe("cleanup", receipt)
+		failurePhase := ""
+		if receipt.ErrorCode != "" {
+			failurePhase = phase
+		}
+		progress("cleanup")
 		if e := stage.cleanup(); e != nil {
 			if receipt.ErrorCode == "" {
 				receipt.ErrorCode = "export_cleanup_failed"
+				failurePhase = "cleanup"
 			}
 			receipt.Remaining = stage.directory
 		}
-		observe("cleanup", receipt)
+		if failurePhase != "" {
+			progress(failurePhase)
+		} else {
+			progress("cleanup")
+		}
 	}()
-	stage.observe = func(phase string, published *bool, durability string) {
+	stage.observe = func(next string, published *bool, durability string) {
 		receipt.Published = published
 		receipt.Durability = durability
-		observe(phase, receipt)
+		progress(next)
 	}
 	writer := bufio.NewWriter(stage.file)
 	encoder := candidateEncoder{
@@ -127,7 +143,7 @@ func terminalExport(
 		receipt.ErrorCode = "export_prepare_failed"
 		return
 	}
-	observe("encoding", receipt)
+	progress("encoding")
 	err = rows(
 		ctx, func(c state.Candidate) error {
 			if e := ctx.Err(); e != nil {
@@ -137,7 +153,7 @@ func terminalExport(
 				return e
 			}
 			receipt.Prepared++
-			observe("encoding", receipt)
+			progress("encoding")
 			return nil
 		},
 	)

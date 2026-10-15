@@ -188,7 +188,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 	ready := false
 	overviewStarted := false
 	busy := false
-	completed := make(chan error, 1)
+	completed := replyCompletion{done: make(chan error, 1)}
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	lastIdentity := ""
@@ -209,7 +209,8 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				return failure("ui_startup_timeout")
 			}
 			return failure("ui_read_timeout")
-		case err := <-completed:
+		case err := <-completed.done:
+			completed.publishing.Store(false)
 			busy = false
 			if overviewStarted {
 				deadline.Stop()
@@ -236,8 +237,13 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				return frame.err
 			}
 			if busy {
-				select {
-				case err := <-completed:
+				if err, ok := completed.take(ctx, deadline.C); ok {
+					if errors.Is(err, errReplyDeadline) {
+						if !overviewStarted {
+							return failure("ui_startup_timeout")
+						}
+						return failure("ui_read_timeout")
+					}
 					if overviewStarted {
 						deadline.Stop()
 					}
@@ -245,7 +251,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 						return err
 					}
 					ready = true
-				default:
+				} else {
 					return failure("ui_protocol_invalid")
 				}
 			}
@@ -265,7 +271,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				hello = true
 				busy = true
 				work.Add(1)
-				go func() { defer work.Done(); completed <- writeReply(replies, r.ID, helloResult(o)) }()
+				go func() { defer work.Done(); completed.write(replies, r.ID, helloResult(o)) }()
 				continue
 			}
 			if r.Method != "overview" {
@@ -281,12 +287,12 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 					if e != nil {
 						code := codeFor(e)
 						if code == "ui_protocol_invalid" {
-							completed <- e
+							completed.done <- e
 							return
 						}
 						value = record{"error_code": code}
 					}
-					completed <- writeReply(replies, r.ID, value)
+					completed.write(replies, r.ID, value)
 				}()
 				continue
 			}
@@ -302,19 +308,19 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			go func() {
 				defer work.Done()
 				if bridge.active() {
-					completed <- writeReply(replies, r.ID, record{"error_code": "ui_busy"})
+					completed.write(replies, r.ID, record{"error_code": "ui_busy"})
 					return
 				}
 				if bridge.session != nil {
 					bridge.review = nil
 					if e := bridge.session.CloseDetail(ctx); e != nil {
-						completed <- writeReply(replies, r.ID, record{"error_code": codeFor(e)})
+						completed.write(replies, r.ID, record{"error_code": codeFor(e)})
 						return
 					}
 				}
 				value := o.Read(ctx)
 				if ctx.Err() != nil {
-					completed <- ctx.Err()
+					completed.done <- ctx.Err()
 					return
 				}
 				s := &value.Service
@@ -326,7 +332,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				} else {
 					lastIdentity = ""
 				}
-				completed <- writeReply(replies, r.ID, overviewResult(value))
+				completed.write(replies, r.ID, overviewResult(value))
 			}()
 		}
 	}

@@ -31,6 +31,11 @@ type resultsDriver struct {
 // cannot satisfy an action's assertion, even when its label is unchanged.
 func (d resultsDriver) wait(after int, needle string) string {
 	d.t.Helper()
+	defer func() {
+		if d.t.Failed() {
+			d.t.Logf("terminal output after %d waiting for %q: %q", after, needle, d.output.text()[after:])
+		}
+	}()
 	var frame string
 	require.Eventually(d.t, func() bool {
 		raw := d.output.text()

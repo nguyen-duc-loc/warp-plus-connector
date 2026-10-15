@@ -80,6 +80,7 @@ func TestTerminalExport_PublicationFacts(t *testing.T) {
 				require.NoError(t, os.Rename(parent, parent+"-old"))
 				require.NoError(t, os.Mkdir(parent, 0700))
 			}
+			var finalPhase string
 			receipt := terminalExport(ctx, review, func(ctx context.Context, emit func(state.Candidate) error) error {
 				key := "exact-key"
 				if mode == "unsafe_key" {
@@ -94,10 +95,19 @@ func TestTerminalExport_PublicationFacts(t *testing.T) {
 				}
 				return err
 			}, func(phase string, r terminal.ExportReceipt) {
+				finalPhase = phase
 				if mode == "cancel_at_link" && phase == "publication" && r.Published == nil {
 					cancel()
 				}
 			})
+			wantPhase := "encoding"
+			switch mode {
+			case "changed_parent":
+				wantPhase = "destination"
+			case "cancel_at_link", "destination_race":
+				wantPhase = "publication"
+			}
+			require.Equal(t, wantPhase, finalPhase, "cleanup must not replace the original failure phase")
 			switch mode {
 			case "cancel_at_link":
 				require.Equal(t, true, *receipt.Published)
