@@ -18,7 +18,10 @@ PATH="$(pwd)/.ui-build/tools/node/bin:$PATH"
 export PATH
 # npm is used only to bootstrap the exact pnpm build tool from the checked Node archive.
 npm install --global --prefix "$(pwd)/.ui-build/tools/node" "pnpm@$ui_pnpm" --ignore-scripts --no-audit --no-fund
-test "$(pnpm --version)" = "$ui_pnpm"
+# Initialize only pnpm's pinned native launcher. Its fallback script has no
+# shebang, so a shell version check can pass while Python exec fails with ENOEXEC.
+node .ui-build/tools/node/lib/node_modules/pnpm/install.js
+python3 -c 'import subprocess,sys; assert subprocess.check_output(["pnpm", "--version"], text=True).strip() == sys.argv[1]' "$ui_pnpm"
 if [ -n "${GITHUB_PATH:-}" ]; then
   printf '%s\n' "$(pwd)/.ui-build/tools/node/bin" >> "$GITHUB_PATH"
 fi
