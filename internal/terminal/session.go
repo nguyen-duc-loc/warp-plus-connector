@@ -17,6 +17,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/config"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 )
 
@@ -56,6 +57,9 @@ type Options struct {
 	Suggestions            [2]string
 	Read                   func(context.Context) state.Overview
 	Results                *app.ResultsSession
+	Work                   *app.WorkSession
+	Settings               config.Settings
+	Reports                *app.ReportSession
 	Destination            ExportDestination
 	Export                 ExportOperation
 	ObserveExport          func(ExportReceipt)
@@ -192,8 +196,17 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	lastIdentity := ""
+	stopWatch := time.NewTicker(50 * time.Millisecond)
+	defer stopWatch.Stop()
 	for {
 		select {
+		case <-stopWatch.C:
+			if o.Work != nil {
+				limit := o.Work.Guard.Deadline()
+				if !limit.IsZero() && time.Until(limit) <= 2*time.Second {
+					return failure("ui_shutdown_timeout")
+				}
+			}
 		case fatal := <-bridge.fatal:
 			return fatal
 		case <-ctx.Done():
@@ -265,7 +278,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				if r.Method != "hello" || strictJSON(r.Params, &p) != nil {
 					return failure("ui_protocol_invalid")
 				}
-				if p.Release != o.Release || p.Commit != o.Commit || p.Protocol != 2 {
+				if p.Release != o.Release || p.Commit != o.Commit || p.Protocol != 3 {
 					return failure("ui_version_mismatch")
 				}
 				hello = true
@@ -341,9 +354,9 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 func helloResult(o Options) any {
 	zone, _ := time.Now().In(time.Local).Zone()
 	return map[string]any{
-		"release": o.Release, "commit": o.Commit, "protocol": 2,
+		"release": o.Release, "commit": o.Commit, "protocol": 3,
 		"parent_pid":   strconv.Itoa(os.Getpid()),
-		"capabilities": []string{"overview", "results", "details", "reveal", "export"},
+		"capabilities": []string{"overview", "results", "details", "reveal", "export", "work", "reports"},
 		"color":        o.Color, "refresh_delay_ns": "5000000000", "timezone": zone,
 		"profile": map[string]any{
 			"state_dir": o.StateDir, "config_path": o.ConfigPath,

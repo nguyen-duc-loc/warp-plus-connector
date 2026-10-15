@@ -2,6 +2,7 @@ import { Box, Text, useInput, useWindowSize } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import { age, type Cache, initial, refresh, type Saved } from './cache.js';
 import type { Channel } from './channel.js';
+import { Controls, type ControlsAPI } from './controls.js';
 import { ResultsScreen } from './results-screen.js';
 import { type Hello, overview, type Stamp } from './schema.js';
 import { safe, theme } from './theme.js';
@@ -189,10 +190,29 @@ type ScreenProps = { channel: Channel; hello: Hello; quit: (code: number, interr
 export function Screen(props: ScreenProps) {
     const [results, setResults] = useState(false);
     return (
-        <>
-            <OverviewScreen {...props} active={!results} onResults={() => setResults(true)} />
-            <ResultsScreen {...props} active={results} onOverview={() => setResults(false)} />
-        </>
+        <Controls channel={props.channel} hello={props.hello} quit={props.quit}>
+            {(controls) => (
+                <>
+                    <OverviewScreen
+                        {...props}
+                        quit={controls.quit}
+                        controls={controls}
+                        active={!results && !controls.active}
+                        onResults={() => setResults(true)}
+                    />
+                    <ResultsScreen
+                        {...props}
+                        quit={controls.quit}
+                        active={results && !controls.active}
+                        onOverview={() => setResults(false)}
+                        onCheck={controls.check}
+                        onWork={controls.work}
+                        indicator={controls.indicator}
+                        suspended={controls.active}
+                    />
+                </>
+            )}
+        </Controls>
     );
 }
 function OverviewScreen({
@@ -201,13 +221,15 @@ function OverviewScreen({
     quit,
     active,
     onResults,
-}: ScreenProps & { active: boolean; onResults: () => void }) {
+    controls,
+}: ScreenProps & { active: boolean; onResults: () => void; controls: ControlsAPI }) {
     const { columns, rows } = useWindowSize();
     const [cache, setCache] = useState(initial);
     const [busy, setBusy] = useState(true);
     const [focus, setFocus] = useState(0);
     const [scroll, setScroll] = useState(0);
     const [help, setHelp] = useState(false);
+    const [helpScroll, setHelpScroll] = useState(0);
     const [now, setNow] = useState(performance.now());
     const navigation = useRef(false);
     const readingRef = useRef(false);
@@ -221,7 +243,7 @@ function OverviewScreen({
             reading = false,
             pending = false;
         let timer: NodeJS.Timeout | undefined;
-        const read = async () => {
+        const read = async (manual = false) => {
             if (!live) return;
             if (reading) {
                 pending = true;
@@ -232,7 +254,7 @@ function OverviewScreen({
             readingRef.current = true;
             setBusy(true);
             try {
-                const next = overview(await channel.request('overview', {}));
+                const next = overview(await channel.request('overview', {}, manual ? 1 : 3));
                 if (live) setCache((old) => refresh(old, next));
             } catch {
                 if (live) quit(1);
@@ -252,7 +274,7 @@ function OverviewScreen({
                 void read();
             } else timer = setTimeout(() => void read(), theme.refreshDelay);
         };
-        request.current = () => void read();
+        request.current = () => void read(true);
         void read();
         const tick = setInterval(() => setNow(performance.now()), 1000);
         return () => {
@@ -277,6 +299,23 @@ function OverviewScreen({
     useEffect(() => setScroll((p) => Math.max(0, Math.min(p, maximum))), [maximum]);
     useInput((input, key) => {
         if (!active) return;
+        if (key.ctrl && (input === 'x' || input === 'g')) return;
+        if (key.ctrl && input === 'c') {
+            quit(130, true);
+            return;
+        }
+        if (input === 'w') {
+            controls.work();
+            return;
+        }
+        if (!help && !small && input === 'c') {
+            controls.crawl();
+            return;
+        }
+        if (!help && !small && key.return && focus === 1) {
+            controls.recent(cache.collection.data?.recent_runs ?? []);
+            return;
+        }
         if (input === 'b' && !help && !small) {
             navigation.current = true;
             if (!readingRef.current) onResults();
@@ -296,13 +335,25 @@ function OverviewScreen({
         }
         if (input === '?') {
             setHelp((h) => !h);
+            setHelpScroll(0);
             return;
         }
         if (key.escape && help) {
             setHelp(false);
             return;
         }
-        if (help || small) return;
+        if (help) {
+            if (key.upArrow || key.pageUp) setHelpScroll((n) => Math.max(0, n - (key.pageUp ? height : 1)));
+            if (key.downArrow || key.pageDown)
+                setHelpScroll((n) =>
+                    Math.min(
+                        Math.max(0, helpLines.flatMap((s) => wrap(s, width)).length - height),
+                        n + (key.pageDown ? height : 1),
+                    ),
+                );
+            return;
+        }
+        if (small) return;
         if (key.tab) {
             const next = (focus + (key.shift ? 3 : 1)) % 4;
             setFocus(next);
@@ -317,6 +368,10 @@ function OverviewScreen({
     );
     const helpLines = [
         'Keyboard help',
+        'Ctrl+X  Cancel only operational work',
+        'Ctrl+G  Cancel only preparation',
+        'c  Crawl setup and review | w  Work',
+        'Enter on Recent work  Open saved runs',
         'Tab / Shift+Tab  Focus sections',
         'Up / Down  Scroll one row',
         'Page Up / Page Down  Scroll one viewport',
@@ -331,7 +386,7 @@ function OverviewScreen({
     const shown = help
         ? helpLines
               .flatMap((s) => wrap(s, width))
-              .slice(0, height)
+              .slice(helpScroll, helpScroll + height)
               .map((text) => ({ text }))
         : small
           ? wrap('Resize to at least 60 columns and 16 rows. r refresh | ? help | q quit', width)
@@ -342,7 +397,7 @@ function OverviewScreen({
         `WPC ${hello.release}  Overview  | ${busy ? 'Refreshing' : degraded ? 'Degraded' : 'Ready'}`,
         `Collection ${hello.profile.state_dir}`,
         cache.header ? at(cache.header) : `Loading | ${hello.timezone}`,
-        '',
+        controls.indicator,
     ];
     if (!active) return null;
     return (
@@ -370,13 +425,9 @@ function OverviewScreen({
                 ))}
             </Box>
             <Text wrap="truncate-end">
-                {small ? 'r refresh | ? help | q quit' : 'b Results | Tab sections | r refresh | ? help | q quit'}
+                {small ? 'r refresh | ? help | q quit' : 'b Results | c Crawl | w Work | r refresh | ? help | q quit'}
             </Text>
-            <Text wrap="truncate-end">
-                {help
-                    ? 'Esc returns to overview'
-                    : `${names[focus]} | Rows ${position + 1}-${Math.min(lines.length, position + height)} of ${lines.length}`}
-            </Text>
+            <Text wrap="truncate-end">{help ? 'Esc returns to overview' : controls.cancelLabel}</Text>
         </Box>
     );
 }

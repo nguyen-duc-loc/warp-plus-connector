@@ -24,6 +24,7 @@ type registry struct {
 }
 
 type dockerOwner struct {
+	uncertainSessions           []manifest
 	clock                       func() time.Time
 	interval                    time.Duration
 	inspected, probe, throttled bool
@@ -120,6 +121,9 @@ func (d *Docker) acquireAt(
 			return nil, &Error{Code: "validator_version_mismatch"}
 		}
 	}
+	if err = owner.checkRetained(); err != nil {
+		return nil, err
+	}
 	if err = owner.reconcile(ctx); err != nil {
 		return nil, err
 	}
@@ -132,6 +136,9 @@ func (d *Docker) acquireAt(
 	// Keep an empty registry so older executables reject the new contract.
 	if err = owner.save(owner.registry.Sessions); err != nil {
 		return nil, err
+	}
+	if d.retained != nil && d.resolved != nil {
+		d.resolved()
 	}
 	if checkImage {
 		if err = d.image(ctx, endpoint); err != nil {
@@ -182,6 +189,7 @@ func (o *dockerOwner) save(sessions []manifest) error {
 	next.Sessions = append([]manifest{}, sessions...)
 	if o.docker.replaceJournal(next) != nil {
 		o.poisoned = true
+		o.uncertainSessions = append([]manifest{}, sessions...)
 		return &Error{Code: "validator_state_error"}
 	}
 	o.registry = next
@@ -405,6 +413,15 @@ func receiptResult(r protocol.Receipt) (Result, error) {
 }
 
 func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result, err error) {
+	activity := func(phase string) error {
+		if h.Activity != nil {
+			return h.Activity(phase)
+		}
+		return nil
+	}
+	if err = activity("preparing"); err != nil {
+		return result, err
+	}
 	token := rand.Text()
 	if h.Session != nil {
 		if err = h.Session(token); err != nil {
@@ -439,6 +456,7 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 		if m.ContainerID == "" {
 			return
 		}
+		_ = activity("cleanup")
 		cleanup := cleanupContext()
 		defer cancelCollection()
 		var receipt protocol.Receipt
@@ -550,6 +568,9 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 	if receipt.Phase != "prepared" {
 		return result, &Error{Code: "validator_protocol_error"}
 	}
+	if err = activity("registering"); err != nil {
+		return result, err
+	}
 	if err = h.Admit(ctx, "register"); err != nil {
 		return result, err
 	}
@@ -581,6 +602,9 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 		return result, nil
 	}
 	registrationDone = true
+	if err = activity("attaching"); err != nil {
+		return result, err
+	}
 	if err = h.Admit(ctx, "attach"); err != nil {
 		return result, err
 	}
@@ -597,6 +621,9 @@ func (o *dockerOwner) Run(ctx context.Context, in Input, h Hooks) (result Result
 	type response struct {
 		receipt protocol.Receipt
 		err     error
+	}
+	if err = activity("polling"); err != nil {
+		return result, err
 	}
 	responses := make(chan response, 1)
 	// Keep the exec alive for cleanup. The host active deadline triggers cancel and

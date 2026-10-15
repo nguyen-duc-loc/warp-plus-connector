@@ -8,8 +8,10 @@ import (
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/source/telegram"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/terminal"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -57,11 +59,26 @@ func openTerminal(cmd *cobra.Command, release, commit string) error {
 		inv = newInvocation(cmd, presentation(cmd), nil)
 		cmd.SetContext(context.WithValue(cmd.Context(), diagnosticKey{}, inv))
 	}
+
+	a.Source = telegram.New(release, time.Now, nil)
+	a.Validator = validator.Unsupported{Version: release}
+	if settings.Validator == "docker" {
+		a.Validator = &validator.Docker{
+			Options: validator.DockerOptions{
+				Image: settings.ValidatorImage, Socket: settings.ValidatorSocket, StateDir: settings.ValidatorStateDir,
+			},
+		}
+	}
+	work := a.NewWorkSession()
+	work.Guard = terminal.OperationGuard(cmd.Context())
+	work.Observe = func(r app.WorkState) { inv.work.Store(&r) }
 	return terminal.Run(
 		cmd.Context(), cmd.InOrStdin().(*os.File), cmd.OutOrStdout().(*os.File), terminal.Options{
 			Release: release, Commit: commit, Color: presentation(cmd).Color, StateDir: settings.StateDir,
 			ConfigPath: settings.ConfigPath, Suggestions: suggestions, Read: a.ReadOverview,
-			Results: a.NewResultsSession(), Destination: terminalDestination, Export: terminalExport,
+			Results: a.NewResultsSession(),
+			Work:    work, Settings: settings, Reports: a.NewReportSession(),
+			Destination: terminalDestination, Export: terminalExport,
 			ObserveExport: func(r terminal.ExportReceipt) { inv.export.Store(&r) },
 		},
 	)

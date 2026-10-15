@@ -16,12 +16,12 @@ import (
 func TestRequestBoundary(t *testing.T) {
 	for _, raw := range []string{
 		`{"version":1,"id":"1","method":"overview","params":{}}` + "\n",
-		`{"version":2,"id":"1","method":"hello","params":{},"extra":true}` + "\n",
-		`{"version":2,"id":"1","id":"2","method":"hello","params":{}}` + "\n",
-		`{"Version":2,"id":"1","method":"hello","params":{}}` + "\n",
-		`{"version":2,"id":"01","method":"hello","params":{}}` + "\n",
-		`{"version":2,"id":"1","method":"overview","params":null}` + "\n",
-		`{"version":2,"id":"1","method":"hello","params":{}}`,
+		`{"version":3,"id":"1","method":"hello","params":{},"extra":true}` + "\n",
+		`{"version":3,"id":"1","id":"2","method":"hello","params":{}}` + "\n",
+		`{"Version":3,"id":"1","method":"hello","params":{}}` + "\n",
+		`{"version":3,"id":"01","method":"hello","params":{}}` + "\n",
+		`{"version":3,"id":"1","method":"overview","params":null}` + "\n",
+		`{"version":3,"id":"1","method":"hello","params":{}}`,
 		strings.Repeat(" ", requestLimit) + "\n",
 	} {
 		_, err := readRequest(bufio.NewReaderSize(strings.NewReader(raw), requestLimit), new(big.Int))
@@ -29,8 +29,8 @@ func TestRequestBoundary(t *testing.T) {
 	}
 	reader := bufio.NewReaderSize(
 		strings.NewReader(
-			`{"version":2,"id":"9007199254740993","method":"overview","params":{}}`+"\n"+
-				`{"version":2,"id":"9007199254740993","method":"overview","params":{}}`+"\n",
+			`{"version":3,"id":"9007199254740993","method":"overview","params":{}}`+"\n"+
+				`{"version":3,"id":"9007199254740993","method":"overview","params":{}}`+"\n",
 		), requestLimit,
 	)
 	previous := new(big.Int)
@@ -43,7 +43,7 @@ func TestRequestBoundary(t *testing.T) {
 
 // Spec 0010 AC-12: the newline belongs to the frame budget and EOF is never a partial request.
 func TestRequest_ExactFrameLimitAndSequence(t *testing.T) {
-	base := `{"version":2,"id":"9007199254740993","method":"overview","params":{}}`
+	base := `{"version":3,"id":"9007199254740993","method":"overview","params":{}}`
 	for _, size := range []int{requestLimit, requestLimit + 1} {
 		t.Run(big.NewInt(int64(size)).String(), func(t *testing.T) {
 			raw := base + strings.Repeat(" ", size-len(base)-1) + "\n"
@@ -129,6 +129,6 @@ func TestHelloRequiresStringCommit(t *testing.T) {
 		Commit   string `json:"commit"`
 		Protocol int    `json:"protocol"`
 	}
-	require.NoError(t, strictJSON([]byte(`{"release":"dev","commit":"","protocol":2}`), &params))
-	require.Error(t, strictJSON([]byte(`{"release":"dev","commit":null,"protocol":2}`), &params))
+	require.NoError(t, strictJSON([]byte(`{"release":"dev","commit":"","protocol":3}`), &params))
+	require.Error(t, strictJSON([]byte(`{"release":"dev","commit":null,"protocol":3}`), &params))
 }

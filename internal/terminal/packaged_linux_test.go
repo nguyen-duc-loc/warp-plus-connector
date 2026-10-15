@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +48,7 @@ func TestPackagedTerminal(t *testing.T) {
 	}
 	for _, mode := range []string{
 		"quit", "interrupt", "terminate", "hangup", "child_crash", "absent", "scheduled",
-		"results", "results_compact", "results_failure",
+		"results", "results_compact", "results_failure", "controls", "controls_compact", "controls_cancel",
 	} {
 		t.Run(
 			mode, func(t *testing.T) {
@@ -73,7 +75,7 @@ func TestPackagedTerminal(t *testing.T) {
 				before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 				require.NoError(t, err)
 				size := &unix.Winsize{Row: 30, Col: 110}
-				if mode == "results_compact" {
+				if mode == "results_compact" || mode == "controls_compact" {
 					size = &unix.Winsize{Row: 16, Col: 60}
 				}
 				require.NoError(
@@ -82,6 +84,20 @@ func TestPackagedTerminal(t *testing.T) {
 				)
 				cmd := exec.Command(executable, "--state-dir", dir, "--color", "never")
 				cmd.Env = append(os.Environ(), "TERM=xterm-256color", "NO_COLOR=1", "NODE_OPTIONS=--invalid-option")
+				if mode == "controls_cancel" {
+					proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if r.Method != http.MethodConnect {
+							w.WriteHeader(http.StatusBadRequest)
+							return
+						}
+						select {
+						case <-r.Context().Done():
+						case <-time.After(10 * time.Second):
+						}
+					}))
+					t.Cleanup(func() { proxy.CloseClientConnections(); proxy.Close() })
+					cmd.Env = append(cmd.Env, "HTTPS_PROXY="+proxy.URL, "NO_PROXY=", "no_proxy=")
+				}
 				cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 				cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 				require.NoError(t, cmd.Start())
@@ -109,6 +125,10 @@ func TestPackagedTerminal(t *testing.T) {
 				seen("Overview  | Ready")
 				want := 0
 				switch mode {
+				case "controls_cancel":
+					verifyPackagedCancellation(t, master, &output)
+				case "controls", "controls_compact":
+					verifyPackagedControls(t, dir, master, &output)
 				case "results", "results_compact", "results_failure":
 					verifyPackagedResults(t, executable, dir, master, &output, mode)
 				case "quit":
@@ -222,21 +242,29 @@ func seedOverviewSchedule(t *testing.T, dir string) {
 		[]state.SourcePlan{{Channel: "warpplus", PageLimit: 1}}, false,
 	)
 	require.NoError(t, err)
-	r, err := w.StartCrawl(t.Context(), state.CrawlInput{
-		RequestID: rand.Text(), StartedAt: at, SourceID: "telegram:warpplus",
-		RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1,
-	})
+	r, err := w.StartCrawl(
+		t.Context(), state.CrawlInput{
+			RequestID: rand.Text(), StartedAt: at, SourceID: "telegram:warpplus",
+			RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1,
+		},
+	)
 	require.NoError(t, err)
 	_, err = w.RecordCrawlPage(t.Context(), state.CrawlPage{RunID: r.Run.ID, FetchedAt: at})
 	require.NoError(t, err)
-	_, err = w.FinishRun(t.Context(), state.RunCompletion{
-		RunID: r.Run.ID, Status: state.Completed, FinishedAt: at,
-	})
+	_, err = w.FinishRun(
+		t.Context(), state.RunCompletion{
+			RunID: r.Run.ID, Status: state.Completed, FinishedAt: at,
+		},
+	)
 	require.NoError(t, err)
-	require.NoError(t, w.SaveValidationWait(t.Context(), at, &state.ValidationWait{
-		Reason: "provider_cooldown", BasisAt: at, RetryAt: at.Add(time.Hour),
-		ObservedAt: at, Interval: time.Hour,
-	}, false))
+	require.NoError(
+		t, w.SaveValidationWait(
+			t.Context(), at, &state.ValidationWait{
+				Reason: "provider_cooldown", BasisAt: at, RetryAt: at.Add(time.Hour),
+				ObservedAt: at, Interval: time.Hour,
+			}, false,
+		),
+	)
 	s, err := w.GetSchedule(t.Context(), 0, time.Now)
 	require.NoError(t, err)
 	require.NotNil(t, s.Crawl)

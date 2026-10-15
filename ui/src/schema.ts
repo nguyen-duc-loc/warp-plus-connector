@@ -55,11 +55,11 @@ const suggestion = object({ action: one('sources', 'crawl'), command_text: text 
 export const hello = object({
     release: text,
     commit: text,
-    protocol: one(2),
+    protocol: one(3),
     parent_pid: decimal,
     capabilities: (v: unknown) =>
-        JSON.stringify(v) === JSON.stringify(['overview', 'results', 'details', 'reveal', 'export'])
-            ? ['overview', 'results', 'details', 'reveal', 'export']
+        JSON.stringify(v) === JSON.stringify(['overview', 'results', 'details', 'reveal', 'export', 'work', 'reports'])
+            ? ['overview', 'results', 'details', 'reveal', 'export', 'work', 'reports']
             : invalid(),
     color: one('auto', 'never'),
     refresh_delay_ns: decimal,
@@ -68,7 +68,7 @@ export const hello = object({
 });
 export type Hello = Value<typeof hello>;
 const outcomes = object({ unchecked: decimal, confirmed: decimal, invalid: decimal, inconclusive: decimal });
-const counts = object({
+export const counts = object({
     selected: decimal,
     pending: decimal,
     active: decimal,
@@ -81,7 +81,7 @@ const counts = object({
     unresolved: decimal,
     unstarted: decimal,
 });
-const run = object({
+export const run = object({
     id: decimal,
     kind: one('crawl', 'validation'),
     origin: one('manual', 'scheduled', 'unknown'),
@@ -265,7 +265,7 @@ export type Runner = Value<typeof runner>;
 export function reply(value: unknown, expected: string): unknown {
     if (!value || typeof value !== 'object' || Array.isArray(value)) invalid();
     const v = value as Record<string, unknown>;
-    if (v.version !== 2 || v.id !== expected || Object.keys(v).length !== 3) invalid();
+    if (v.version !== 3 || v.id !== expected || Object.keys(v).length !== 3) invalid();
     if ('error' in v) {
         object({ code })(v.error);
         invalid();

@@ -197,6 +197,11 @@ func describe(r Record) (zerolog.Level, string) {
 		return CodeLevel(code), "Scheduler update"
 	case "command_cancelled":
 		return zerolog.WarnLevel, "Command cancelled"
+	case "terminal_work":
+		if r.text("persistence") == "uncertain" || r.text("cleanup") == "unresolved" {
+			return zerolog.ErrorLevel, "Terminal work needs recovery"
+		}
+		return ResultLevel(r.text("run_status"), false), "Terminal work saved facts"
 	case "terminal_export":
 		level := zerolog.InfoLevel
 		if code != "completed" {
@@ -219,6 +224,10 @@ func describe(r Record) (zerolog.Level, string) {
 type schema struct{ required, optional string }
 
 var schemas = map[string]schema{
+	"terminal_work": {
+		"operation_kind run_created cancellation_requested persistence cleanup",
+		"run_id run_status code",
+	},
 	"terminal_export": {"code output publication durability selected completed", "temporary_directory exit_code"},
 	"work_diagnostic": {"run_id code", "result origin status selected saved_candidates saved_sightings"},
 	"crawl_started":   {"run_id origin", ""},
@@ -344,7 +353,8 @@ func validField(k string, v any) bool {
 		"interrupted", "confirmed", "invalid", "inconclusive", "unresolved", "unstarted":
 		n, ok := v.(int64)
 		return ok && n >= 0
-	case "cleanup_proven", "removed", "published", "delivered", "changed", "operation_incomplete":
+	case "cancellation_requested",
+		"cleanup_proven", "removed", "published", "delivered", "changed", "operation_incomplete":
 		_, ok := v.(bool)
 		return ok
 	}
@@ -353,7 +363,15 @@ func validField(k string, v any) bool {
 		return false
 	}
 	switch k {
-	case "publication":
+	case "operation_kind":
+		return contains("crawl check", s)
+	case "persistence":
+		return contains("known uncertain", s)
+	case "cleanup":
+		return contains("not_needed pending complete unresolved", s)
+	case "run_status":
+		return contains("running completed failed cancelled interrupted", s)
+	case "run_created", "publication":
 		return contains("true false unknown", s)
 	case "durability":
 		return contains("not_published confirmed uncertain", s)

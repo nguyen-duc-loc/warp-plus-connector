@@ -24,6 +24,7 @@ type checkJob struct {
 	eligible          *validator.Result
 	completion        *state.BatchAttemptCompletion
 	session           string
+	phase             string
 	admitted          time.Time
 }
 
@@ -154,7 +155,18 @@ func (a *App) checkOwned(
 		}
 	}
 	if b.owner != nil && acquired == nil {
-		defer func() { err = errors.Join(err, classified(b.owner.Close())) }()
+		defer func() {
+			if a.workOwner != nil {
+				if owner, ok := b.owner.(validator.CleanupOwner); ok {
+					a.workOwner(owner.CleanupBinding())
+				}
+			}
+			closeErr := b.owner.Close()
+			if a.workClosed != nil {
+				a.workClosed(closeErr)
+			}
+			err = errors.Join(err, classified(closeErr))
+		}()
 	}
 	if gate, ok := b.owner.(validator.GateOwner); ok {
 		probe, e := gate.Admission(a.Clock())
@@ -210,6 +222,9 @@ func (b *batchCoordinator) stop(err error, code string) {
 	}
 	b.stopErr = err
 	b.stopCode = code
+	if b.app.workStop != nil {
+		b.app.workStop(code)
+	}
 	for _, j := range b.jobs {
 		if j.cancel != nil {
 			j.cancel()
@@ -262,6 +277,7 @@ func (b *batchCoordinator) start(j *checkJob) {
 	j.admitted = now
 	j.eligible = nil
 	j.running = true
+	j.phase = "preparing"
 	b.active++
 	j.activeDeadline = now.Add(time.Duration(b.policy.AttemptTimeoutUS) * time.Microsecond)
 	if j.deadline.Before(j.activeDeadline) {
@@ -276,6 +292,13 @@ func (b *batchCoordinator) start(j *checkJob) {
 			RunID: j.attempt.RunID, AttemptID: j.attempt.ID,
 		}
 		hooks := validator.Hooks{
+			Activity: func(phase string) error {
+				return b.send(
+					checkEvent{
+						kind: "activity", job: j, operation: phase,
+					},
+				)
+			},
 			Session: func(id string) error { return b.send(checkEvent{kind: "session", job: j, session: id}) },
 			Commit:  func(fn func() error) error { return b.send(checkEvent{kind: "commit", job: j, commit: fn}) },
 			Admit: func(ctx context.Context, op string) error {
@@ -410,6 +433,9 @@ func (b *batchCoordinator) observe(j *checkJob, r validator.Result) {
 }
 
 func (b *batchCoordinator) finish(e checkEvent) {
+	if b.app.workCleanup != nil {
+		b.app.workCleanup(!e.result.CleanupProven || !e.result.Removed)
+	}
 	j := e.job
 	j.running = false
 	b.active--
@@ -613,6 +639,7 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 		}
 		b.dispatch()
 		b.admission()
+		b.publishActivity()
 		done := true
 		for _, j := range b.jobs {
 			if !j.done {
@@ -635,6 +662,11 @@ func (b *batchCoordinator) run() (state.ValidationReport, error) {
 				b.stop(classified(err), "cancelled")
 			}
 			switch e.kind {
+			case "activity":
+				if e.job.running {
+					e.job.phase = e.operation
+				}
+				e.reply <- nil
 			case "session":
 				e.job.session = e.session
 				e.reply <- nil
@@ -824,4 +856,24 @@ func (a *App) logValidation(r state.ValidationReport) {
 		fields = append(fields, diagnostic.String("code", *r.Run.ReasonCode))
 	}
 	diagnostic.Emit(a.Logger, "run_completed", fields...)
+}
+
+func (b *batchCoordinator) publishActivity() {
+	if b.app.workActivity == nil {
+		return
+	}
+	workers := []WorkerActivity{}
+	waiting := 0
+	var due time.Time
+	for _, j := range b.jobs {
+		if j.running {
+			workers = append(workers, WorkerActivity{j.candidate.ID, j.number, j.phase})
+		} else if !j.done && j.number > 0 && j.timeDue.After(b.now()) {
+			waiting++
+			if due.IsZero() || j.timeDue.Before(due) {
+				due = j.timeDue
+			}
+		}
+	}
+	b.app.workActivity(workers, waiting, due)
 }

@@ -1,7 +1,7 @@
 # 0012. Terminal crawl and check controls
 
 **Date**: 2026-10-15
-**Status**: Proposed
+**Status**: In Progress
 **Content confirmed**: 2026-10-15, after independent review, application of both approved fixes, and a focused recheck. Implementation and acceptance verification remain pending.
 
 ## Summary

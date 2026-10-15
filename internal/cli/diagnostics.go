@@ -22,6 +22,7 @@ type invocationDiagnostic struct {
 	logger *zerolog.Logger
 	final  atomic.Bool
 	export atomic.Pointer[terminal.ExportReceipt]
+	work   atomic.Pointer[app.WorkState]
 }
 
 func presentation(cmd *cobra.Command) diagnostic.Options {
@@ -104,7 +105,7 @@ func PrepareTerminalTimeout(cmd *cobra.Command) func() {
 // Process status remains the caller's responsibility. A failed stream is never retried.
 func RenderFailure(cmd *cobra.Command, err error, exitCode int) {
 	inv := invocation(cmd)
-	if err == nil && exitCode == 0 && (inv == nil || inv.export.Load() == nil) {
+	if err == nil && exitCode == 0 && (inv == nil || (inv.export.Load() == nil && inv.work.Load() == nil)) {
 		return
 	}
 	var suppressed interface{ DiagnosticFailed() bool }
@@ -129,6 +130,20 @@ func renderInvocationFailure(inv *invocationDiagnostic, err error, exitCode int)
 	if !inv.final.CompareAndSwap(false, true) || inv.sink.Err() != nil {
 		return
 	}
+
+	if r := inv.work.Load(); r != nil {
+		if r.Unresolved != nil && r.Unresolved.ID != r.ID {
+			renderTerminalWork(inv, *r.Unresolved)
+		}
+		if inv.sink.Err() != nil {
+			return
+		}
+		renderTerminalWork(inv, *r)
+		if inv.sink.Err() != nil {
+			return
+		}
+	}
+
 	if r := inv.export.Load(); r != nil {
 		publication := "unknown"
 		if r.Published != nil {
@@ -163,6 +178,9 @@ func renderInvocationFailure(inv *invocationDiagnostic, err error, exitCode int)
 	}
 	if exitCode == 130 || exitCode == 143 {
 		diagnostic.Emit(inv.logger, "command_cancelled", diagnostic.Int("exit_code", int64(exitCode)))
+		return
+	}
+	if err == nil {
 		return
 	}
 	code, fields, omit := diagnosticDetails(err)
@@ -252,4 +270,22 @@ func safeDiagnosticCode(code string) string {
 		return code
 	}
 	return "command_failed"
+}
+
+func renderTerminalWork(inv *invocationDiagnostic, r app.WorkState) {
+	fields := []diagnostic.Field{
+		diagnostic.String("operation_kind", r.Kind), diagnostic.String("run_created", r.RunCreated),
+		diagnostic.Bool("cancellation_requested", r.CancellationRequested),
+		diagnostic.String("persistence", r.Persistence), diagnostic.String("cleanup", r.Cleanup),
+	}
+	if r.RunID != 0 {
+		fields = append(fields, diagnostic.Int("run_id", r.RunID))
+	}
+	if r.RunStatus != "" {
+		fields = append(fields, diagnostic.String("run_status", string(r.RunStatus)))
+	}
+	if r.ErrorCode != "" {
+		fields = append(fields, diagnostic.String("code", r.ErrorCode))
+	}
+	diagnostic.Emit(inv.logger, "terminal_work", fields...)
 }

@@ -37,6 +37,8 @@ type resultsBridge struct {
 	session             *app.ResultsSession
 	job                 *resultsJob
 	nextJob, nextReview int64
+	nextWorkReview      int64
+	workReview          *app.WorkReview
 	review              *ExportReview
 	receipt             *ExportReceipt
 	fatal               chan error
@@ -73,11 +75,18 @@ func (b *resultsBridge) close() error {
 		b.job.cancel()
 	}
 	b.mu.Unlock()
-	b.work.Wait()
-	if b.session != nil {
-		return b.session.Close()
+	var workErr error
+	if b.options.Work != nil {
+		workErr = b.options.Work.Close()
 	}
-	return nil
+	b.work.Wait()
+	if b.options.Reports != nil {
+		workErr = errors.Join(workErr, b.options.Reports.Close())
+	}
+	if b.session != nil {
+		return errors.Join(workErr, b.session.Close())
+	}
+	return workErr
 }
 
 func (b *resultsBridge) active() bool {
@@ -161,14 +170,44 @@ func (b *resultsBridge) start(
 			return err
 		}
 
-		value, err := operation(ctx, progress, commit)
+		var value any
+		var err error
+		if b.session != nil {
+			err = b.session.Prepare(ctx)
+		}
+		if err == nil && b.options.Reports != nil {
+			err = b.options.Reports.Prepare()
+		}
+		if err == nil {
+			value, err = operation(ctx, progress, commit)
+		} else if kind == "export" {
+			b.mu.Lock()
+			if b.receipt != nil {
+				receipt := *b.receipt
+				receipt.ErrorCode = codeFor(err)
+				if b.options.Reports != nil {
+					receipt.Remaining = b.options.Reports.Remaining
+				}
+				if receipt.Remaining == "" && b.session != nil {
+					receipt.Remaining = b.session.Remaining
+				}
+				b.receipt = &receipt
+				if b.options.ObserveExport != nil {
+					b.options.ObserveExport(receipt)
+				}
+				value = record{"type": "export", "value": receiptRecord(receipt)}
+			}
+			b.mu.Unlock()
+		}
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		j.result = value
 		if err == nil || j.committed {
 			j.state = "succeeded"
 			j.phase = "complete"
-			if kind != "export" && b.session != nil {
+			if (kind == "report_open" || kind == "report_refresh") && b.options.Reports != nil {
+				j.warning, j.remaining = b.options.Reports.Warning, b.options.Reports.Remaining
+			} else if kind != "export" && b.session != nil {
 				j.warning = b.session.Warning
 				j.remaining = b.session.Remaining
 			}
@@ -196,6 +235,12 @@ func (b *resultsBridge) start(
 }
 
 func requestParams(r request) (map[string]json.RawMessage, error) {
+	if strings.HasPrefix(r.Method, "work.") {
+		return workParams(r)
+	}
+	if strings.HasPrefix(r.Method, "report.") {
+		return reportParams(r)
+	}
 	shapes := map[string]string{
 		"results.open": "", "results.refresh": "view_id focus_id", "results.filter": "view_id filters",
 		"results.page": "view_id offset", "results.mark": "view_id candidate_id marked",
@@ -289,6 +334,12 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(r.Method, "work.") {
+		return b.dispatchWork(ctx, r, p)
+	}
+	if strings.HasPrefix(r.Method, "report.") {
+		return b.dispatchReport(ctx, r, p)
+	}
 	if r.Method == "job.poll" || r.Method == "job.cancel" {
 		return b.poll(idParam(p, "job_id"), r.Method == "job.cancel")
 	}
@@ -324,6 +375,7 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 			focus = &v
 		}
 		b.review = nil
+		b.workReview = nil
 		kind := "open"
 		if refresh {
 			kind = "refresh"
@@ -344,6 +396,7 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 		var q app.CandidateQuery
 		_ = json.Unmarshal(p["filters"], &q)
 		b.review = nil
+		b.workReview = nil
 		return b.start(
 			ctx,
 			"filter",
@@ -358,6 +411,7 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 		), nil
 	case "results.clear_marks":
 		b.review = nil
+		b.workReview = nil
 		return b.start(
 			ctx,
 			"clear_marks",
@@ -389,6 +443,7 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 			return nil, err
 		}
 		b.review = nil
+		b.workReview = nil
 		return record{
 			"view_id": decimal(s.View.ID), "candidate_id": decimal(id), "marked": marked,
 			"marked_count": decimal(s.View.Marked),
@@ -457,13 +512,14 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 			"view_id": decimal(s.View.ID), "detail_id": decimal(s.Detail.ID), "candidate_id": decimal(id),
 			"key": row.Candidate.Key,
 		}
-		raw, err := json.Marshal(record{"version": 2, "id": r.ID, "result": value})
+		raw, err := json.Marshal(record{"version": 3, "id": r.ID, "result": value})
 		if err != nil || len(raw)+1 > 256*1024 {
 			return nil, failure("ui_key_too_large")
 		}
 		return value, nil
 	case "export.review":
 		b.review = nil
+		b.workReview = nil
 		selection := textParam(p, "selection")
 		count := s.View.Count
 		if selection == "marked" {
@@ -508,6 +564,7 @@ func (b *resultsBridge) dispatch(ctx context.Context, r request) (any, error) {
 		}
 		review := *b.review
 		b.review = nil
+		b.workReview = nil
 		if r.Method == "export.discard" {
 			return record{}, nil
 		}

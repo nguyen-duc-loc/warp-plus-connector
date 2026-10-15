@@ -81,6 +81,9 @@ func (a *App) crawlOwned(
 		diagnostic.Emit(a.Logger, "work_diagnostic", fields...)
 	}()
 	abort := func(cause error) error {
+		if a.workStop != nil {
+			a.workStop(classified(cause).(*Error).Code)
+		}
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if a.shutdown != nil {
 			cancel()

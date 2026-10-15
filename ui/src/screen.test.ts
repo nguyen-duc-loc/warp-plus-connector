@@ -8,9 +8,9 @@ const at = { utc: '2026-10-14T00:00:00.000000Z', local: '2026-10-14 05:45:00', u
 const welcome: Hello = {
     release: 'dev',
     commit: '',
-    protocol: 2,
+    protocol: 3,
     parent_pid: '123',
-    capabilities: ['overview', 'results', 'details', 'reveal', 'export'],
+    capabilities: ['overview', 'results', 'details', 'reveal', 'export', 'work', 'reports'],
     color: 'never',
     refresh_delay_ns: '5000000000',
     timezone: 'NPT',

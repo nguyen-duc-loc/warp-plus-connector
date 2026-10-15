@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/cli"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/service"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/terminal"
@@ -32,6 +33,7 @@ const (
 
 // terminalWatchdog keeps final output inside the first shutdown deadline.
 type terminalWatchdog struct {
+	guard      *app.OperationGuard
 	once       sync.Once
 	phase      atomic.Uint32
 	exitCode   *atomic.Int32
@@ -40,25 +42,30 @@ type terminalWatchdog struct {
 }
 
 func (w *terminalWatchdog) start(_ int) {
-	w.once.Do(func() {
-		w.reportDone = make(chan struct{})
-		deadline := time.Now().Add(5 * time.Second)
-		go func() {
-			// Reserve the last 100 milliseconds for output, without extending process lifetime.
-			time.Sleep(time.Until(deadline.Add(-100 * time.Millisecond)))
-			if !w.phase.CompareAndSwap(terminalPending, terminalForced) {
-				return
+	w.once.Do(
+		func() {
+			w.reportDone = make(chan struct{})
+			deadline := time.Now().Add(5 * time.Second)
+			if w.guard != nil {
+				deadline = w.guard.Shutdown()
 			}
 			go func() {
-				defer close(w.reportDone)
-				if w.report != nil {
-					w.report()
+				// Reserve the last 100 milliseconds for output, without extending process lifetime.
+				time.Sleep(time.Until(deadline.Add(-100 * time.Millisecond)))
+				if !w.phase.CompareAndSwap(terminalPending, terminalForced) {
+					return
 				}
+				go func() {
+					defer close(w.reportDone)
+					if w.report != nil {
+						w.report()
+					}
+				}()
+				time.Sleep(time.Until(deadline))
+				os.Exit(w.forcedExitCode())
 			}()
-			time.Sleep(time.Until(deadline))
-			os.Exit(w.forcedExitCode())
-		}()
-	})
+		},
+	)
 }
 
 func (w *terminalWatchdog) forcedExitCode() int {
@@ -105,7 +112,9 @@ func run() int {
 			(*report)()
 		}
 	}
-	terminalDeadline := terminalWatchdog{exitCode: &exitCode, report: reportTimeout}
+	guard := &app.OperationGuard{}
+	ctx = terminal.WithOperationGuard(ctx, guard)
+	terminalDeadline := terminalWatchdog{exitCode: &exitCode, report: reportTimeout, guard: guard}
 	ctx = terminal.WithLifecycle(
 		ctx, func() {
 			report := cli.PrepareTerminalTimeout(cmd)
@@ -129,11 +138,15 @@ func run() int {
 				code = 143
 			}
 			exitCode.Store(code)
+			if terminalActive.Load() {
+				guard.Shutdown()
+			}
 			cancel()
 			if terminalActive.Load() {
 				terminalDeadline.start(1)
 			}
 		case <-hangups:
+			guard.Shutdown()
 			cancel()
 			terminalDeadline.start(1)
 		case <-ctx.Done():

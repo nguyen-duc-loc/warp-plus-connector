@@ -68,8 +68,8 @@ function read() {
   while (readSync(4,byte,0,1,null)===1) { if(byte[0]===10)return JSON.parse(text); text+=byte.toString(); }
   process.exit(1);
 }
-function send(id,method,params) {writeSync(3,JSON.stringify({version:2,id,method,params})+'\n');}
-send('1','hello',{release:process.argv[2],commit:process.argv[3],protocol:2});read();
+function send(id,method,params) {writeSync(3,JSON.stringify({version:3,id,method,params})+'\n');}
+send('1','hello',{release:process.argv[2],commit:process.argv[3],protocol:3});read();
 `
 	for _, tc := range []struct {
 		name, script string

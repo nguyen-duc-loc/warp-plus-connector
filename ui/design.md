@@ -23,3 +23,11 @@ Filters use three groups of checkboxes, with a separate draft until you apply it
 Details show Results and Details times separately. Summary, Sources, and Attempts have keyboard tabs and independent positions. Missing history remains unavailable. A revealed key is quoted, scrollable text and disappears on help, refresh, exit, or an unusably small terminal.
 
 Export begins with a selection, format, disclosure choice, and an empty destination. Review shows the fixed count, filters, evaluation, and resolved path. Back receives initial focus. Preparation shows a phase and a count, with cancel, help, resize, and quit available. Outcomes distinguish a created file, known absence of publication, and an uncertain result. Color never carries these meanings alone.
+
+## Manual work and saved reports
+
+Spec 0012 adds Crawl on Overview, Check on Results, and a Work indicator on every surface. The source checklist preserves configuration order and shows disabled sources. Check offers Focused, Marked, and Matching explicitly. Reviews show the fixed selection and effective policy. Back has initial focus, and Tab moves to the separate Start action. Policy durations have explicit units.
+
+Work keeps saved counts separate from current activity, retry waits, cancellation, and cleanup. Completion changes the indicator without moving your focus. Ctrl+X cancels work and Ctrl+G cancels preparation, including inside text fields, help, and small windows. The quit dialog starts on Stay. Returning from a work overlay preserves the Results surface and clears any key disclosure.
+
+Recent work opens a run chooser with an older run ID field. Reports retain one observation time, exact counts, and bounded pages. Tab chooses summary or the parent section, Enter opens the focused source pages or candidate attempts, Left and Right move between records, and Page Up and Page Down traverse pages. A failed refresh keeps the previous report and its position with an explanation. All labels and focus markers remain usable without color.

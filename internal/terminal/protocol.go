@@ -88,7 +88,9 @@ func strictJSONNullable(raw []byte, out any, focusNullable bool) error {
 		for key, value := range actual {
 			// Input and manifest fields are required and nonnullable. Go otherwise
 			// silently decodes null into a scalar's zero value, including an empty commit.
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) && (!focusNullable || key != "focus_id") {
+			nullableInput := focusNullable && (key == "focus_id" || key == "candidate_id" ||
+				key == "page_limit" || key == "source_id" || key == "page_number" || key == "attempt_id")
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) && !nullableInput {
 				return failure("ui_protocol_invalid")
 			}
 			if _, ok := expected[key]; !ok {
@@ -105,7 +107,7 @@ func readRequest(r *bufio.Reader, previous *big.Int) (request, error) {
 	if err == io.EOF && len(raw) == 0 {
 		return out, io.EOF
 	}
-	if err != nil || len(raw) > requestLimit || strictJSON(raw, &out) != nil || out.Version != 2 ||
+	if err != nil || len(raw) > requestLimit || strictJSON(raw, &out) != nil || out.Version != 3 ||
 		!decimalPattern.MatchString(out.ID) || len(out.ID) > 128 {
 		return out, failure("ui_protocol_invalid")
 	}
@@ -118,7 +120,7 @@ func readRequest(r *bufio.Reader, previous *big.Int) (request, error) {
 }
 
 func writeReply(w io.Writer, id string, result any) error {
-	raw, err := json.Marshal(map[string]any{"version": 2, "id": id, "result": result})
+	raw, err := json.Marshal(map[string]any{"version": 3, "id": id, "result": result})
 	if err != nil || len(raw)+1 > replyLimit {
 		return failure("ui_protocol_invalid")
 	}

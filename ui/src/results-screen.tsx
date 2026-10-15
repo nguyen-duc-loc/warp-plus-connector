@@ -11,6 +11,10 @@ type Props = {
     hello: Hello;
     active: boolean;
     onOverview: () => void;
+    onCheck?: (s: { view_id: string; candidate_id: string | null; marked: string; matching: string }) => void;
+    onWork?: () => void;
+    indicator?: string;
+    suspended?: boolean;
     quit: (code: number, interrupt?: boolean) => void;
 };
 type Surface = 'results' | 'filters' | 'details' | 'export' | 'review' | 'outcome';
@@ -93,7 +97,17 @@ function historyLines(row: wire.SourceRow | wire.AttemptRow): string[] {
     return out;
 }
 
-export function ResultsScreen({ channel, hello, active, onOverview, quit }: Props) {
+export function ResultsScreen({
+    channel,
+    hello,
+    active,
+    onOverview,
+    quit,
+    onCheck,
+    onWork,
+    indicator,
+    suspended,
+}: Props) {
     const { columns, rows } = useWindowSize();
     const width = Math.max(1, columns),
         height = Math.max(1, rows - 7);
@@ -306,15 +320,23 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
             return;
         }
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: Entry runs only when active changes; render-local jobs must not restart it.
+    const previousActive = useRef(active),
+        resumeSurface = useRef(false);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: Entry follows navigation intent; render-local jobs must not restart it.
     useEffect(() => {
-        if (!active) return;
+        if (!active) {
+            if (previousActive.current && suspended) resumeSurface.current = true;
+            previousActive.current = false;
+            return;
+        }
+        previousActive.current = true;
         if (viewRef.current === null) perform(() => runJob('results.open', {}));
+        else if (resumeSurface.current) resumeSurface.current = false;
         else {
             setSurface('results');
             setHelp(false);
         }
-    }, [active]);
+    }, [active, suspended]);
     const focused = page?.items.find((_, i) => BigInt(page.offset) + BigInt(i) === focus);
     const navigate = (position: bigint) => {
         desiredPosition.current = position;
@@ -382,6 +404,7 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
 
     useInput((input, key) => {
         if (!active) return;
+        if (key.ctrl && (input === 'x' || input === 'g')) return;
         if (key.ctrl && input === 'c') {
             clearKey();
             quit(130, true);
@@ -406,6 +429,11 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
                 setPath((p) => p + input);
                 return;
             }
+            return;
+        }
+        if (input === 'w' && onWork) {
+            clearKey();
+            onWork();
             return;
         }
         if (input === 'q') {
@@ -455,6 +483,16 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
             return;
         }
         if (small) return;
+        if (input === 'c' && (surface === 'results' || surface === 'details') && onCheck && view) {
+            clearKey();
+            onCheck({
+                view_id: view.view_id,
+                candidate_id: focused?.summary.id ?? null,
+                marked: view.marked_count,
+                matching: view.matching_count,
+            });
+            return;
+        }
         if (surface === 'results') {
             if (key.escape) {
                 clearKey();
@@ -606,7 +644,7 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
                 const params = { view_id: view.view_id, selection, format, include_keys: includeKeys, path };
                 if (
                     Buffer.byteLength(
-                        `${JSON.stringify({ version: 2, id: '9'.repeat(128), method: 'export.review', params })}\n`,
+                        `${JSON.stringify({ version: 3, id: '9'.repeat(128), method: 'export.review', params })}\n`,
                     ) > 4096
                 ) {
                     setMessage('Path is too long for this interface');
@@ -646,7 +684,7 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
     let footer = '';
     let range = '';
     if (surface === 'results') {
-        footer = 'Enter details | Space mark | f filters | e export | r refresh | Esc overview';
+        footer = 'Enter details | Space mark | c Check | w Work | e export | f filters';
         if (!view) content = [busy || !message ? 'Preparing saved collection...' : message];
         else if (view.matching_count === '0')
             content = ['No matching candidates. f changes filters, r refreshes saved data.'];
@@ -791,7 +829,11 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
                     `WPC Results ${surface === 'results' ? '' : `/ ${surface}`} | ${view?.matching_count ?? '?'} matching | ${view?.marked_count ?? '0'} marked`,
                 )}
             </Text>
-            <Text wrap="truncate-end">{safe(`Collection ${hello.profile.state_dir} | ${hello.timezone}`)}</Text>
+            <Text wrap="truncate-end">
+                {safe(
+                    `${indicator === undefined ? '' : `${indicator} | `}Collection ${hello.profile.state_dir} | ${hello.timezone}`,
+                )}
+            </Text>
             <Text wrap="truncate-end">
                 {safe(
                     view
@@ -815,7 +857,15 @@ export function ResultsScreen({ channel, hello, active, onOverview, quit }: Prop
             <Text wrap="truncate-end">{safe(busy ? 'c or Esc cancel | ? help | q quit' : footer)}</Text>
             <Text wrap="truncate-end">{safe(range || message || '? help | q quit')}</Text>
             <Text wrap="truncate-end">
-                {safe(busy && message ? message : view?.retained ? (view.error_code ?? '') : '')}
+                {safe(
+                    indicator !== undefined
+                        ? 'Ctrl+X Cancel work | Ctrl+G Cancel preparation'
+                        : busy && message
+                          ? message
+                          : view?.retained
+                            ? (view.error_code ?? '')
+                            : '',
+                )}
             </Text>
         </Box>
     );

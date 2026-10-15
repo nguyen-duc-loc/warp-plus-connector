@@ -31,7 +31,14 @@ func (e *Error) Unwrap() error { return e.cause }
 
 // App uses a concrete store and small interfaces at external boundaries.
 type App struct {
-	shutdown *shutdownWindow
+	shutdown     *shutdownWindow
+	workActivity func([]WorkerActivity, int, time.Time)
+	workCleanup  func(bool)
+	workRetained *validator.CleanupBinding
+	workResolved func()
+	workOwner    func(*validator.CleanupBinding)
+	workStop     func(string)
+	workClosed   func(error)
 	// Only the single active scheduled batch accesses this monotonic deadline.
 	nextMutation time.Time
 	SourceNames  []string
@@ -79,7 +86,10 @@ func classified(err error) error {
 		code string
 	}{
 		{context.Canceled, "cancelled"}, {context.DeadlineExceeded, "deadline_exceeded"},
-		{store.ErrBusy, "state_busy"}, {store.ErrNotInitialized, "state_not_initialized"},
+		{
+			store.ErrCollectionChanged,
+			"ui_collection_changed",
+		}, {store.ErrBusy, "state_busy"}, {store.ErrNotInitialized, "state_not_initialized"},
 		{store.ErrSchemaTooNew, "state_schema_too_new"}, {store.ErrMigrationRequired, "state_migration_required"},
 		{store.ErrNotFound, "state_record_not_found"}, {store.ErrInvalidInput, "state_invalid_input"},
 	} {

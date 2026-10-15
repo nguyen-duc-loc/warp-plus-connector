@@ -94,7 +94,7 @@ def main():
         for name in dirs:
             if (Path(folder) / name).is_symlink():
                 raise SystemExit("Unexpected symlink in production module tree")
-    manifest = {"schema_version": 1, "protocol_version": 2, "release": args.release,
+    manifest = {"schema_version": 1, "protocol_version": 3, "release": args.release,
                 "commit": args.commit, "os": "linux", "arch": args.arch, "node": pins["node"],
                 "lock_sha256": digest(app / "pnpm-lock.yaml"), "files": {}}
     for path in sorted(destination.rglob("*")):

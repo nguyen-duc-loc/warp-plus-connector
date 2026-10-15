@@ -49,7 +49,7 @@ func bundle(release, commit string) (string, error) {
 		return "", failure("ui_installation_invalid")
 	}
 	var m manifest
-	if strictJSON(data, &m) != nil || m.Schema != 1 || m.Protocol != 2 || m.Release != release ||
+	if strictJSON(data, &m) != nil || m.Schema != 1 || m.Protocol != 3 || m.Release != release ||
 		m.Commit != commit || m.OS != runtime.GOOS || m.Arch != runtime.GOARCH || m.Node != "24.20.0" ||
 		len(m.Files) == 0 || len(m.Files) > 20000 {
 		return "", failure("ui_version_mismatch")

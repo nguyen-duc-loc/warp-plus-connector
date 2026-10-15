@@ -48,7 +48,7 @@ func OpenWriterWithPolicy(
 		return nil, ErrInvalidInput
 	}
 	return awaitContext(
-		ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock, policy) }, func(w *Writer) {
+		ctx, func() (*Writer, error) { return openWriter(ctx, stateDir, clock, policy, nil) }, func(w *Writer) {
 			if w != nil {
 				_ = w.Close()
 			}
@@ -56,7 +56,10 @@ func OpenWriterWithPolicy(
 	)
 }
 
-func openWriter(ctx context.Context, stateDir string, clock func() time.Time, policy state.SchedulePolicy) (
+func openWriter(
+	ctx context.Context, stateDir string, clock func() time.Time, policy state.SchedulePolicy,
+	expected *CollectionBinding,
+) (
 	*Writer,
 	error,
 ) {
@@ -86,6 +89,11 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time, po
 			return nil, ErrBusy
 		}
 		return nil, safeError(ctx, "lock state", err)
+	}
+	if expected != nil {
+		if err = expected.check(stateDir); err != nil {
+			return nil, err
+		}
 	}
 	if err = checkFiles(dir); err != nil {
 		return nil, err
@@ -123,7 +131,11 @@ func openWriter(ctx context.Context, stateDir string, clock func() time.Time, po
 		ctx, h.writeDB,
 		[]string{initialSchema, coverageSchema, planSchema, batchSchema, scheduleSchema}, recovery, policy,
 	); err != nil {
-		return nil, safeError(ctx, "initialize state", err)
+		safe := safeError(ctx, "initialize state", err)
+		if expected != nil {
+			return nil, &AdmissionUncertain{Cause: safe}
+		}
+		return nil, safe
 	}
 	h.readDB, err = openDB(ctx, dir, true)
 	if err != nil {

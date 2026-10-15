@@ -74,13 +74,73 @@ export class Channel {
         this.input.on('error', () => this.fail());
         this.output.on('error', () => this.fail());
     }
-    request(method: string, params: unknown): Promise<unknown> {
+    private queue: {
+        method: string;
+        params: unknown;
+        priority: number;
+        resolve: (v: unknown) => void;
+        reject: (e: Error) => void;
+    }[] = [];
+    private sending = false;
+    private coalesced = new Map<string, Promise<unknown>>();
+    preparation: string | null = null;
+    request(method: string, params: unknown, priority?: number): Promise<unknown> {
+        if (!this.connected) return Promise.reject(new Error('ui_closed'));
+        const rank =
+            priority ??
+            (method.endsWith('.cancel')
+                ? 0
+                : method === 'work.poll'
+                  ? 2
+                  : method === 'job.poll' || method === 'overview'
+                    ? 3
+                    : 1);
+        const key = rank === 0 || rank >= 2 ? `${method}:${JSON.stringify(params)}` : null;
+        const existing = key === null ? undefined : this.coalesced.get(key);
+        if (existing) return existing;
+        const promise = new Promise<unknown>((resolve, reject) => {
+            this.queue.push({ method, params, priority: rank, resolve, reject });
+            this.drain();
+        });
+        if (key !== null) {
+            this.coalesced.set(key, promise);
+            void promise.then(
+                () => this.coalesced.delete(key),
+                () => this.coalesced.delete(key),
+            );
+        }
+        return promise;
+    }
+    private drain() {
+        if (this.sending || !this.connected) return;
+        this.queue.sort((a, b) => a.priority - b.priority);
+        const next = this.queue.shift();
+        if (!next) return;
+        this.sending = true;
+        void this.send(next.method, next.params)
+            .then((value) => {
+                if (value && typeof value === 'object' && 'job_id' in value && typeof value.job_id === 'string') {
+                    const record = value as { job_id: string; state?: string };
+                    this.preparation =
+                        record.state && !['running', 'cancelling'].includes(record.state) ? null : record.job_id;
+                }
+                next.resolve(value);
+            }, next.reject)
+            .finally(() => {
+                this.sending = false;
+                this.drain();
+            });
+    }
+    cancelPreparation(): Promise<unknown> {
+        return this.preparation ? this.request('job.cancel', { job_id: this.preparation }, 0) : Promise.resolve(null);
+    }
+    private send(method: string, params: unknown): Promise<unknown> {
         if (this.pending || !this.connected) return Promise.reject(new Error('ui_protocol_invalid'));
         const id = (++this.sequence).toString();
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => this.fail(), method === 'hello' ? 5000 : 12000);
             this.pending = { id, resolve, reject, timer };
-            const frame = `${JSON.stringify({ version: 2, id, method, params })}\n`;
+            const frame = `${JSON.stringify({ version: 3, id, method, params })}\n`;
             if (Buffer.byteLength(frame) > 4096) {
                 this.fail();
                 return;
@@ -92,6 +152,8 @@ export class Channel {
     }
     close() {
         this.connected = false;
+        for (const queued of this.queue) queued.reject(new Error('ui_closed'));
+        this.queue = [];
         if (this.pending) {
             clearTimeout(this.pending.timer);
             this.pending.reject(new Error('ui_closed'));

@@ -37,6 +37,8 @@ type DockerOptions struct {
 
 // Docker checks one candidate at a time with a retained isolated container.
 type Docker struct {
+	retained     *CleanupBinding
+	resolved     func()
 	probe        bool
 	mutation     func(func() error) error
 	Options      DockerOptions

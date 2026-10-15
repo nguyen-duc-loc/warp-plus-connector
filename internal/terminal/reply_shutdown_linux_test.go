@@ -76,16 +76,16 @@ func verifyChildProtocol(t *testing.T, executable, mode string) {
 	}
 	writeReply := func(id string, value any) {
 		t.Helper()
-		data, err := json.Marshal(map[string]any{"version": 2, "id": id, "result": value})
+		data, err := json.Marshal(map[string]any{"version": 3, "id": id, "result": value})
 		require.NoError(t, err)
 		_, err = replies.Write(append(data, '\n'))
 		require.NoError(t, err)
 	}
 	id := readRequest("hello")
 	hello := map[string]any{
-		"release": identity.Release, "commit": identity.Commit, "protocol": 2,
+		"release": identity.Release, "commit": identity.Commit, "protocol": 3,
 		"parent_pid":   strconv.Itoa(os.Getpid()),
-		"capabilities": []string{"overview", "results", "details", "reveal", "export"},
+		"capabilities": []string{"overview", "results", "details", "reveal", "export", "work", "reports"},
 		"color":        "never", "refresh_delay_ns": "5000000000", "timezone": "UTC",
 		"profile": map[string]any{
 			"state_dir": t.TempDir(), "config_path": nil,

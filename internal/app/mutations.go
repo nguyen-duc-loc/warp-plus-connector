@@ -61,9 +61,14 @@ type operationWriter struct {
 	failed bool
 	*store.Writer
 	mutations *mutationExecutor
+	observe   func(any, error)
+	creating  func()
 }
 
 func (w *operationWriter) StartCrawlPlan(ctx context.Context, in state.CrawlPlanInput) (state.CrawlReport, error) {
+	if w.creating != nil {
+		w.creating()
+	}
 	return operationMutation(w, func() (state.CrawlReport, error) { return w.Writer.StartCrawlPlan(ctx, in) })
 }
 
@@ -97,8 +102,11 @@ func (w *operationWriter) StartValidationBatch(
 	ctx context.Context,
 	in state.ValidationBatchInput,
 ) (state.ValidationReport, error) {
-	return mutation(
-		w.mutations,
+	if w.creating != nil {
+		w.creating()
+	}
+	return operationMutation(
+		w,
 		func() (state.ValidationReport, error) { return w.Writer.StartValidationBatch(ctx, in) },
 	)
 }
@@ -128,8 +136,8 @@ func (w *operationWriter) StopValidationBatch(ctx context.Context, in state.RunC
 	state.ValidationReport,
 	error,
 ) {
-	return mutation(
-		w.mutations,
+	return operationMutation(
+		w,
 		func() (state.ValidationReport, error) { return w.Writer.StopValidationBatch(ctx, in) },
 	)
 }
@@ -138,8 +146,8 @@ func (w *operationWriter) FinishValidationBatch(ctx context.Context, in state.Ru
 	state.ValidationReport,
 	error,
 ) {
-	return mutation(
-		w.mutations,
+	return operationMutation(
+		w,
 		func() (state.ValidationReport, error) { return w.Writer.FinishValidationBatch(ctx, in) },
 	)
 }
@@ -149,8 +157,8 @@ func (w *operationWriter) RecordCrawlMessage(
 	page state.CrawlPageID,
 	in state.MessageInput,
 ) (state.MessageResult, error) {
-	return mutation(
-		w.mutations,
+	return operationMutation(
+		w,
 		func() (state.MessageResult, error) { return w.Writer.RecordCrawlMessage(ctx, page, in) },
 	)
 }
@@ -159,6 +167,18 @@ func acquireValidator(
 	ctx context.Context, backend validator.ScheduledBackend, a *App,
 	m *mutationExecutor,
 ) (validator.Acquisition, error) {
+	if reviewed, ok := backend.(interface {
+		AcquireReviewed(
+			context.Context, func() time.Time, time.Duration, func(func() error) error,
+			*validator.CleanupBinding, func(),
+		) (validator.Acquisition, error)
+	}); ok && a.workResolved != nil {
+		return reviewed.AcquireReviewed(
+			ctx, a.Clock, a.Settings.SchedulePolicy().Failure,
+			func(fn func() error) error { return m.call(false, fn) }, a.workRetained, a.workResolved,
+		)
+	}
+
 	if coordinated, ok := backend.(interface {
 		AcquireCoordinated(
 			context.Context,
@@ -179,6 +199,9 @@ func operationMutation[T any](w *operationWriter, fn func() (T, error)) (T, erro
 	value, err := mutation(w.mutations, fn)
 	if err != nil {
 		w.failed = true
+	}
+	if w.observe != nil {
+		w.observe(value, err)
 	}
 	return value, err
 }

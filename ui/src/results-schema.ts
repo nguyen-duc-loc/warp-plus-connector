@@ -1,10 +1,10 @@
 import { array, bool, code, invalid, nullable, object, one, type Schema, stamp, text, type Value } from './schema.js';
 
-const count: Schema<string> = (v) =>
+export const count: Schema<string> = (v) =>
     typeof v === 'string' && /^(0|[1-9][0-9]*)$/.test(v) && v.length <= 19 && BigInt(v) <= 9223372036854775807n
         ? v
         : invalid();
-const id: Schema<string> = (v) => (count(v) !== '0' ? (v as string) : invalid());
+export const id: Schema<string> = (v) => (count(v) !== '0' ? (v as string) : invalid());
 const canonical =
     (order: string[]): Schema<string[]> =>
     (v) => {
@@ -77,7 +77,7 @@ export type View = ReturnType<typeof view>;
 const row = object({ summary, marked: bool });
 export type Row = Value<typeof row>;
 const pageShape = object({ view, offset: count, items: array(row, 0, 50), next_offset: nullable(count) });
-function pageBounds(offset: string, length: number, total: string, next: string | null) {
+export function pageBounds(offset: string, length: number, total: string, next: string | null) {
     const end = BigInt(offset) + BigInt(length);
     if (end > BigInt(total) || (end === BigInt(total) ? next !== null : next !== end.toString() || length === 0))
         invalid();
@@ -101,8 +101,8 @@ export const detail = object({
     attempt_count: count,
 });
 export type Detail = Value<typeof detail>;
-const displayShape = object({ text, shortened: bool });
-const display = (v: unknown) => {
+export const displayShape = object({ text, shortened: bool });
+export const display = (v: unknown) => {
     const d = displayShape(v);
     if (Buffer.byteLength(d.text) > 4096) invalid();
     return d;
@@ -139,7 +139,7 @@ const retry = object({
     wait_ns: count,
     eligible_at: nullable(stamp),
 });
-const attempt = object({
+export const attempt = object({
     id,
     candidate_id: id,
     run_id: id,

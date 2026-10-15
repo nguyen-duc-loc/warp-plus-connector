@@ -62,7 +62,7 @@ func TestRun_BundleAdmission(t *testing.T) {
 				files[name] = hex.EncodeToString(hash[:])
 			}
 			manifest := map[string]any{
-				"schema_version": 1, "protocol_version": 2, "release": "dev", "commit": "",
+				"schema_version": 1, "protocol_version": 3, "release": "dev", "commit": "",
 				"os": runtime.GOOS, "arch": runtime.GOARCH, "node": "24.20.0",
 				"lock_sha256": files["app/pnpm-lock.yaml"], "files": files,
 			}

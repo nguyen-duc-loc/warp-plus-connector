@@ -33,6 +33,8 @@ type BatchOwner interface {
 
 // Hooks route journal writes, mutation admission, and evidence through the coordinator.
 type Hooks struct {
+	// Activity reports an approved phase without provider or session data.
+	Activity       func(string) error
 	Session        func(string) error
 	Commit         func(func() error) error
 	Admit          func(context.Context, string) error

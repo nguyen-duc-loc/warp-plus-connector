@@ -39,9 +39,9 @@ const view = {
 const welcome: Hello = {
     release: 'dev',
     commit: '',
-    protocol: 2,
+    protocol: 3,
     parent_pid: '1',
-    capabilities: ['overview', 'results', 'details', 'reveal', 'export'],
+    capabilities: ['overview', 'results', 'details', 'reveal', 'export', 'work', 'reports'],
     color: 'never',
     refresh_delay_ns: '5000000000',
     timezone: 'UTC',
