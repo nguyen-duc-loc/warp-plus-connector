@@ -17,6 +17,7 @@ type outputStage struct {
 	fileCreated bool
 	cleaned     bool
 	cleanupErr  error
+	observe     func(string, *bool, string)
 }
 
 func newOutputStage(output, stateDir string) (*outputStage, error) {
@@ -24,6 +25,10 @@ func newOutputStage(output, stateDir string) (*outputStage, error) {
 	if err != nil {
 		return nil, err
 	}
+	return stageDestination(destination)
+}
+
+func stageDestination(destination string) (*outputStage, error) {
 	parent := ""
 	if destination != "" {
 		parent = filepath.Dir(destination)
@@ -68,9 +73,15 @@ func outputDestination(output, stateDir string) (string, error) {
 		}
 		return "", &deliveryError{code: "state_error"}
 	}
-	relative, err := filepath.Rel(canonicalState, parent)
-	if err != nil || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))) {
-		return "", &deliveryError{code: "export_destination_invalid"}
+	return excludedDestination(absolute, parent, []string{canonicalState})
+}
+
+func excludedDestination(absolute, parent string, exclusions []string) (string, error) {
+	for _, canonicalState := range exclusions {
+		relative, err := filepath.Rel(canonicalState, parent)
+		if err != nil || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))) {
+			return "", &deliveryError{code: "export_destination_invalid"}
+		}
 	}
 	destination := filepath.Join(parent, filepath.Base(absolute))
 	if _, err := os.Lstat(destination); err == nil {
@@ -114,12 +125,15 @@ func (s *outputStage) publish(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	s.observation("publication", nil, "uncertain")
 	if err := os.Link(s.path, s.destination); err != nil {
+		s.observation("publication", new(false), "not_published")
 		if errors.Is(err, os.ErrExist) {
 			return false, &deliveryError{code: "export_exists"}
 		}
 		return false, &deliveryError{code: "export_publish_failed"}
 	}
+	s.observation("publication", new(true), "uncertain")
 	// Publication has happened. Every later failure preserves the complete file.
 	if err := ctx.Err(); err != nil {
 		return true, err
@@ -128,7 +142,11 @@ func (s *outputStage) publish(ctx context.Context) (bool, error) {
 	if err != nil {
 		return true, &deliveryError{code: "export_commit_uncertain"}
 	}
-	err = errors.Join(directory.Sync(), directory.Close())
+	syncErr := directory.Sync()
+	if syncErr == nil {
+		s.observation("cleanup", new(true), "confirmed")
+	}
+	err = errors.Join(syncErr, directory.Close())
 	if err != nil {
 		return true, &deliveryError{code: "export_commit_uncertain"}
 	}
@@ -167,5 +185,11 @@ func (s *outputStage) copy(ctx context.Context, destination io.Writer) (bool, er
 		if err != nil {
 			return delivered, &deliveryError{code: "output_error"}
 		}
+	}
+}
+
+func (s *outputStage) observation(phase string, published *bool, durability string) {
+	if s.observe != nil {
+		s.observe(phase, published, durability)
 	}
 }

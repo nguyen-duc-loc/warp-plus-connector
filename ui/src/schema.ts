@@ -1,16 +1,16 @@
 // The wire contract is closed. Values remain strings through validation and rendering.
-type Schema<T> = (value: unknown) => T;
-type Value<S> = S extends Schema<infer T> ? T : never;
+export type Schema<T> = (value: unknown) => T;
+export type Value<S> = S extends Schema<infer T> ? T : never;
 export function invalid(): never { throw new Error('ui_protocol_invalid'); }
-const text: Schema<string> = v => typeof v === 'string' && v.length <= 65536 ? v : invalid();
-const bool: Schema<boolean> = v => typeof v === 'boolean' ? v : invalid();
-const decimal: Schema<string> = v => typeof v === 'string' && /^(0|[1-9][0-9]*)$/.test(v) && v.length <= 128 ? v : invalid();
+export const text: Schema<string> = v => typeof v === 'string' && v.length <= 65536 ? v : invalid();
+export const bool: Schema<boolean> = v => typeof v === 'boolean' ? v : invalid();
+export const decimal: Schema<string> = v => typeof v === 'string' && /^(0|[1-9][0-9]*)$/.test(v) && v.length <= 128 ? v : invalid();
 const signed: Schema<string> = v => typeof v === 'string' && /^(0|-?[1-9][0-9]*)$/.test(v) && v.length <= 128 ? v : invalid();
-const one = <T extends string | number>(...values: T[]): Schema<T> => v => values.includes(v as T) ? v as T : invalid();
-const nullable = <T>(schema: Schema<T>): Schema<T | null> => v => v === null ? null : schema(v);
-const array = <T>(schema: Schema<T>, min: number, max: number): Schema<T[]> => v =>
+export const one = <T extends string | number>(...values: T[]): Schema<T> => v => values.includes(v as T) ? v as T : invalid();
+export const nullable = <T>(schema: Schema<T>): Schema<T | null> => v => v === null ? null : schema(v);
+export const array = <T>(schema: Schema<T>, min: number, max: number): Schema<T[]> => v =>
   Array.isArray(v) && v.length >= min && v.length <= max ? v.map(schema) : invalid();
-const object = <S extends Record<string, Schema<unknown>>>(shape: S): Schema<{[K in keyof S]: Value<S[K]>}> => v => {
+export const object = <S extends Record<string, Schema<unknown>>>(shape: S): Schema<{[K in keyof S]: Value<S[K]>}> => v => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) invalid();
   const record = v as Record<string, unknown>;
   if (Object.keys(record).length !== Object.keys(shape).length || Object.keys(record).some(k => !(k in shape))) invalid();
@@ -21,9 +21,9 @@ const object = <S extends Record<string, Schema<unknown>>>(shape: S): Schema<{[K
 
 // Generated from the Go diagnostic catalogue during the build, checked into source.
 import {codes} from './codes.js';
-const code: Schema<string> = v => typeof v === 'string' && codes.has(v) ? v : invalid();
+export const code: Schema<string> = v => typeof v === 'string' && codes.has(v) ? v : invalid();
 const identity: Schema<string> = v => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v) ? v : invalid();
-const stamp = object({
+export const stamp = object({
   utc: (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(v)
     && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v.slice(0, 23) + 'Z'
     && !v.startsWith('0001-') ? v : invalid(),
@@ -32,8 +32,8 @@ const stamp = object({
 });
 export type Stamp = Value<typeof stamp>;
 const suggestion = object({action: one('sources', 'crawl'), command_text: text});
-export const hello = object({release: text, commit: text, protocol: one(1), parent_pid: decimal,
-  capabilities: array(one('overview'), 1, 1), color: one('auto', 'never'), refresh_delay_ns: decimal, timezone: text,
+export const hello = object({release: text, commit: text, protocol: one(2), parent_pid: decimal,
+  capabilities: (v: unknown) => JSON.stringify(v) === JSON.stringify(['overview','results','details','reveal','export']) ? ['overview','results','details','reveal','export'] : invalid(), color: one('auto', 'never'), refresh_delay_ns: decimal, timezone: text,
   profile: object({state_dir: text, config_path: nullable(text), suggestions: array(suggestion, 2, 2)})});
 export type Hello = Value<typeof hello>;
 const outcomes = object({unchecked: decimal, confirmed: decimal, invalid: decimal, inconclusive: decimal});
@@ -105,7 +105,7 @@ export type Runner = Value<typeof runner>;
 export function reply(value: unknown, expected: string): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid();
   const v = value as Record<string, unknown>;
-  if (v.version !== 1 || v.id !== expected || Object.keys(v).length !== 3) invalid();
+  if (v.version !== 2 || v.id !== expected || Object.keys(v).length !== 3) invalid();
   if ('error' in v) { object({code})(v.error); invalid(); }
   if (!('result' in v)) invalid();
   return v.result;

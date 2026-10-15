@@ -114,7 +114,7 @@ func NewSink(w io.Writer, o Options, c Capabilities, location *time.Location, ca
 			if err != nil {
 				return err
 			}
-			if !s.Visible(r.Level) && r.Event != "command_cancelled" {
+			if !s.Visible(r.Level) && r.Event != "command_cancelled" && r.Event != "terminal_export" {
 				return nil
 			}
 			if s.format == "json" {

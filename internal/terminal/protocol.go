@@ -23,7 +23,9 @@ type request struct {
 }
 
 // strictJSON rejects duplicate fields, case aliases, unknown fields, and trailing data.
-func strictJSON(raw []byte, out any) error {
+func strictJSON(raw []byte, out any) error { return strictJSONNullable(raw, out, false) }
+
+func strictJSONNullable(raw []byte, out any, focusNullable bool) error {
 	if !utf8.Valid(raw) {
 		return failure("ui_protocol_invalid")
 	}
@@ -86,7 +88,7 @@ func strictJSON(raw []byte, out any) error {
 		for key, value := range actual {
 			// Input and manifest fields are required and nonnullable. Go otherwise
 			// silently decodes null into a scalar's zero value, including an empty commit.
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) && (!focusNullable || key != "focus_id") {
 				return failure("ui_protocol_invalid")
 			}
 			if _, ok := expected[key]; !ok {
@@ -103,7 +105,7 @@ func readRequest(r *bufio.Reader, previous *big.Int) (request, error) {
 	if err == io.EOF && len(raw) == 0 {
 		return out, io.EOF
 	}
-	if err != nil || len(raw) > requestLimit || strictJSON(raw, &out) != nil || out.Version != 1 ||
+	if err != nil || len(raw) > requestLimit || strictJSON(raw, &out) != nil || out.Version != 2 ||
 		!decimalPattern.MatchString(out.ID) || len(out.ID) > 128 {
 		return out, failure("ui_protocol_invalid")
 	}
@@ -116,7 +118,7 @@ func readRequest(r *bufio.Reader, previous *big.Int) (request, error) {
 }
 
 func writeReply(w io.Writer, id string, result any) error {
-	raw, err := json.Marshal(map[string]any{"version": 1, "id": id, "result": result})
+	raw, err := json.Marshal(map[string]any{"version": 2, "id": id, "result": result})
 	if err != nil || len(raw)+1 > replyLimit {
 		return failure("ui_protocol_invalid")
 	}

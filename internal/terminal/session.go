@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-isatty"
+	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/state"
 )
 
@@ -54,6 +55,10 @@ type Options struct {
 	ConfigPath             *string
 	Suggestions            [2]string
 	Read                   func(context.Context) state.Overview
+	Results                *app.ResultsSession
+	Destination            ExportDestination
+	Export                 ExportOperation
+	ObserveExport          func(ExportReceipt)
 }
 
 // Run supervises one child. It restores the terminal before waiting for read cleanup.
@@ -108,6 +113,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 	_ = childReplies.Close()
 	exited := make(chan error, 1)
 	go func() { exited <- child.Wait() }()
+	bridge := newResultsBridge(o)
 	var work sync.WaitGroup
 	var shutdownAt time.Time
 	beginShutdown := func() {
@@ -131,6 +137,13 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			life.shutdown(code)
 		}
 		work.Wait()
+		if e := bridge.close(); e != nil {
+			code := codeFor(err)
+			if err == nil {
+				code = codeFor(e)
+			}
+			err = &Error{Code: code, Remaining: bridge.session.Remaining}
+		}
 	}()
 	var stopped bool
 	defer func() {
@@ -181,6 +194,8 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 	lastIdentity := ""
 	for {
 		select {
+		case fatal := <-bridge.fatal:
+			return fatal
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-exited:
@@ -244,13 +259,35 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 				if r.Method != "hello" || strictJSON(r.Params, &p) != nil {
 					return failure("ui_protocol_invalid")
 				}
-				if p.Release != o.Release || p.Commit != o.Commit || p.Protocol != 1 {
+				if p.Release != o.Release || p.Commit != o.Commit || p.Protocol != 2 {
 					return failure("ui_version_mismatch")
 				}
 				hello = true
 				busy = true
 				work.Add(1)
 				go func() { defer work.Done(); completed <- writeReply(replies, r.ID, helloResult(o)) }()
+				continue
+			}
+			if r.Method != "overview" {
+				if !overviewStarted {
+					return failure("ui_protocol_invalid")
+				}
+				busy = true
+				deadline.Reset(12 * time.Second)
+				work.Add(1)
+				go func() {
+					defer work.Done()
+					value, e := bridge.dispatch(ctx, r)
+					if e != nil {
+						code := codeFor(e)
+						if code == "ui_protocol_invalid" {
+							completed <- e
+							return
+						}
+						value = record{"error_code": code}
+					}
+					completed <- writeReply(replies, r.ID, value)
+				}()
 				continue
 			}
 			var p struct{}
@@ -264,6 +301,17 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			work.Add(1)
 			go func() {
 				defer work.Done()
+				if bridge.active() {
+					completed <- writeReply(replies, r.ID, record{"error_code": "ui_busy"})
+					return
+				}
+				if bridge.session != nil {
+					bridge.review = nil
+					if e := bridge.session.CloseDetail(ctx); e != nil {
+						completed <- writeReply(replies, r.ID, record{"error_code": codeFor(e)})
+						return
+					}
+				}
 				value := o.Read(ctx)
 				if ctx.Err() != nil {
 					completed <- ctx.Err()
@@ -287,9 +335,10 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 func helloResult(o Options) any {
 	zone, _ := time.Now().In(time.Local).Zone()
 	return map[string]any{
-		"release": o.Release, "commit": o.Commit, "protocol": 1,
-		"parent_pid": strconv.Itoa(os.Getpid()), "capabilities": []string{"overview"},
-		"color": o.Color, "refresh_delay_ns": "5000000000", "timezone": zone,
+		"release": o.Release, "commit": o.Commit, "protocol": 2,
+		"parent_pid":   strconv.Itoa(os.Getpid()),
+		"capabilities": []string{"overview", "results", "details", "reveal", "export"},
+		"color":        o.Color, "refresh_delay_ns": "5000000000", "timezone": zone,
 		"profile": map[string]any{
 			"state_dir": o.StateDir, "config_path": o.ConfigPath,
 			"suggestions": []any{

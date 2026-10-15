@@ -21,6 +21,7 @@ type invocationDiagnostic struct {
 	sink   *diagnostic.Sink
 	logger *zerolog.Logger
 	final  atomic.Bool
+	export atomic.Pointer[terminal.ExportReceipt]
 }
 
 func presentation(cmd *cobra.Command) diagnostic.Options {
@@ -102,14 +103,14 @@ func PrepareTerminalTimeout(cmd *cobra.Command) func() {
 // RenderFailure delivers one safe final failure through the invocation diagnostic sink.
 // Process status remains the caller's responsibility. A failed stream is never retried.
 func RenderFailure(cmd *cobra.Command, err error, exitCode int) {
-	if err == nil && exitCode == 0 {
+	inv := invocation(cmd)
+	if err == nil && exitCode == 0 && (inv == nil || inv.export.Load() == nil) {
 		return
 	}
 	var suppressed interface{ DiagnosticFailed() bool }
 	if errors.As(err, &suppressed) && suppressed.DiagnosticFailed() {
 		return
 	}
-	inv := invocation(cmd)
 	if inv == nil {
 		o := presentation(cmd)
 		// An invalid presentation value cannot select its own error format.
@@ -128,6 +129,38 @@ func renderInvocationFailure(inv *invocationDiagnostic, err error, exitCode int)
 	if !inv.final.CompareAndSwap(false, true) || inv.sink.Err() != nil {
 		return
 	}
+	if r := inv.export.Load(); r != nil {
+		publication := "unknown"
+		if r.Published != nil {
+			publication = "false"
+			if *r.Published {
+				publication = "true"
+			}
+		}
+		code := r.ErrorCode
+		if code == "" {
+			code = "completed"
+			if err != nil {
+				code, _, _ = diagnosticDetails(err)
+			}
+		}
+		if r.Published == nil {
+			code = "ui_export_outcome_unknown"
+		}
+		fields := []diagnostic.Field{
+			diagnostic.String("code", code), diagnostic.String("output", r.Destination),
+			diagnostic.String("publication", publication), diagnostic.String("durability", r.Durability),
+			diagnostic.Int("selected", r.Count), diagnostic.Int("completed", r.Prepared),
+		}
+		if r.Remaining != "" {
+			fields = append(fields, diagnostic.String("temporary_directory", r.Remaining))
+		}
+		if exitCode == 130 || exitCode == 143 {
+			fields = append(fields, diagnostic.Int("exit_code", int64(exitCode)))
+		}
+		diagnostic.Emit(inv.logger, "terminal_export", fields...)
+		return
+	}
 	if exitCode == 130 || exitCode == 143 {
 		diagnostic.Emit(inv.logger, "command_cancelled", diagnostic.Int("exit_code", int64(exitCode)))
 		return
@@ -139,6 +172,11 @@ func renderInvocationFailure(inv *invocationDiagnostic, err error, exitCode int)
 func diagnosticDetails(err error) (string, []diagnostic.Field, bool) {
 	var ui *terminal.Error
 	if errors.As(err, &ui) {
+		if ui.Remaining != "" {
+			return safeDiagnosticCode(ui.Code), []diagnostic.Field{
+				diagnostic.String("temporary_directory", ui.Remaining),
+			}, false
+		}
 		return safeDiagnosticCode(ui.Code), nil, false
 	}
 	var control *controlDeliveryError

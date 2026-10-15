@@ -73,7 +73,7 @@ export class Channel {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.fail(), method === 'hello' ? 5000 : 12000);
       this.pending = {id, resolve, reject, timer};
-      const frame = JSON.stringify({version: 1, id, method, params}) + '\n';
+      const frame = JSON.stringify({version: 2, id, method, params}) + '\n';
       if (Buffer.byteLength(frame) > 4096) { this.fail(); return; }
       this.output.write(frame, err => { if (err) this.fail(); });
     });

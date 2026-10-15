@@ -1,7 +1,7 @@
 # 0011. Terminal results and export
 
 **Date**: 2026-10-15
-**Status**: Proposed
+**Status**: In Progress
 **Content confirmed**: 2026-10-15, after independent review and application of both approved fixes. Implementation and acceptance verification remain pending.
 
 ## Summary

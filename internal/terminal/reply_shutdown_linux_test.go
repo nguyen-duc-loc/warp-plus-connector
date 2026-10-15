@@ -20,7 +20,7 @@ import (
 
 // Spec 0010 AC-12 and AC-13: use anonymous OS pipes, matching the real Go supervisor.
 // Node child process "pipe" stdio can be sockets and does not reproduce blocked filesystem reads.
-func rejectMalformedReply(t *testing.T, executable, mode string) {
+func verifyChildProtocol(t *testing.T, executable, mode string) {
 	t.Helper()
 	root := filepath.Join(filepath.Dir(executable), "lib", "wpc-ui")
 	manifest, err := os.ReadFile(filepath.Join(root, "manifest.json"))
@@ -76,16 +76,17 @@ func rejectMalformedReply(t *testing.T, executable, mode string) {
 	}
 	writeReply := func(id string, value any) {
 		t.Helper()
-		data, err := json.Marshal(map[string]any{"version": 1, "id": id, "result": value})
+		data, err := json.Marshal(map[string]any{"version": 2, "id": id, "result": value})
 		require.NoError(t, err)
 		_, err = replies.Write(append(data, '\n'))
 		require.NoError(t, err)
 	}
 	id := readRequest("hello")
 	hello := map[string]any{
-		"release": identity.Release, "commit": identity.Commit, "protocol": 1,
-		"parent_pid": strconv.Itoa(os.Getpid()), "capabilities": []string{"overview"},
-		"color": "never", "refresh_delay_ns": "5000000000", "timezone": "UTC",
+		"release": identity.Release, "commit": identity.Commit, "protocol": 2,
+		"parent_pid":   strconv.Itoa(os.Getpid()),
+		"capabilities": []string{"overview", "results", "details", "reveal", "export"},
+		"color":        "never", "refresh_delay_ns": "5000000000", "timezone": "UTC",
 		"profile": map[string]any{
 			"state_dir": t.TempDir(), "config_path": nil,
 			"suggestions": []any{
@@ -94,13 +95,16 @@ func rejectMalformedReply(t *testing.T, executable, mode string) {
 			},
 		},
 	}
-	if mode != "overview" {
+	if mode != "overview" && mode != "cancel_before_start" {
 		hello["unexpected"] = "private_reply_text"
 	}
 	writeReply(id, hello)
 	if mode == "overview" {
 		id = readRequest("overview")
 		writeReply(id, map[string]any{"unexpected": "private_reply_text"})
+	}
+	if mode == "cancel_before_start" {
+		driveEarlyCancellation(t, master, &output, readRequest, writeReply)
 	}
 	// A responsive parent closes replies after request EOF. Also prove exit with that pipe held open.
 	if mode != "parent_keeps_reply_open" {
@@ -113,7 +117,11 @@ func rejectMalformedReply(t *testing.T, executable, mode string) {
 		<-exited
 		t.Fatal("UI rejection did not exit within its cleanup allowance")
 	}
-	require.Equal(t, 1, cmd.ProcessState.ExitCode())
+	want := 1
+	if mode == "cancel_before_start" {
+		want = 0
+	}
+	require.Equal(t, want, cmd.ProcessState.ExitCode())
 	require.Regexp(t, `^(?:\x1b\[[0-?]*[ -/]*[@-~])*$`, stderr.String(), "raw errors must not escape")
 	require.NotContains(t, output.text(), "private_reply_text")
 	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)

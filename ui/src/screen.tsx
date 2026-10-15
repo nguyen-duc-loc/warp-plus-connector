@@ -4,6 +4,7 @@ import {Channel} from './channel.js';
 import {overview, type Hello, type Stamp} from './schema.js';
 import {age, initial, refresh, type Cache, type Saved} from './cache.js';
 import {safe, theme} from './theme.js';
+import {ResultsScreen} from './results-screen.js';
 
 const yes = (value: boolean | null) => value === null ? 'Unknown' : value ? 'Yes' : 'No';
 function at(value: Stamp | null) { return value ? `${value.local} UTC${offset(value.utc_offset_seconds)}` : 'Unknown'; }
@@ -133,7 +134,13 @@ function wrap(line: string, width: number): string[] {
   return result.length ? result : [''];
 }
 const names = ['Collection', 'Recent work', 'Schedule', 'Service'];
-export function Screen({channel, hello, quit}: {channel: Channel; hello: Hello; quit: (code: number, interrupt?: boolean) => void}) {
+type ScreenProps={channel: Channel; hello: Hello; quit: (code: number, interrupt?: boolean) => void};
+export function Screen(props:ScreenProps) {
+  const [results,setResults]=useState(false);
+  return <><OverviewScreen {...props} active={!results} onResults={()=>setResults(true)}/>
+    <ResultsScreen {...props} active={results} onOverview={()=>setResults(false)}/></>;
+}
+function OverviewScreen({channel, hello, quit,active,onResults}: ScreenProps & {active:boolean;onResults:()=>void}) {
   const {columns, rows} = useWindowSize();
   const [cache, setCache] = useState(initial);
   const [busy, setBusy] = useState(true);
@@ -141,29 +148,34 @@ export function Screen({channel, hello, quit}: {channel: Channel; hello: Hello; 
   const [scroll, setScroll] = useState(0);
   const [help, setHelp] = useState(false);
   const [now, setNow] = useState(performance.now());
+  const navigation=useRef(false);
+  const readingRef=useRef(false);
+  const openResults=useRef(onResults);openResults.current=onResults;
   const request = useRef<() => void>(() => {});
   useEffect(() => {
+    if(!active)return;navigation.current=false;
     let live = true, reading = false, pending = false;
     let timer: NodeJS.Timeout | undefined;
     const read = async () => {
       if (!live) return;
       if (reading) { pending = true; return; }
       clearTimeout(timer);
-      reading = true;
+      reading = true;readingRef.current=true;
       setBusy(true);
       try {
         const next = overview(await channel.request('overview', {}));
         if (live) setCache(old => refresh(old, next));
       } catch { if (live) quit(1); return; }
-      finally { reading = false; if (live) setBusy(false); }
+      finally { reading = false;readingRef.current=false; if (live) setBusy(false); }
       if (!live) return;
+      if(navigation.current){openResults.current();return}
       if (pending) { pending = false; void read(); } else timer = setTimeout(() => void read(), theme.refreshDelay);
     };
     request.current = () => void read();
     void read();
     const tick = setInterval(() => setNow(performance.now()), 1000);
     return () => { live = false; clearTimeout(timer); clearInterval(tick); };
-  }, [channel, quit]);
+  }, [channel, quit,active]);
   const width = Math.max(1, columns);
   const height = Math.max(1, rows - theme.headerRows - theme.footerRows);
   const small = columns < theme.minimumColumns || rows < theme.minimumRows;
@@ -179,6 +191,8 @@ export function Screen({channel, hello, quit}: {channel: Channel; hello: Hello; 
   const position = Math.min(scroll, maximum);
   useEffect(() => setScroll(p => Math.max(0, Math.min(p, maximum))), [maximum]);
   useInput((input, key) => {
+    if(!active)return;
+    if(input==='b' && !help && !small){navigation.current=true;if(!readingRef.current)onResults();return}
     if (input === 'q') { quit(0); return; }
     if (key.ctrl && input === 'c') { quit(130, true); return; }
     if (input === 'r') { request.current(); return; }
@@ -196,18 +210,19 @@ export function Screen({channel, hello, quit}: {channel: Channel; hello: Hello; 
   const degraded = [cache.collection, cache.installation, cache.manager, cache.runner].some(c => c.status === 'unavailable' || c.status === 'stale');
   const helpLines = ['Keyboard help', 'Tab / Shift+Tab  Focus sections', 'Up / Down  Scroll one row',
     'Page Up / Page Down  Scroll one viewport', 'Home / End  Start / end of body', 'r  Refresh, presses during a read coalesce',
-    '? / Esc  Close help', 'q  Quit', 'Ctrl+C  Interrupt', 'Opening or leaving this view does not start or stop background work.'];
+    '? / Esc  Close help', 'b  Results', 'q  Quit', 'Ctrl+C  Interrupt', 'Opening or leaving this view does not start or stop background work.'];
   const shown = help ? helpLines.flatMap(s => wrap(s, width)).slice(0, height).map(text => ({text}))
     : small ? wrap('Resize to at least 60 columns and 16 rows. r refresh | ? help | q quit', width).slice(0,height).map(text => ({text}))
       : lines.slice(position, position + height);
   const header = [`WPC ${hello.release}  Overview  | ${busy ? 'Refreshing' : degraded ? 'Degraded' : 'Ready'}`,
     `Collection ${hello.profile.state_dir}`, cache.header ? at(cache.header) : `Loading | ${hello.timezone}`, ''];
+  if(!active)return null;
   return <Box flexDirection="column" width={width} height={Math.max(1,rows)}>
     {header.slice(0, Math.max(0, Math.min(4, rows-2))).map((line,i) => <Text key={`h${i}`} wrap="truncate-end">{safe(line)}</Text>)}
     <Box flexDirection="column" height={height} overflow="hidden">
       {shown.map((line,i) => <Text key={i} wrap="truncate-end" color={hello.color !== 'never' && 'heading' in line && line.heading === focus ? theme.accent : undefined}>{line.text}</Text>)}
     </Box>
-    <Text wrap="truncate-end">{small ? 'r refresh | ? help | q quit' : 'Tab sections | Up/Down scroll | r refresh | ? help | q quit'}</Text>
+    <Text wrap="truncate-end">{small ? 'r refresh | ? help | q quit' : 'b Results | Tab sections | r refresh | ? help | q quit'}</Text>
     <Text wrap="truncate-end">{help ? 'Esc returns to overview' : `${names[focus]} | Rows ${position+1}-${Math.min(lines.length,position+height)} of ${lines.length}`}</Text>
   </Box>;
 }

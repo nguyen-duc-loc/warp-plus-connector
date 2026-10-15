@@ -44,12 +44,19 @@ func TestPackagedTerminal(t *testing.T) {
 	if executable == "" {
 		t.Skip("set WPC_UI_PACKAGE to a matching packaged Linux executable")
 	}
-	for _, mode := range []string{"quit", "interrupt", "terminate", "hangup", "child_crash", "absent", "scheduled"} {
+	for _, mode := range []string{
+		"quit", "interrupt", "terminate", "hangup", "child_crash", "absent", "scheduled",
+		"results", "results_compact", "results_failure",
+	} {
 		t.Run(
 			mode, func(t *testing.T) {
 				dir := filepath.Join(t.TempDir(), "state")
 				if mode != "absent" {
-					seedOverview(t, dir)
+					if strings.HasPrefix(mode, "results") {
+						seedOverview(t, dir, 338)
+					} else {
+						seedOverview(t, dir)
+					}
 				}
 				if mode == "scheduled" {
 					seedOverviewSchedule(t, dir)
@@ -65,9 +72,13 @@ func TestPackagedTerminal(t *testing.T) {
 				defer func() { _ = slave.Close() }()
 				before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 				require.NoError(t, err)
+				size := &unix.Winsize{Row: 30, Col: 110}
+				if mode == "results_compact" {
+					size = &unix.Winsize{Row: 16, Col: 60}
+				}
 				require.NoError(
 					t,
-					unix.IoctlSetWinsize(int(master.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 30, Col: 110}),
+					unix.IoctlSetWinsize(int(master.Fd()), unix.TIOCSWINSZ, size),
 				)
 				cmd := exec.Command(executable, "--state-dir", dir, "--color", "never")
 				cmd.Env = append(os.Environ(), "TERM=xterm-256color", "NO_COLOR=1", "NODE_OPTIONS=--invalid-option")
@@ -89,11 +100,17 @@ func TestPackagedTerminal(t *testing.T) {
 				if mode == "absent" {
 					seen("No saved collection yet")
 				} else {
-					seen("105 TOTAL CANDIDATES")
+					if strings.HasPrefix(mode, "results") {
+						seen("338 TOTAL CANDIDATES")
+					} else {
+						seen("105 TOTAL CANDIDATES")
+					}
 				}
 				seen("Overview  | Ready")
 				want := 0
 				switch mode {
+				case "results", "results_compact", "results_failure":
+					verifyPackagedResults(t, executable, dir, master, &output, mode)
 				case "quit":
 					_, err = master.WriteString("\t")
 					require.NoError(t, err)
@@ -176,7 +193,9 @@ func TestPackagedTerminal(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, before, after, "original terminal settings must be restored")
 				seen("\x1b[?1049l")
-				require.NotContains(t, output.text(), "synthetic_private_key")
+				if !strings.HasPrefix(mode, "results") {
+					require.NotContains(t, output.text(), "synthetic_private_key")
+				}
 				require.NotRegexp(t, `\x1b\[[0-9;]*m`, output.text(), "no decorative color")
 				if mode == "absent" {
 					_, err := os.Stat(dir)
@@ -186,8 +205,9 @@ func TestPackagedTerminal(t *testing.T) {
 		)
 	}
 	for _, mode := range []string{"hello", "overview", "parent_keeps_reply_open"} {
-		t.Run("malformed_"+mode, func(t *testing.T) { rejectMalformedReply(t, executable, mode) })
+		t.Run("malformed_"+mode, func(t *testing.T) { verifyChildProtocol(t, executable, mode) })
 	}
+	t.Run("cancel_before_start", func(t *testing.T) { verifyChildProtocol(t, executable, "cancel_before_start") })
 	t.Run("startup_deadline", func(t *testing.T) { verifyStartupDeadline(t, executable) })
 }
 
@@ -224,11 +244,15 @@ func seedOverviewSchedule(t *testing.T, dir string) {
 	require.NoError(t, w.Close())
 }
 
-func seedOverview(t *testing.T, dir string) {
+func seedOverview(t *testing.T, dir string, count ...int) {
 	t.Helper()
 	w, err := store.OpenWriter(t.Context(), dir, time.Now)
 	require.NoError(t, err)
-	keys := make([]string, 105)
+	size := 105
+	if len(count) > 0 {
+		size = count[0]
+	}
+	keys := make([]string, size)
 	for i := range keys {
 		keys[i] = fmt.Sprintf("synthetic_private_key_%d", i)
 	}

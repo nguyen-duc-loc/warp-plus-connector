@@ -97,7 +97,7 @@ func (a *App) QueryCandidates(
 		return result, ErrCandidateQuery
 	}
 	result.Query = query
-	r, err := store.OpenReader(ctx, a.Settings.StateDir)
+	r, err := store.OpenSnapshotReader(ctx, a.Settings.StateDir)
 	if err != nil {
 		return result, classified(err)
 	}

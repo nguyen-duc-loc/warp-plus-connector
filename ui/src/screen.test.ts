@@ -5,7 +5,7 @@ import {initial, type Cache} from './cache.js';
 import type {Collection, Hello} from './schema.js';
 
 const at = {utc: '2026-10-14T00:00:00.000000Z', local: '2026-10-14 05:45:00', utc_offset_seconds: '20700'};
-const welcome: Hello = {release: 'dev', commit: '', protocol: 1, parent_pid: '123', capabilities: ['overview'],
+const welcome: Hello = {release: 'dev', commit: '', protocol: 2, parent_pid: '123', capabilities: ['overview','results','details','reveal','export'],
   color: 'never', refresh_delay_ns: '5000000000', timezone: 'NPT', profile: {state_dir: '/selected', config_path: null,
     suggestions: [{action: 'sources', command_text: "wpc sources --state-dir '/selected'"},
       {action: 'crawl', command_text: "wpc crawl --state-dir '/selected'"}]}};

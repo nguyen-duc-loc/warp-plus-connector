@@ -83,7 +83,7 @@ def main():
                 target = licenses / path.relative_to(app / "node_modules")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, target)
-    manifest = {"schema_version": 1, "protocol_version": 1, "release": args.release,
+    manifest = {"schema_version": 1, "protocol_version": 2, "release": args.release,
                 "commit": args.commit, "os": "linux", "arch": args.arch, "node": pins["node"],
                 "lock_sha256": digest(app / "package-lock.json"), "files": {}}
     for path in sorted(destination.rglob("*")):

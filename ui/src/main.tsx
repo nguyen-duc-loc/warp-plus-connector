@@ -37,7 +37,7 @@ class SafeBoundary extends Component<{children: ReactNode}, {failed: boolean}> {
 try {
   const release = process.argv[2] ?? '';
   const commit = process.argv[3] ?? '';
-  const welcome = hello(await channel.request('hello', {release, commit, protocol: 1}));
+  const welcome = hello(await channel.request('hello', {release, commit, protocol: 2}));
   if (welcome.release !== release || welcome.commit !== commit || welcome.parent_pid !== String(process.ppid) ||
     welcome.refresh_delay_ns !== '5000000000' || welcome.profile.suggestions[0]?.action !== 'sources' ||
     welcome.profile.suggestions[1]?.action !== 'crawl' || !process.stdin.isTTY || !process.stdout.isTTY) invalid();

@@ -12,7 +12,7 @@ import (
 )
 
 // Error contains only a closed terminal diagnostic code.
-type Error struct{ Code string }
+type Error struct{ Code, Remaining string }
 
 func (e *Error) Error() string  { return e.Code }
 func failure(code string) error { return &Error{Code: code} }
@@ -49,7 +49,7 @@ func bundle(release, commit string) (string, error) {
 		return "", failure("ui_installation_invalid")
 	}
 	var m manifest
-	if strictJSON(data, &m) != nil || m.Schema != 1 || m.Protocol != 1 || m.Release != release ||
+	if strictJSON(data, &m) != nil || m.Schema != 1 || m.Protocol != 2 || m.Release != release ||
 		m.Commit != commit || m.OS != runtime.GOOS || m.Arch != runtime.GOARCH || m.Node != "24.20.0" ||
 		len(m.Files) == 0 || len(m.Files) > 20000 {
 		return "", failure("ui_version_mismatch")

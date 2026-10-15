@@ -148,6 +148,12 @@ func OpenReader(ctx context.Context, stateDir string) (*Reader, error) {
 	)
 }
 
+// OpenSnapshotReader waits for entered admission and cleanup even when cancelled.
+// Snapshot jobs must not start a replacement while an earlier open still owns work.
+func OpenSnapshotReader(ctx context.Context, stateDir string) (*Reader, error) {
+	return openReader(ctx, stateDir)
+}
+
 func openReader(ctx context.Context, stateDir string) (*Reader, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

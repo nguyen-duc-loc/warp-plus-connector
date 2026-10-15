@@ -219,21 +219,7 @@ func (r *Reader) ListSightings(ctx context.Context, candidateID int64, p state.P
 			}
 			return page(
 				ctx, tx, p, c, func(id int64) (state.Sighting, error) {
-					var s state.Sighting
-					var published sql.NullInt64
-					var messageURL sql.NullString
-					var first, last int64
-					err := tx.QueryRowContext(
-						ctx,
-						"SELECT s.id,s.candidate_id,s.source_id,s.message_id,s.message_url,"+
-							"s.published_at,min(o.observed_at),max(o.observed_at)\n    FROM "+
-							"sightings s JOIN crawl_observations o ON o.sighting_id=s.id WHERE "+
-							"s.id=? GROUP BY s.id",
-						id,
-					).Scan(&s.ID, &s.CandidateID, &s.SourceID, &s.MessageID, &messageURL, &published, &first, &last)
-					s.MessageURL, s.PublishedAt = nullString(messageURL), nullTime(published)
-					s.FirstSeenAt, s.LastSeenAt = time.UnixMicro(first).UTC(), time.UnixMicro(last).UTC()
-					return s, err
+					return getSighting(ctx, tx, id)
 				},
 			)
 		},
@@ -316,4 +302,22 @@ func (r *Reader) ListObservations(ctx context.Context, runID int64, p state.Page
 			)
 		},
 	)
+}
+
+func getSighting(ctx context.Context, tx *sql.Tx, id int64) (state.Sighting, error) {
+	var s state.Sighting
+	var published sql.NullInt64
+	var messageURL sql.NullString
+	var first, last int64
+	err := tx.QueryRowContext(
+		ctx,
+		"SELECT s.id,s.candidate_id,s.source_id,s.message_id,s.message_url,"+
+			"s.published_at,min(o.observed_at),max(o.observed_at)\n    FROM "+
+			"sightings s JOIN crawl_observations o ON o.sighting_id=s.id WHERE "+
+			"s.id=? GROUP BY s.id",
+		id,
+	).Scan(&s.ID, &s.CandidateID, &s.SourceID, &s.MessageID, &messageURL, &published, &first, &last)
+	s.MessageURL, s.PublishedAt = nullString(messageURL), nullTime(published)
+	s.FirstSeenAt, s.LastSeenAt = time.UnixMicro(first).UTC(), time.UnixMicro(last).UTC()
+	return s, err
 }

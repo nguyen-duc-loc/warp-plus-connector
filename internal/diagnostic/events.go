@@ -197,6 +197,19 @@ func describe(r Record) (zerolog.Level, string) {
 		return CodeLevel(code), "Scheduler update"
 	case "command_cancelled":
 		return zerolog.WarnLevel, "Command cancelled"
+	case "terminal_export":
+		level := zerolog.InfoLevel
+		if code != "completed" {
+			level = zerolog.ErrorLevel
+		}
+		switch r.text("publication") {
+		case "true":
+			return level, "File created"
+		case "false":
+			return level, "This operation did not create a file"
+		default:
+			return zerolog.ErrorLevel, "File may have been created; check the destination before retrying"
+		}
 	case "command_error":
 		return zerolog.ErrorLevel, "Command or output failed"
 	}
@@ -206,6 +219,7 @@ func describe(r Record) (zerolog.Level, string) {
 type schema struct{ required, optional string }
 
 var schemas = map[string]schema{
+	"terminal_export": {"code output publication durability selected completed", "temporary_directory exit_code"},
 	"work_diagnostic": {"run_id code", "result origin status selected saved_candidates saved_sightings"},
 	"crawl_started":   {"run_id origin", ""},
 	"run_completed": {
@@ -339,6 +353,10 @@ func validField(k string, v any) bool {
 		return false
 	}
 	switch k {
+	case "publication":
+		return contains("true false unknown", s)
+	case "durability":
+		return contains("not_published confirmed uncertain", s)
 	case "code", "result":
 		return SafeCode(s)
 	case "origin":

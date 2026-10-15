@@ -132,11 +132,11 @@ test('component metadata must agree with data and observation age', () => {
 // Spec 0010 AC-12: a reply belongs to one pending request and exposes only its result.
 test('reply rejects mismatched identities versions and error details', () => {
   const result = {total: '9007199254740993'};
-  assert.deepEqual(reply({version: 1, id: '9', result}, '9'), result);
-  for (const value of [{version: 1, id: '8', result}, {version: 2, id: '9', result},
-    {version: 1, id: 9, result}, {version: 1, id: '9', result, error: {code: 'state_error'}},
-    {version: 1, id: '9', error: {code: 'state_error', detail: 'private error'}},
-    {version: 1, id: '9', error: {code: 'state_error'}}, null, []]) {
+  assert.deepEqual(reply({version: 2, id: '9', result}, '9'), result);
+  for (const value of [{version: 2, id: '8', result}, {version: 99, id: '9', result},
+    {version: 2, id: 9, result}, {version: 2, id: '9', result, error: {code: 'state_error'}},
+    {version: 2, id: '9', error: {code: 'state_error', detail: 'private error'}},
+    {version: 2, id: '9', error: {code: 'state_error'}}, null, []]) {
     assert.throws(() => reply(value, '9'), /ui_protocol_invalid/);
   }
 });

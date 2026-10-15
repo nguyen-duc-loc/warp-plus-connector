@@ -52,10 +52,17 @@ func openTerminal(cmd *cobra.Command, release, commit string) error {
 			}
 		}
 	}
+	inv := invocation(cmd)
+	if inv == nil {
+		inv = newInvocation(cmd, presentation(cmd), nil)
+		cmd.SetContext(context.WithValue(cmd.Context(), diagnosticKey{}, inv))
+	}
 	return terminal.Run(
 		cmd.Context(), cmd.InOrStdin().(*os.File), cmd.OutOrStdout().(*os.File), terminal.Options{
 			Release: release, Commit: commit, Color: presentation(cmd).Color, StateDir: settings.StateDir,
 			ConfigPath: settings.ConfigPath, Suggestions: suggestions, Read: a.ReadOverview,
+			Results: a.NewResultsSession(), Destination: terminalDestination, Export: terminalExport,
+			ObserveExport: func(r terminal.ExportReceipt) { inv.export.Store(&r) },
 		},
 	)
 }

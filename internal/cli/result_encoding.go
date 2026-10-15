@@ -13,10 +13,11 @@ import (
 )
 
 type candidateEncoder struct {
-	writer   io.Writer
-	format   string
-	showKeys bool
-	count    int64
+	writer    io.Writer
+	format    string
+	showKeys  bool
+	count     int64
+	selection *exportSelection
 }
 
 type candidateJSON struct {
@@ -125,9 +126,10 @@ func (e *candidateEncoder) finish(result app.CandidateResult) error {
 			Limit         *int64             `json:"limit"`
 			ReturnedCount int64              `json:"returned_count"`
 			Truncated     bool               `json:"truncated"`
+			Selection     *exportSelection   `json:"selection,omitempty"`
 		}{
 			1, result.Evaluation.AsOf, result.Evaluation.MaxAge.String(),
-			result.Query, result.Query.Limit, result.ReturnedCount, result.Truncated,
+			result.Query, result.Query.Limit, result.ReturnedCount, result.Truncated, e.selection,
 		}
 		encoded, err := json.Marshal(metadata)
 		if err != nil {
@@ -152,4 +154,9 @@ func (e *candidateEncoder) finish(result app.CandidateResult) error {
 		return err
 	}
 	return nil
+}
+
+type exportSelection struct {
+	Mode          string `json:"mode"`
+	MatchingCount int64  `json:"matching_count"`
 }

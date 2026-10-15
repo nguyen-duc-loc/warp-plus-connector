@@ -297,15 +297,17 @@ Let you browse saved candidates, filter by outcome and freshness, inspect detail
 
 **Done when:** every record in the 338 candidate fixture is reachable without silent truncation; selection survives navigation predictably; freshness and confirmation time are clear; keys are hidden until explicit disclosure; export selection, destination, completion, and failure are understandable and preserve existing privacy and publication guarantees.
 
-**Spec:** [0011. Terminal results and export](../specs/0011-terminal-results-export/index.md), confirmed on 2026-10-15 after independent review and application of both approved fixes. The design uses private fixed results snapshots, complete paged details, session marks, explicit key disclosure, and reviewed file export through the Go parent. Implementation and acceptance verification remain pending.
+**Spec:** [0011. Terminal results and export](../specs/0011-terminal-results-export/index.md), confirmed on 2026-10-15 after independent review and application of both approved fixes. The implementation uses private fixed results snapshots, complete paged details, session marks, explicit key disclosure, and reviewed file export through the Go parent. Local build checks passed on 2026-10-15. Native amd64 execution and full Beta acceptance verification remain pending.
+
+**Code:** [results session](../../internal/app/results_session.go), [private store](../../internal/store/browse.go), [terminal bridge](../../internal/terminal/results_dispatch.go), [file export](../../internal/cli/terminal_export.go), and [Results screens](../../ui/src/results-screen.tsx).
 
 - [x] Design it (spec): `/architect terminal results and export`
 - [ ] Build it: `/develop terminal results and export`
-  - [ ] Prove protocol 2, one real private results snapshot, paged browsing, and a reviewed JSON file export through the packaged terminal (AC-1, AC-7 through AC-10, AC-12 through AC-16).
-  - [ ] Complete filters, exact counts, marks, refresh reconciliation, and retained snapshots alongside concurrent writers (AC-1 through AC-3, AC-6 through AC-8, AC-11, AC-12, AC-14).
-  - [ ] Complete separate detail snapshots, all provenance and attempt history, saved retry facts, and explicit key reveal (AC-4 through AC-6, AC-11 through AC-14).
-  - [ ] Complete marked exports, disclosure formats, cancellation, publication receipts, cleanup warnings, and bounded shutdown (AC-3, AC-5, AC-7 through AC-13, AC-15).
-  - [ ] Complete keyboard and failure behavior, CLI compatibility, and matching native Linux archive integration (AC-1 through AC-16).
+  - [x] Prove protocol 2, one real private results snapshot, paged browsing, and a reviewed JSON file export through the packaged terminal (AC-1, AC-7 through AC-10, AC-12 through AC-16).
+  - [x] Complete filters, exact counts, marks, refresh reconciliation, and retained snapshots alongside concurrent writers (AC-1 through AC-3, AC-6 through AC-8, AC-11, AC-12, AC-14).
+  - [x] Complete separate detail snapshots, all provenance and attempt history, saved retry facts, and explicit key reveal (AC-4 through AC-6, AC-11 through AC-14).
+  - [x] Complete marked exports, disclosure formats, cancellation, publication receipts, cleanup warnings, and bounded shutdown (AC-3, AC-5, AC-7 through AC-13, AC-15).
+  - [ ] Complete keyboard and failure behavior, CLI compatibility, and matching native Linux archive integration (AC-1 through AC-16). Both archives build and pass payload validation. The final arm64 archive passes the complete packaged suite on glibc 2.28, including every one of 338 rows at wide and 60 by 16 sizes, retained export failures, explicit command compatibility, and cancellation before job acknowledgement. Help and resize now preserve scroll position, and export review actions stay visible. Native amd64 execution through the existing GitHub Actions workflow awaits commit and push approval.
 - [ ] Verify it: `/check verify terminal results and export`
 - [ ] Test it: `/test terminal results and export`
 

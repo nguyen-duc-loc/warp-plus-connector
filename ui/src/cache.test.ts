@@ -31,7 +31,7 @@ test('service identity mismatch discards cached observations even with retain po
   assert.equal(refresh(previous, next).manager.data, null);
 });
 test('closed handshake shape rejects missing and unknown fields', () => {
-  const valid = {release: 'dev', commit: '', protocol: 1, parent_pid: '123', capabilities: ['overview'], color: 'never',
+  const valid = {release: 'dev', commit: '', protocol: 2, parent_pid: '123', capabilities: ['overview','results','details','reveal','export'], color: 'never',
     refresh_delay_ns: '5000000000', timezone: 'UTC', profile: {state_dir: '/test', config_path: null,
       suggestions: [{action: 'sources', command_text: 'wpc sources'}, {action: 'crawl', command_text: 'wpc crawl'}]}};
   assert.equal(hello(valid).parent_pid, '123');
