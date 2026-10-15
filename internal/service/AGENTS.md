@@ -26,6 +26,8 @@ The application shares one 60 second remote cleanup allowance across both lanes,
 
 [doctor.go](doctor.go) uses a shared twenty second budget and five second native and Docker probes. It performs local reads without repair, recovery, registration, or attachment. Preserve private file access codes and guidance, independently proven saved failures when ownership is unknown, and `retry_doctor` for shared budget expiry. Status report delivery can succeed for an unhealthy service; doctor returns failure after delivering a report containing failed checks.
 
+[overview.go](overview.go) implements the service observations for [spec 0010](../../docs/specs/0010-terminal-foundation-overview/index.md) without opening the service's bound collection. `OverviewStatus` checks installation identity before and after independent manager and runner reads. Missing, changed, or unreadable identity discards all service components; a verified identity can preserve independent successes despite manager failure. `CompareOverviewCollection` compares canonical selected and bound paths without creating them. Cross refresh cache identity belongs to the terminal session, and these reads perform no service controls or Docker probes.
+
 ## Logs and privacy
 
 [Spec 0009](../../docs/specs/0009-readable-development-logs/index.md) extends presentation through `internal/cli/service_logs.go` and replaces managed slog capture with `diagnostic.NewCapture` in [run.go](run.go). Validate every transport event, then adapt only `work_diagnostic` run IDs and codes to the existing archive catalogue. The archive remains authoritative for timestamps, sequence, and identities; presentation flags never alter saved capture or schema version 1.

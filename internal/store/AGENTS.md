@@ -54,6 +54,8 @@ Pages default to 100 rows and allow up to 1000 per call, with no total cap. The 
 
 [operational.go](operational.go) implements `GetOperationalWork` for service status: schedule, all candidate outcome counts, latest runs, complete prior terminal summaries, source results, and grouped validation failures share one established SQLite snapshot and evaluation time. Service reads add no schema version and never open a writer. SQLite WAL and shared memory coordination files are permitted by spec 0002; they do not imply application state initialization or recovery.
 
+[overview.go](overview.go) implements `GetOverview` for [spec 0010](../../docs/specs/0010-terminal-foundation-overview/index.md). Complete collection counts, the latest ten runs across both kinds in descending ID order, and schedules share one established snapshot and caller supplied evaluation time. An eleventh run sets the limited history notice. Latest completed outcomes remain separate from definitive confirmation freshness; exact expiry is stale and future evidence has unknown freshness with a clock anomaly. Legacy selection totals remain unavailable. The overview adds no migration, recovery, or writer ownership.
+
 ## Cancellation
 
 [context.go](context.go) lets callers observe cancellation while native SQLite work finishes cleanup. The five second busy timeout is shortened for earlier deadlines. Entered work retains resources and writer ownership until cleanup completes. Inputs captured by that work are copied before dispatch. `Close` waits for entered operations; callers cancel their contexts first when they need bounded shutdown.

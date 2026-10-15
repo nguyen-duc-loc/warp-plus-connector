@@ -44,6 +44,8 @@ Major work transitions appear at info, successful page and attempt details at de
 
 `ShowSchedule` reads persisted policy and eligibility through `GetSchedule`, without applying current intervals or acquiring validator ownership. The reader closes before CLI output preparation and delivery.
 
+[overview.go](overview.go) implements `ReadOverview` under [spec 0010](../../docs/specs/0010-terminal-foundation-overview/index.md). It reads the selected collection and the injected `OverviewService` boundary independently, with five seconds per section inside a ten second request context. It waits for entered work and reader closure before preparing the header time; the terminal supervisor owns the independent watchdog for reads that resist cancellation. Missing collection state discards cached data, other failures permit clearly stale retention, and service failure never hides available collection data. This path opens no writer and invokes no source or validator.
+
 You can run `rtk proxy go test -race ./internal/app` for focused checks. Tests use synthetic source or validator responses with the real store. Live behavior remains recorded in the feature verification files.
 
 _Drafted by /sync from the introducing change, worth a quick human pass._
