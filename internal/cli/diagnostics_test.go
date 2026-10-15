@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +16,60 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+// Spec 0010 AC-13: timeout output keeps its prepared destination and invocation failure latch.
+func TestTerminalTimeoutDiagnostic(t *testing.T) {
+	var out, replacement bytes.Buffer
+	root := NewRootCommand("dev", "")
+	root.SetErr(&out)
+	require.NoError(t, root.PersistentFlags().Set("log-format", "json"))
+	require.NoError(t, root.PersistentFlags().Set("log-level", "error"))
+	report := PrepareTerminalTimeout(root)
+	// A watchdog uses immutable presentation, even if command state later changes.
+	root.SetErr(&replacement)
+	require.NoError(t, root.PersistentFlags().Set("log-format", "pretty"))
+	report()
+	RenderFailure(root, errors.New("private late failure"), 130)
+	report()
+	require.Equal(t, 1, strings.Count(out.String(), `"code":"ui_shutdown_timeout"`))
+	require.Contains(t, out.String(), `"message":"Terminal cleanup timed out; exiting"`)
+	require.NotContains(t, out.String(), "private")
+	require.Empty(t, replacement.String())
+}
+
+// Spec 0009 AC-6 and spec 0010 AC-13: failed timeout destinations are never replaced or retried.
+func TestTerminalTimeoutDoesNotRetryFailedSink(t *testing.T) {
+	for _, first := range []func([]byte) (int, error){
+		func([]byte) (int, error) { return 0, io.ErrClosedPipe },
+		func(p []byte) (int, error) { return len(p) - 1, nil },
+		func(p []byte) (int, error) { return len(p), errors.New("private destination failure") },
+	} {
+		writer := &metadataWriter{first: first}
+		root := NewRootCommand("dev", "")
+		root.SetErr(writer)
+		report := PrepareTerminalTimeout(root)
+		require.Error(t, invocation(root).sink.Notice([]byte("prior diagnostic")))
+		report()
+		RenderFailure(root, errors.New("private late failure"), 0)
+		require.Equal(t, 1, writer.writes)
+	}
+}
+
+func TestTerminalTimeoutAndNormalFinalOutputShareOneClaim(t *testing.T) {
+	root := NewRootCommand("dev", "")
+	var out bytes.Buffer
+	root.SetErr(&out)
+	require.NoError(t, root.PersistentFlags().Set("log-format", "json"))
+	report := PrepareTerminalTimeout(root)
+	var work sync.WaitGroup
+	for range 10 {
+		work.Go(report)
+		work.Go(func() { RenderFailure(root, errors.New("private late failure"), 0) })
+	}
+	work.Wait()
+	require.Equal(t, 1, strings.Count(out.String(), `"event":"command_error"`))
+	require.NotContains(t, out.String(), "private")
+}
 
 // Spec 0009 AC-5 and AC-6: flags precede configuration access and invalid values stay private.
 func TestPresentationValidationAndSafeFinalErrors(t *testing.T) {

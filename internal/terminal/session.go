@@ -173,6 +173,7 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 	}()
 	hello := false
 	ready := false
+	overviewStarted := false
 	busy := false
 	completed := make(chan error, 1)
 	deadline := time.NewTimer(5 * time.Second)
@@ -189,13 +190,15 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			}
 			return nil
 		case <-deadline.C:
-			if !ready {
+			if !overviewStarted {
 				return failure("ui_startup_timeout")
 			}
 			return failure("ui_read_timeout")
 		case err := <-completed:
 			busy = false
-			deadline.Stop()
+			if overviewStarted {
+				deadline.Stop()
+			}
 			if err != nil {
 				return err
 			}
@@ -220,7 +223,9 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			if busy {
 				select {
 				case err := <-completed:
-					deadline.Stop()
+					if overviewStarted {
+						deadline.Stop()
+					}
 					if err != nil {
 						return err
 					}
@@ -252,6 +257,8 @@ func Run(parent context.Context, in, out *os.File, o Options) (err error) {
 			if r.Method != "overview" || strictJSON(r.Params, &p) != nil || string(r.Params) == "null" {
 				return failure("ui_protocol_invalid")
 			}
+			// The first overview proves the child accepted hello; writing hello alone does not.
+			overviewStarted = true
 			busy = true
 			deadline.Reset(12 * time.Second)
 			work.Add(1)

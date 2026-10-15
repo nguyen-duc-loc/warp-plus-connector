@@ -25,7 +25,8 @@ const code: Schema<string> = v => typeof v === 'string' && codes.has(v) ? v : in
 const identity: Schema<string> = v => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v) ? v : invalid();
 const stamp = object({
   utc: (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(v)
-    && Number.isFinite(Date.parse(v)) && !v.startsWith('0001-') ? v : invalid(),
+    && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v.slice(0, 23) + 'Z'
+    && !v.startsWith('0001-') ? v : invalid(),
   local: (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(v) ? v : invalid(),
   utc_offset_seconds: signed,
 });
@@ -44,10 +45,13 @@ const run = object({id: decimal, kind: one('crawl', 'validation'), origin: one('
   crawl_counts: nullable(object({saved_candidates: decimal, saved_sightings: decimal})), validation_counts: nullable(counts)});
 const schedule = object({checkpoint_at: nullable(stamp), clock_regressed: bool, validation_recovery_pending: bool,
   crawl: nullable(object({coverage: array(object({channel: text, page_limit: decimal}), 1, 32), due_at: stamp,
-    reason: one('initial', 'coverage_changed', 'routine', 'failure'), basis_at: stamp, interval_ns: decimal,
+    reason: one('initial', 'coverage_changed', 'completed', 'failed', 'cancelled', 'interrupted'),
+    basis_at: stamp, interval_ns: decimal,
     basis_run_id: nullable(decimal), active_run_id: nullable(decimal)})),
   candidates: object({total: decimal, active: decimal, due: decimal, waiting: decimal, next_due_at: nullable(stamp)}),
-  validation_wait: nullable(object({reason: code, basis_at: stamp, retry_at: stamp, observed_at: stamp, interval_ns: decimal}))});
+  validation_wait: nullable(object({reason: one('backend_unavailable', 'cleanup_pending', 'provider_cooldown',
+    'validator_busy', 'validator_clock_regressed', 'validation_rate_limited', 'validation_probe_failed',
+    'validation_interrupted'), basis_at: stamp, retry_at: stamp, observed_at: stamp, interval_ns: decimal}))});
 const collection = object({as_of: stamp, max_age_ns: decimal, total: decimal, latest_outcomes: outcomes,
   fresh_confirmed: decimal, stale_confirmed: decimal, unknown_freshness: decimal,
   recent_runs: array(run, 0, 10), older_runs_available: bool, schedule});

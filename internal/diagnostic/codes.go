@@ -24,7 +24,7 @@ func SafeCode(code string) bool {
 			"state_busy state_error state_invalid_input state_migration_required state_not_initialized "+
 			"state_record_not_found state_schema_too_new temporary_error timeout unknown_response "+
 			"ui_installation_invalid ui_version_mismatch ui_protocol_invalid ui_startup_timeout "+
-			"ui_startup_failed ui_read_timeout ui_child_failed service_diagnostic_timeout "+
+			"ui_startup_failed ui_read_timeout ui_child_failed ui_shutdown_timeout service_diagnostic_timeout "+
 			"validation_batch_inconclusive validation_batch_required validation_batch_stopped "+
 			"validation_cleanup_pending validation_interrupted validation_invalid_input "+
 			"validation_observation_timeout validation_probe_failed validation_provider_error "+

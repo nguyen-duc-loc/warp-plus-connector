@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/nguyen-duc-loc/warp-plus-connector/internal/app"
@@ -19,6 +20,7 @@ type diagnosticKey struct{}
 type invocationDiagnostic struct {
 	sink   *diagnostic.Sink
 	logger *zerolog.Logger
+	final  atomic.Bool
 }
 
 func presentation(cmd *cobra.Command) diagnostic.Options {
@@ -80,6 +82,23 @@ func invocation(cmd *cobra.Command) *invocationDiagnostic {
 	return inv
 }
 
+// PrepareTerminalTimeout binds final rendering after terminal flags have been validated.
+// The returned function uses the same failure latch as normal final rendering and never reads Cobra state.
+func PrepareTerminalTimeout(cmd *cobra.Command) func() {
+	inv := invocation(cmd)
+	if inv == nil {
+		inv = newInvocation(cmd, presentation(cmd), nil)
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		cmd.SetContext(context.WithValue(ctx, diagnosticKey{}, inv))
+	}
+	return func() {
+		renderInvocationFailure(inv, &terminal.Error{Code: "ui_shutdown_timeout"}, 0)
+	}
+}
+
 // RenderFailure delivers one safe final failure through the invocation diagnostic sink.
 // Process status remains the caller's responsibility. A failed stream is never retried.
 func RenderFailure(cmd *cobra.Command, err error, exitCode int) {
@@ -102,7 +121,11 @@ func RenderFailure(cmd *cobra.Command, err error, exitCode int) {
 		}
 		inv = newInvocation(cmd, o, nil)
 	}
-	if inv.sink.Err() != nil {
+	renderInvocationFailure(inv, err, exitCode)
+}
+
+func renderInvocationFailure(inv *invocationDiagnostic, err error, exitCode int) {
+	if !inv.final.CompareAndSwap(false, true) || inv.sink.Err() != nil {
 		return
 	}
 	if exitCode == 130 || exitCode == 143 {

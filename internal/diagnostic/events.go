@@ -389,6 +389,8 @@ func CommandError(l *zerolog.Logger, code, explanation string, omitOutput bool, 
 		message = "Output delivery failed"
 	case "cancelled":
 		message = "Command cancelled"
+	case "ui_shutdown_timeout":
+		message = "Terminal cleanup timed out; exiting"
 	}
 	if omitOutput {
 		message += ", omit --output for stdout"

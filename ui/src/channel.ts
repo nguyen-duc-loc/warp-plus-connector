@@ -1,4 +1,4 @@
-import {createReadStream, createWriteStream} from 'node:fs';
+import {Socket} from 'node:net';
 import {TextDecoder} from 'node:util';
 import {invalid, reply} from './schema.js';
 
@@ -36,8 +36,9 @@ export function parseFrame(text: string): unknown {
 }
 
 export class Channel {
-  private readonly input = createReadStream('', {fd: 4, autoClose: true, highWaterMark: 16384});
-  private readonly output = createWriteStream('', {fd: 3, autoClose: true});
+  // Inherited pipes need cancellable event driven I/O, not a filesystem read blocking a worker.
+  private readonly input = new Socket({fd: 4, readable: true, writable: false});
+  private readonly output = new Socket({fd: 3, readable: false, writable: true});
   private buffer = Buffer.alloc(0);
   private sequence = 0n;
   private pending: {id: string; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout} | null = null;
@@ -81,7 +82,7 @@ export class Channel {
     this.connected = false;
     if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error('ui_closed')); this.pending = null; }
     this.input.destroy();
-    this.output.end();
+    this.output.destroy();
   }
   private fail() {
     if (!this.connected) return;

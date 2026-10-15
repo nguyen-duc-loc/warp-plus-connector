@@ -44,12 +44,15 @@ func TestPackagedTerminal(t *testing.T) {
 	if executable == "" {
 		t.Skip("set WPC_UI_PACKAGE to a matching packaged Linux executable")
 	}
-	for _, mode := range []string{"quit", "interrupt", "terminate", "child_crash", "absent"} {
+	for _, mode := range []string{"quit", "interrupt", "terminate", "hangup", "child_crash", "absent", "scheduled"} {
 		t.Run(
 			mode, func(t *testing.T) {
 				dir := filepath.Join(t.TempDir(), "state")
 				if mode != "absent" {
 					seedOverview(t, dir)
+				}
+				if mode == "scheduled" {
+					seedOverviewSchedule(t, dir)
 				}
 				master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
 				require.NoError(t, err)
@@ -123,6 +126,18 @@ func TestPackagedTerminal(t *testing.T) {
 					)
 					_, err = master.WriteString("q")
 					require.NoError(t, err)
+				case "scheduled":
+					_, err = master.WriteString("\t")
+					require.NoError(t, err)
+					seen("> Recent work")
+					_, err = master.WriteString("\t")
+					require.NoError(t, err)
+					seen("> Schedule")
+					seen("Crawl due")
+					seen("| completed")
+					seen("Validation wait provider_cooldown")
+					_, err = master.WriteString("q")
+					require.NoError(t, err)
 				case "absent":
 					_, err = master.WriteString("q")
 					require.NoError(t, err)
@@ -133,6 +148,9 @@ func TestPackagedTerminal(t *testing.T) {
 				case "terminate":
 					want = 143
 					require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))
+				case "hangup":
+					want = 1
+					require.NoError(t, cmd.Process.Signal(syscall.SIGHUP))
 				case "child_crash":
 					want = 1
 					paths, err := filepath.Glob(fmt.Sprintf("/proc/%d/task/*/children", cmd.Process.Pid))
@@ -167,6 +185,43 @@ func TestPackagedTerminal(t *testing.T) {
 			},
 		)
 	}
+	for _, mode := range []string{"hello", "overview", "parent_keeps_reply_open"} {
+		t.Run("malformed_"+mode, func(t *testing.T) { rejectMalformedReply(t, executable, mode) })
+	}
+	t.Run("startup_deadline", func(t *testing.T) { verifyStartupDeadline(t, executable) })
+}
+
+// Seed through the writer so the UI must accept the actual saved schedule vocabulary.
+func seedOverviewSchedule(t *testing.T, dir string) {
+	t.Helper()
+	w, err := store.OpenWriter(t.Context(), dir, time.Now)
+	require.NoError(t, err)
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	_, err = w.PrepareSchedule(
+		t.Context(), at, state.DefaultSchedulePolicy(),
+		[]state.SourcePlan{{Channel: "warpplus", PageLimit: 1}}, false,
+	)
+	require.NoError(t, err)
+	r, err := w.StartCrawl(t.Context(), state.CrawlInput{
+		RequestID: rand.Text(), StartedAt: at, SourceID: "telegram:warpplus",
+		RequestedURL: "https://t.me/s/warpplus", CoverageMode: "latest_preview", PageLimit: 1,
+	})
+	require.NoError(t, err)
+	_, err = w.RecordCrawlPage(t.Context(), state.CrawlPage{RunID: r.Run.ID, FetchedAt: at})
+	require.NoError(t, err)
+	_, err = w.FinishRun(t.Context(), state.RunCompletion{
+		RunID: r.Run.ID, Status: state.Completed, FinishedAt: at,
+	})
+	require.NoError(t, err)
+	require.NoError(t, w.SaveValidationWait(t.Context(), at, &state.ValidationWait{
+		Reason: "provider_cooldown", BasisAt: at, RetryAt: at.Add(time.Hour),
+		ObservedAt: at, Interval: time.Hour,
+	}, false))
+	s, err := w.GetSchedule(t.Context(), 0, time.Now)
+	require.NoError(t, err)
+	require.NotNil(t, s.Crawl)
+	require.Equal(t, "completed", s.Crawl.Reason)
+	require.NoError(t, w.Close())
 }
 
 func seedOverview(t *testing.T, dir string) {
