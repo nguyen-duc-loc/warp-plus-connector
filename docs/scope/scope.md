@@ -43,7 +43,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 10 | Release automation | Release | in-progress |
 | 11 | Readable development logs | Slice 7 | done |
 | 12 | Terminal foundation and overview | Slice 8 | done |
-| 13 | Terminal results and export | Slice 9 | planned |
+| 13 | Terminal results and export | Slice 9 | in-progress |
 | 14 | Terminal crawl and check controls | Slice 10 | planned |
 
 ## Foundations
@@ -291,13 +291,23 @@ Give you one keyboard driven home screen showing real collection totals, freshne
 
 ## Slice 9: Browse and export every result
 
-### 13. Terminal results and export · planned · needs a decision
+### 13. Terminal results and export · in-progress
 
 Let you browse saved candidates, filter by outcome and freshness, inspect details, and export the matching collection through the terminal interface. Build on the terminal foundation and existing complete result behavior.
 
 **Done when:** every record in the 338 candidate fixture is reachable without silent truncation; selection survives navigation predictably; freshness and confirmation time are clear; keys are hidden until explicit disclosure; export selection, destination, completion, and failure are understandable and preserve existing privacy and publication guarantees.
 
-- [ ] Design it (spec): `/architect terminal results and export`
+**Spec:** [0011. Terminal results and export](../specs/0011-terminal-results-export/index.md), confirmed on 2026-10-15 after independent review and application of both approved fixes. The design uses private fixed results snapshots, complete paged details, session marks, explicit key disclosure, and reviewed file export through the Go parent. Implementation and acceptance verification remain pending.
+
+- [x] Design it (spec): `/architect terminal results and export`
+- [ ] Build it: `/develop terminal results and export`
+  - [ ] Prove protocol 2, one real private results snapshot, paged browsing, and a reviewed JSON file export through the packaged terminal (AC-1, AC-7 through AC-10, AC-12 through AC-16).
+  - [ ] Complete filters, exact counts, marks, refresh reconciliation, and retained snapshots alongside concurrent writers (AC-1 through AC-3, AC-6 through AC-8, AC-11, AC-12, AC-14).
+  - [ ] Complete separate detail snapshots, all provenance and attempt history, saved retry facts, and explicit key reveal (AC-4 through AC-6, AC-11 through AC-14).
+  - [ ] Complete marked exports, disclosure formats, cancellation, publication receipts, cleanup warnings, and bounded shutdown (AC-3, AC-5, AC-7 through AC-13, AC-15).
+  - [ ] Complete keyboard and failure behavior, CLI compatibility, and matching native Linux archive integration (AC-1 through AC-16).
+- [ ] Verify it: `/check verify terminal results and export`
+- [ ] Test it: `/test terminal results and export`
 
 ## Slice 10: Run work and understand its progress
 
