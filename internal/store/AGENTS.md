@@ -8,6 +8,8 @@ The governing contract is [spec 0002](../../docs/specs/0002-persistent-key-state
 
 New directories use `0700`; managed files use `0600`. Existing broad permissions, wrong ownership, and symlinked managed files cause errors without repair. Directory aliases resolve to the same writer lock. Connections enforce foreign keys and WAL supports concurrent readers; writes use `synchronous=FULL`.
 
+[reviewed_writer.go](reviewed_writer.go) implements terminal admission under [spec 0012](../../docs/specs/0012-terminal-crawl-check-controls/index.md). `BindCollection` captures canonical directory and database identity or explicit absence without initialization. `OpenReviewedWriter` checks that binding under writer ownership before database creation, migration or recovery. Replaced collections fail with `ErrCollectionChanged`; uncertain entered initialization or recovery returns `AdmissionUncertain`. Entered admission and closure finish before ownership can transfer.
+
 [migrate.go](migrate.go) applies embedded SQL and the schema version in one transaction. [001_initial.sql](migrations/001_initial.sql) defines the five history tables; [002_crawl_coverage.sql](migrations/002_crawl_coverage.sql) adds requested and parsed crawl coverage. Version zero initializes only when no application schema objects exist. Readers require the current version; newer or damaged state is rejected without replacement.
 
 Schema version 3 adds [003_crawl_plan.sql](migrations/003_crawl_plan.sql), preserving old rows without backfill. `crawl_sources`, `crawl_pages`, and `crawl_page_observations` implement [spec 0004](../../docs/specs/0004-configurable-source-coverage/index.md). A failed migration rolls back its tables and version together; an older binary rejects the newer schema.
@@ -59,6 +61,10 @@ Pages default to 100 rows and allow up to 1000 per call, with no total cap. The 
 [browse.go](browse.go) implements disposable Results storage under [spec 0011](../../docs/specs/0011-terminal-results-export/index.md). Its `0700` directory and `0600` database hold complete summaries, exact key bytes, indexed view ordinals, marks, and detail records outside live state. Pages contain at most 50 rows. View construction is transactional, and marked export advances by original ordinals. Cleanup removes only owned temporary storage after its users stop. This temporary schema does not change live schema version 5.
 
 [detail_snapshot.go](detail_snapshot.go) binds collection identity to the canonical directory and database file identity. `VisitDetail` checks the exact key, establishes its read snapshot before sampling the clock, and streams all sources and attempts in bounded pages. Retry facts come from matching saved attempt records; absent legacy facts stay nil. Callback errors retain identity. `OpenSnapshotReader` waits for entered admission and cleanup even after cancellation, preventing replacement snapshot work from overlapping an earlier open.
+
+`CollectionIdentity.Check` distinguishes private access failure from a missing or replaced collection, including replacement by a file with broad permissions. Report callers may retain their fixed snapshot after access failure, but replacement invalidates the binding.
+
+[report_snapshot.go](report_snapshot.go) streams a complete saved run through `VisitReport` within one read transaction established before sampling the clock. Header, sources, pages, items and attempts share that snapshot; callbacks remain synchronous and retain their error identity. [report_rows.go](report_rows.go) stores disposable indexed section rows outside live state, with parent scoped identities and pages of at most 50 rows. Legacy reports retain absent selection and retry metadata. This temporary storage adds no live schema migration.
 
 ## Cancellation
 

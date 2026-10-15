@@ -22,6 +22,10 @@ The durable attachment completion marker releases mutation serialization only af
 
 Acquisition and recovery share one five minute budget. Typed results distinguish retryable backend or cleanup waits, contention, cooldown, clock regression, and fatal identity or journal errors. `CleanupInspected` records actual cleanup inspection independently of admission. Backward UTC blocks mutations but permits cleanup without lowering the saved checkpoint.
 
+[recovery_proof.go](recovery_proof.go) implements the retained cleanup contract from [spec 0012](../../docs/specs/0012-terminal-crawl-check-controls/index.md). `CleanupBinding` keeps the canonical journal directory, daemon identity, and known or uncertain sessions private to the parent. `AcquireReviewed` verifies those obligations under exclusive ownership before reconciliation; only successful reconciliation and acknowledged journal persistence call the resolution callback. Missing journals, changed owners, empty inspection and unrelated success do not prove cleanup. Resolution may precede later image or admission failure and never clears independent SQL uncertainty.
+
+After reviewed acquisition, worker hooks use the original adapter so journal writes enter the coordinator mutation owner once. `Hooks.Activity` reports only `preparing`, `registering`, `attaching`, `polling`, or `cleanup`; activity does not establish saved evidence or successful deletion.
+
 ## Evidence and cleanup
 
 Keys enter the container through standard input. Never put them in host arguments, environment variables, labels, images, repository fixtures, or diagnostics. The vendor license argument exists only inside the private container. Raw vendor output and credentials stay private.

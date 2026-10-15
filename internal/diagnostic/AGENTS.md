@@ -18,6 +18,10 @@ Minimum levels filter activity, but `command_cancelled` remains visible even at 
 
 The `terminal_export` event also bypasses level filtering. Its typed publication value is `true`, `false`, or `unknown`, separate from durability and cleanup. Final rendering uses the parent receipt after terminal restoration, including forced shutdown, and never infers that cancellation means no file exists. Keys and raw errors remain excluded.
 
+[Spec 0012](../../docs/specs/0012-terminal-crawl-check-controls/index.md) adds `terminal_work`, which also bypasses level filtering. Required fields are `operation_kind`, `run_created`, `cancellation_requested`, `persistence`, and `cleanup`; only acknowledged `run_id`, saved `run_status`, and safe `code` are optional. Unknown creation has no invented run ID. Uncertain persistence or unresolved cleanup renders at error severity. Operation IDs, keys, request tokens, paths, and provider or validator session details stay outside this event.
+
+The CLI retains the original unresolved work receipt separately from newer work and export receipts. After restoration it emits each distinct work origin once, then the export receipt. The shared final output claim and failed stream latch prevent duplicate rendering and stop all later records after the first destination failure.
+
 ## Failure handling
 
 `Capture` serializes consumption, retains the first failure, and invokes its cancellation callback once after unlocking. That callback should only cancel work. Transport `Write` deliberately acknowledges all bytes even after failure to contain zerolog fallback output; `Capture.Err` is the authoritative result. Never retry the destination after a short write, formatting failure, or write error.
