@@ -8,7 +8,7 @@ You can use `--config`, `--state-dir`, and `--recheck-interval` on the root invo
 
 Extract the complete release archive into its own version directory. Keep `wpc` and `lib/` together, then place a symlink to that `wpc` on your `PATH`. The executable resolves launcher symlinks before finding its runtime. Copying only `wpc` supports explicit commands but cannot open the overview.
 
-The bundled runtime is official Node 24.20.0. It requires Linux kernel 4.18 or newer and glibc 2.28 or newer. The pinned Debian 10 fixture uses its stock loader and C++ runtime. The native arm64 runtime probe used kernel 6.8.0 and glibc 2.28. These prerequisites alone do not prove every distribution combination works. No host Node, npm, global UI installation, or startup network access is needed.
+The bundled runtime is official Node 24.20.0. It requires Linux kernel 4.18 or newer and glibc 2.28 or newer. The pinned Debian 10 fixture uses its stock loader and C++ runtime. The native arm64 runtime probe used kernel 6.8.0 and glibc 2.28. These prerequisites alone do not prove every distribution combination works. No host Node, pnpm, global UI installation, or startup network access is needed.
 
 Both pinned Node ELF files require C++ symbols through `GLIBCXX_3.4.21` and `CXXABI_1.3.11`. The passing arm64 baseline supplied `libc6 2.28-10+deb10u3`, `libstdc++6 8.3.0-6`, and `libgcc1 1:8.3.0-6`. The native Ubuntu 26.04.1 arm64 package checks used kernel `7.0.0-38-generic`. Exact observations and the baseline image digest are recorded in `ui/runtime.json`. Both final archives also passed on native GitHub Ubuntu 26.04.1 runners and the stock Debian baseline. The hosted kernels were `7.0.0-1012-azure`, with host glibc 2.43 and baseline glibc 2.28.
 
@@ -40,7 +40,7 @@ The overview needs at least 60 columns and 16 rows. At smaller sizes, quit, refr
 
 ## Local packaging
 
-Use the exact Node and npm versions in `ui/runtime.json`. On native Linux, `sh scripts/install-ui-tools.sh` prepares those build tools under `.ui-build/tools/node`; add its `bin` directory to your build shell's `PATH`. This is build tooling, never an application startup step.
+Use the exact Node and pnpm versions in `ui/runtime.json`. On native Linux, `sh scripts/install-ui-tools.sh` prepares those build tools under `.ui-build/tools/node`; add its `bin` directory to your build shell's `PATH`. This is build tooling, never an application startup step.
 
 ```sh
 rtk proxy python3 scripts/prepare-ui.py --arch amd64
@@ -48,6 +48,6 @@ rtk proxy python3 scripts/prepare-ui.py --arch arm64
 rtk proxy goreleaser release --snapshot --clean
 ```
 
-Preparation installs from the lockfile, compiles TypeScript, preserves production modules and their assets, checks the official Node archive checksum, and writes the file manifest. GoReleaser stamps the exact release identity before archiving. On each matching native Linux host, `sh scripts/check-ui-package.sh amd64` (or `arm64`) exercises the real package with PTYs on the host and the pinned Debian baseline, with networking disabled in the baseline. It includes normal quit, signals, child crash, resizing, refresh, missing state, and a real saved collection of 105 synthetic candidates.
+Preparation uses frozen pnpm installs with lifecycle scripts disabled, compiles TypeScript, preserves production modules and their assets, checks the official Node archive checksum, and writes the file manifest. The production install uses pnpm's hoisted linker so shipped files do not depend on store symlinks. Installer metadata containing build host paths and timestamps is removed. The bundle includes `pnpm-lock.yaml`, whose digest is bound by the manifest and checked before launch. GoReleaser stamps the exact release identity before archiving. On each matching native Linux host, `sh scripts/check-ui-package.sh amd64` (or `arm64`) exercises the real package with PTYs on the host and the pinned Debian baseline, with networking disabled in the baseline. It includes normal quit, signals, child crash, resizing, refresh, missing state, and a real saved collection of 105 synthetic candidates.
 
 CI prepares each tree on its matching architecture and passes the verified trees to snapshot and release packaging. Separate native jobs download the completed snapshot archives, check their hashes, extract them, and run the host and Debian baseline PTY checks with host Node unavailable on `PATH`. You can run the same check with `sh scripts/check-ui-package.sh amd64 path/to/archive.tar.gz`, or use `arm64` on that architecture. A successful hosted workflow is still required to establish hosted execution. The full acceptance checklist remains part of spec 0010 verification.

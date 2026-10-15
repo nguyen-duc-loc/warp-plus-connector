@@ -29,8 +29,8 @@ def main():
     parser.add_argument("--commit", default="")
     args = parser.parse_args()
     pins = json.loads((ROOT / "ui/runtime.json").read_text())
-    if subprocess.check_output(["npm", "--version"], text=True).strip() != pins["npm"]:
-        raise SystemExit("Use the npm version pinned in ui/runtime.json")
+    if subprocess.check_output(["pnpm", "--version"], text=True).strip() != pins["pnpm"]:
+        raise SystemExit("Use the pnpm version pinned in ui/runtime.json")
     if subprocess.check_output(["node", "--version"], text=True).strip() != "v" + pins["node"]:
         raise SystemExit("Use the Node version pinned in ui/runtime.json")
     build = ROOT / ".ui-build"
@@ -46,8 +46,8 @@ def main():
         temporary.replace(source)
     if digest(source) != archive["sha256"]:
         raise SystemExit("Node archive checksum mismatch")
-    run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], ROOT / "ui")
-    run(["npm", "run", "build"], ROOT / "ui")
+    run(["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], ROOT / "ui")
+    run(["pnpm", "run", "build"], ROOT / "ui")
     destination = build / args.arch / "lib/wpc-ui"
     if destination.exists():
         shutil.rmtree(destination)
@@ -66,10 +66,18 @@ def main():
             with tar.extractfile(member) as stream, output.open("wb") as handle:
                 shutil.copyfileobj(stream, handle)
             output.chmod(0o755 if entry == "bin/node" else 0o644)
-    for name in ["package.json", "package-lock.json"]:
+    for name in ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]:
         shutil.copy2(ROOT / "ui" / name, app / name)
     shutil.copytree(ROOT / "ui/dist", app / "dist", ignore=shutil.ignore_patterns("*.test.js"))
-    run(["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], app)
+    # The runtime admits regular files only. Use pnpm's flat linker for the
+    # release payload, without depending on the development store's symlinks.
+    run(["pnpm", "install", "--prod", "--frozen-lockfile", "--ignore-scripts",
+         "--node-linker", "hoisted"], app)
+    # Installer bookkeeping contains host paths and timestamps, not runtime assets.
+    for name in [".modules.yaml", ".pnpm-workspace-state-v1.json"]:
+        (app / "node_modules" / name).unlink(missing_ok=True)
+    (app / "node_modules/.pnpm/lock.yaml").unlink(missing_ok=True)
+    (app / "node_modules/.pnpm").rmdir()
     # CLI launchers are build conveniences. Runtime modules remain intact and regular.
     for folder, dirs, files in os.walk(app / "node_modules", topdown=True):
         if ".bin" in dirs:
@@ -83,9 +91,12 @@ def main():
                 target = licenses / path.relative_to(app / "node_modules")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, target)
+        for name in dirs:
+            if (Path(folder) / name).is_symlink():
+                raise SystemExit("Unexpected symlink in production module tree")
     manifest = {"schema_version": 1, "protocol_version": 2, "release": args.release,
                 "commit": args.commit, "os": "linux", "arch": args.arch, "node": pins["node"],
-                "lock_sha256": digest(app / "package-lock.json"), "files": {}}
+                "lock_sha256": digest(app / "pnpm-lock.yaml"), "files": {}}
     for path in sorted(destination.rglob("*")):
         if path.is_file():
             manifest["files"][path.relative_to(destination).as_posix()] = digest(path)

@@ -8,7 +8,7 @@ The contract is [spec 0010](../../docs/specs/0010-terminal-foundation-overview/i
 
 [session.go](session.go) admits only Linux amd64 or arm64 with real stdin and stdout terminal descriptors and a nonempty `TERM` other than `dumb`. The CLI applies this check before configuration or asset access. Explicit help, version, and commands bypass UI startup.
 
-[manifest.go](manifest.go) resolves the real executable through launcher symlinks and reads only its adjacent `lib/wpc-ui` tree. Manifest schema is 1 and protocol is 2; mixed protocol bundles fail admission. The manifest binds release, commit, OS, architecture, pinned Node version, lock digest, and every payload digest. Required assets must be regular files within the bundle. Missing, altered, unlisted, escaping, or symlinked payloads fail admission. There is no host Node or global installation fallback.
+[manifest.go](manifest.go) resolves the real executable through launcher symlinks and reads only its adjacent `lib/wpc-ui` tree. Manifest schema is 1 and protocol is 2; mixed protocol bundles fail admission. The manifest binds release, commit, OS, architecture, pinned Node version, the `app/pnpm-lock.yaml` digest, and every payload digest. Required assets must be regular files within the bundle. Missing, altered, unlisted, escaping, or symlinked payloads fail admission. There is no host Node or global installation fallback.
 
 The parent executes the bundled Node directly, without a shell. The child receives only the selected terminal and locale environment plus the resolved no color policy; it never inherits `NODE_OPTIONS`, `NODE_PATH`, or configuration contents. Raw child stderr is discarded.
 

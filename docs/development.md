@@ -16,7 +16,8 @@ Release users can download a binary and a validator image. This guide is for cha
 | pre-commit | `4.6.2` | Optional local hook runner |
 | GoReleaser | `2.18.3` | Linux archives and release validation |
 | actionlint | `1.7.7` | GitHub Actions workflow validation |
-| Node and npm | `24.20.0` and `12.0.2` | Building the bundled terminal UI |
+| Node and pnpm | `24.20.0` and `12.11.2` | Building the bundled terminal UI |
+| Biome | `2.5.15`, installed through pnpm | UI linting and formatting |
 | Docker Engine, CLI, Buildx | CI installs Buildx `0.38.0` | Validator image builds and offline smoke checks |
 
 Linux amd64 and arm64 are release targets. macOS can be a development host for builds, collection, saved reads, and tests. Validation and native service commands require Linux. A macOS test pass does not establish Linux runtime behavior.
@@ -57,6 +58,22 @@ Bare terminal startup also needs the packaged `lib/wpc-ui` tree. See [terminal p
 
 The agent workspace uses RTK as a command wrapper, for example `rtk proxy go test ./...`. RTK is not a build or runtime dependency; ordinary terminals and CI use the underlying commands directly.
 
+## Terminal UI development
+
+Use the pinned Node version, then install the pinned pnpm tool using your preferred tool manager. For example, `npm install --global pnpm@12.11.2` bootstraps pnpm; application dependencies are managed only through pnpm. Native Linux CI uses `scripts/install-ui-tools.sh` with the checked Node archive.
+
+```sh
+pnpm -C ui install --frozen-lockfile
+pnpm -C ui run verify
+pnpm -C ui run format
+```
+
+Install dependencies before running the commit hooks. `verify` runs Biome formatting, lint, and import checks without edits, then strict TypeScript compilation and all Node tests. Both the local commit gate and native Linux CI enforce these checks. `format` writes formatting changes; `pnpm -C ui exec biome check --write .` also applies safe lint and import fixes. Review fixes before committing.
+
+Biome covers `ui/src` and UI JSON, excluding generated output and dependencies. It uses four spaces for TypeScript and TSX, two for JSON, single quotes in JavaScript, and a 120 column formatting target. Terminal escape patterns and stateless row keys have explained local suppressions. Fixture tests may use non-null assertions; production assertions require local explanations. Go formatting remains governed by GoLand and gofmt.
+
+Tests use Node's built in runner against compiled `dist/*.test.js`, including direct Ink stream and keyboard tests. Use `pnpm -C ui run build` before `pnpm -C ui test` when running them separately. Packaged PTY checks remain the Linux runtime acceptance layer.
+
 ## Formatting and checks
 
 ```sh
@@ -71,6 +88,7 @@ sh scripts/check-format.sh
 go vet ./...
 go test -race ./...
 golangci-lint run ./...
+pnpm -C ui run verify
 ```
 
 For workflow or release changes, also run:

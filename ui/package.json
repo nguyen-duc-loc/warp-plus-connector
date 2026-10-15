@@ -3,18 +3,27 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "npm@12.0.2",
-  "engines": { "node": "24.20.0", "npm": "12.0.2" },
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": "24.20.0",
+    "pnpm": "12.11.2"
+  },
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit",
-    "test": "node --test dist/*.test.js"
+    "test": "node --test dist/*.test.js",
+    "lint": "biome lint --error-on-warnings .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check:biome": "biome ci --error-on-warnings .",
+    "verify": "pnpm run check:biome && pnpm run build && pnpm test"
   },
   "dependencies": {
     "ink": "7.1.1",
     "react": "19.2.8"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/node": "24.19.2",
     "@types/react": "19.2.18",
     "typescript": "7.0.2"

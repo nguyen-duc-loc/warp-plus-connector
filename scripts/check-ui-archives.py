@@ -29,6 +29,6 @@ for arch in ["amd64", "arm64"]:
             with archive.extractfile(entry) as stream:
                 if hashlib.file_digest(stream, "sha256").hexdigest() != digest:
                     raise SystemExit("Archive payload digest mismatch")
-        if manifest["files"]["app/package-lock.json"] != manifest["lock_sha256"]:
+        if manifest["files"]["app/pnpm-lock.yaml"] != manifest["lock_sha256"]:
             raise SystemExit("Archive lock digest mismatch")
     print(f"Verified {archives[0].name}")

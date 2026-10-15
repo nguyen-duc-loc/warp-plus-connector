@@ -55,13 +55,13 @@ func bundle(release, commit string) (string, error) {
 		return "", failure("ui_version_mismatch")
 	}
 	for _, required := range []string{
-		"node/bin/node", "app/package.json", "app/dist/main.js", "app/package-lock.json",
+		"node/bin/node", "app/package.json", "app/dist/main.js", "app/pnpm-lock.yaml",
 	} {
 		if m.Files[required] == "" {
 			return "", failure("ui_installation_invalid")
 		}
 	}
-	if m.LockDigest != m.Files["app/package-lock.json"] {
+	if m.LockDigest != m.Files["app/pnpm-lock.yaml"] {
 		return "", failure("ui_installation_invalid")
 	}
 	for path, expected := range m.Files {

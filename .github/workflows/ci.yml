@@ -56,12 +56,18 @@ jobs:
           ./bin/wpc --help
       - name: Install pinned UI build tools
         run: sh scripts/install-ui-tools.sh
+      - name: Prepare the native terminal package
+        env:
+          UI_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/prepare-ui.py --arch "$UI_ARCH"
+      - name: UI formatting and lint
+        run: pnpm -C ui run check:biome
+      - name: UI tests
+        run: pnpm -C ui test
       - name: Build and verify the native terminal package
         env:
           UI_ARCH: ${{ matrix.arch }}
         run: |
-          python3 scripts/prepare-ui.py --arch "$UI_ARCH"
-          npm --prefix ui test
           sh scripts/check-ui-package.sh "$UI_ARCH"
           tar -cf "ui-$UI_ARCH.tar" -C ".ui-build/$UI_ARCH" lib
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

@@ -35,7 +35,7 @@ Choose a published version from [GitHub Releases](https://github.com/nguyen-duc-
 | `checksums.txt` | SHA256 checksums for the archives |
 | `validator-images.txt` | Matching registry image digests for both architectures |
 
-The archive contains `wpc`, its bundled terminal UI runtime under `lib/`, and documentation. **No Go, Node, npm, Git, or repository clone is needed.** The overview requires Linux kernel 4.18 or newer and glibc 2.28 or newer. Docker is optional for collection and saved reads, and required for validation. A systemd user manager is needed only for `service` commands.
+The archive contains `wpc`, its bundled terminal UI runtime under `lib/`, and documentation. **No Go, Node, pnpm, Git, or repository clone is needed.** The overview requires Linux kernel 4.18 or newer and glibc 2.28 or newer. Docker is optional for collection and saved reads, and required for validation. A systemd user manager is needed only for `service` commands.
 
 For terminal installation, use an empty download directory and replace `0.1.0` below with an actual published version. The example does not mean that this release already exists. Stop if a download or checksum check fails.
 

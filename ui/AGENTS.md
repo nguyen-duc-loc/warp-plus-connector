@@ -6,20 +6,26 @@ Design follows [design.md](design.md); presentation constants live in [src/theme
 
 ## Runtime and build
 
-[package.json](package.json) pins Ink 7.1.1, React 19.2.8, and TypeScript 7.0.2. Node 24.20.0 and npm 12.0.2 are pinned in [runtime.json](runtime.json), together with architecture specific official archive hashes and the native compatibility baseline. `package-lock.json` fixes transitive dependencies. The supported UI release targets are Linux amd64 and arm64 with glibc 2.28 or newer; macOS is a development host only.
+[package.json](package.json) pins Ink 7.1.1, React 19.2.8, and TypeScript 7.0.2. Node 24.20.0 and pnpm 12.11.2 are pinned in [runtime.json](runtime.json), together with architecture specific official archive hashes and the native compatibility baseline. `pnpm-lock.yaml` fixes transitive dependencies. Biome 2.5.15 owns UI linting, formatting, and import ordering through `biome.json`. The supported UI release targets are Linux amd64 and arm64 with glibc 2.28 or newer; macOS is a development host only.
 
 TypeScript compiles JSX and modules to ESM in `dist/`; there is no JavaScript bundler. Release packaging preserves production `node_modules`, package metadata, assets, and licenses beside the compiled app and bundled Node. Test modules are omitted from the shipped tree. Startup never installs packages or contacts the network. The full extracted directory tree is the installation unit.
 
 From the repository root, you can use:
 
 ```sh
-rtk proxy npm --prefix ui ci --ignore-scripts --no-audit --no-fund
-rtk proxy npm --prefix ui run check
-rtk proxy npm --prefix ui run build
-rtk proxy npm --prefix ui test
+rtk proxy pnpm -C ui install --frozen-lockfile
+rtk proxy pnpm -C ui run check
+rtk proxy pnpm -C ui run build
+rtk proxy pnpm -C ui test
+rtk proxy pnpm -C ui run verify
+rtk proxy pnpm -C ui run format
 ```
 
-Tests use Node's built in runner against compiled `dist/*.test.js`; build after changing test sources. The Go commit hooks do not run UI checks. [scripts/prepare-ui.py](../scripts/prepare-ui.py) requires the exact Node and npm pins, installs from the lock, and prepares `.ui-build/<arch>/lib/wpc-ui`. [Terminal packaging](../docs/terminal.md#local-packaging) covers both targets, identity stamping, payload validation, and native package checks.
+Tests use Node's built in runner against compiled `dist/*.test.js`; build after changing test sources. The commit gate also runs `pnpm -C ui run verify`, which checks Biome without edits, builds with strict TypeScript, and runs all UI tests. Install dependencies first. Native CI enforces the same checks. [scripts/prepare-ui.py](../scripts/prepare-ui.py) requires the exact Node and pnpm pins, installs from the lock, and prepares `.ui-build/<arch>/lib/wpc-ui`. [Terminal packaging](../docs/terminal.md#local-packaging) covers both targets, identity stamping, payload validation, and native package checks.
+
+Biome uses four spaces for TypeScript and TSX, two for JSON, LF, single JavaScript quotes, and a 120 column formatting target. Its recommended lint rules stay enabled; terminal specific exceptions are explained locally, and fixture tests permit non-null assertions. Generated output and dependencies are excluded.
+
+The pnpm workspace disables lifecycle scripts and enforces exact runtime engines. Release preparation uses the hoisted linker, removes installer bookkeeping and command launchers, and rejects file and directory symlinks. Bundle admission and archive verification bind `app/pnpm-lock.yaml`.
 
 ## Protocol and failures
 

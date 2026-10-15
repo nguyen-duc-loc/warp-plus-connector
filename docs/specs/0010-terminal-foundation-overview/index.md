@@ -49,7 +49,7 @@ No additional community skill or MCP discovery is requested. Your recorded decli
 
 ### Shared boundaries
 
-`cmd/wpc` continues to own process signals, exit, and terminal streams. `internal/cli` owns Cobra dispatch and safe final diagnostics. A concrete `internal/terminal` package owns child process setup, protocol validation, and terminal lifecycle. `internal/app` coordinates overview reads; `internal/store` owns all SQL; `internal/state` holds domain summaries. `internal/service` supplies account service observations without controls or Docker. UI source lives in `ui/` with its own npm manifest and lockfile.
+`cmd/wpc` continues to own process signals, exit, and terminal streams. `internal/cli` owns Cobra dispatch and safe final diagnostics. A concrete `internal/terminal` package owns child process setup, protocol validation, and terminal lifecycle. `internal/app` coordinates overview reads; `internal/store` owns all SQL; `internal/state` holds domain summaries. `internal/service` supplies account service observations without controls or Docker. UI source lives in `ui/` with its own package manifest and pnpm lockfile.
 
 These packages appear when their first working path needs them. Do not move business rules into TypeScript or turn the private channel into a public API. No database migration, new credentials, listening socket, or persistent UI preferences are part of this feature.
 

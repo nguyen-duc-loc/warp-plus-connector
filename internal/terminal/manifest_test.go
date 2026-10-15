@@ -53,7 +53,7 @@ func TestRun_BundleAdmission(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			require.NoError(t, os.RemoveAll(root))
 			files := map[string]string{}
-			for _, name := range []string{"node/bin/node", "app/package.json", "app/dist/main.js", "app/package-lock.json"} {
+			for _, name := range []string{"node/bin/node", "app/package.json", "app/dist/main.js", "app/pnpm-lock.yaml"} {
 				path := filepath.Join(root, name)
 				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 				data := []byte("fixture " + name)
@@ -64,7 +64,7 @@ func TestRun_BundleAdmission(t *testing.T) {
 			manifest := map[string]any{
 				"schema_version": 1, "protocol_version": 2, "release": "dev", "commit": "",
 				"os": runtime.GOOS, "arch": runtime.GOARCH, "node": "24.20.0",
-				"lock_sha256": files["app/package-lock.json"], "files": files,
+				"lock_sha256": files["app/pnpm-lock.yaml"], "files": files,
 			}
 			want := "ui_installation_invalid"
 			entry := filepath.Join(root, "app", "dist", "main.js")
