@@ -44,7 +44,7 @@ Success means every distinct candidate within the configured crawl coverage is r
 | 11 | Readable development logs | Slice 7 | done |
 | 12 | Terminal foundation and overview | Slice 8 | done |
 | 13 | Terminal results and export | Slice 9 | done |
-| 14 | Terminal crawl and check controls | Slice 10 | planned |
+| 14 | Terminal crawl and check controls | Slice 10 | in-progress |
 
 ## Foundations
 
@@ -313,13 +313,23 @@ Let you browse saved candidates, filter by outcome and freshness, inspect detail
 
 ## Slice 10: Run work and understand its progress
 
-### 14. Terminal crawl and check controls · planned · needs a decision
+### 14. Terminal crawl and check controls · in-progress
 
 Let you start a crawl or check selected candidates, follow concurrent progress, and inspect the saved outcome. Present meaningful activity and recovery guidance in the main view, with technical details available when needed.
 
 **Done when:** you can choose configured sources or saved candidates, start work, follow counts and attempts, and request cancellation; rate limits, retries, partial success, and unstarted work are distinct from invalid keys; saved results remain inspectable after exit; background ownership conflicts give clear guidance; exit and cancellation preserve existing cleanup and recovery rules without launching a second writer or duplicating scheduling logic.
 
-- [ ] Design it (spec): `/architect terminal crawl and check controls`
+**Spec:** [0012. Terminal crawl and check controls](../specs/0012-terminal-crawl-check-controls/index.md), confirmed on 2026-10-15 after independent review, application of both approved fixes, and a focused recheck. The design adds one reviewed manual operation, typed progress, independent browsing and export, complete fixed report snapshots, and bounded cleanup through the existing Go engines. Protocol 3 extends the terminal connection; the live database remains schema 5. Implementation is pending.
+
+- [x] Design it (spec): `/architect terminal crawl and check controls`
+- [ ] Build it: `/develop terminal crawl and check controls`
+  - [ ] Prove one reviewed crawl through protocol 3, real saved progress, cancellation, outcome, and process deadlines (AC-1, AC-2, AC-5, AC-6, AC-8, AC-9, AC-14, AC-15).
+  - [ ] Prove a focused candidate check with frozen identity admission, configured policy, shared ownership, cleanup, and truthful receipts (AC-3 through AC-6, AC-8 through AC-10, AC-14, AC-15).
+  - [ ] Complete source and batch selection, concurrent progress, retry guidance, independent cancellation, browsing, and export (AC-2 through AC-8, AC-10, AC-13 through AC-15).
+  - [ ] Complete recent and older saved reports, fixed snapshots, every bounded detail page, legacy data, retained failures, and outcome acknowledgement (AC-6, AC-7, AC-11 through AC-15).
+  - [ ] Complete keyboard, privacy, uncertainty, shutdown, explicit command compatibility, and final native Linux archive integration (AC-1 through AC-16).
+- [ ] Verify it: `/check verify terminal crawl and check controls`
+- [ ] Test it: `/test terminal crawl and check controls`
 
 ## Deferred
 
