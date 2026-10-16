@@ -38,19 +38,45 @@ func (d resultsDriver) wait(after int, needle string) string {
 	}()
 	var frame string
 	require.Eventually(d.t, func() bool {
-		raw := d.output.text()
-		start := strings.LastIndex(raw, "\x1b[?2026h")
-		if start < after {
-			return false
-		}
-		end := strings.Index(raw[start:], "\x1b[?2026l")
-		if end < 0 {
-			return false
-		}
-		frame = terminalControls.ReplaceAllString(raw[start:start+end], "")
-		return strings.Contains(frame, needle) && !strings.Contains(frame, "c or Esc cancel | ? help | q quit")
+		var ready bool
+		frame, ready = readyTerminalFrame(d.output.text(), after, needle)
+		return ready
 	}, 10*time.Second, 10*time.Millisecond, "missing fresh ready frame for %q", needle)
 	return frame
+}
+
+func readyTerminalFrame(raw string, after int, needle string) (string, bool) {
+	start := strings.LastIndex(raw, "\x1b[?2026h")
+	if start < after {
+		return "", false
+	}
+	end := strings.Index(raw[start:], "\x1b[?2026l")
+	if end < 0 {
+		return "", false
+	}
+	frame := terminalControls.ReplaceAllString(raw[start:start+end], "")
+	return frame, strings.Contains(frame, needle) &&
+		!strings.Contains(frame, "c or Esc cancel | ? help | q quit") &&
+		!strings.Contains(frame, "Preparing:")
+}
+
+// A loading controls screen already contains its destination label, but ignores
+// navigation until the options reply arrives. Never send the next key to it.
+func TestPackagedDriverWaitsForControlsReady(t *testing.T) {
+	const label = "Select configured sources"
+	frame := func(body string) string { return "\x1b[?2026h" + body + "\x1b[?2026l" }
+	loading := frame("WPC | crawl | Idle\r\nPreparing: Waiting for parent\r\n" + label)
+	ready := frame("WPC | crawl | Idle\r\n" + label + "\r\n> [x] warpplus | 1 pages")
+	_, accepted := readyTerminalFrame(loading, 0, label)
+	require.False(t, accepted, "a loading crawl must not admit the next navigation key")
+	_, accepted = readyTerminalFrame(loading+ready, len(loading), label)
+	require.True(t, accepted, "the completed options reply permits navigation")
+	_, accepted = readyTerminalFrame(ready+loading, len(ready), label)
+	require.False(t, accepted, "an earlier ready frame cannot satisfy a later request")
+	_, accepted = readyTerminalFrame(ready, len(ready), label)
+	require.False(t, accepted, "a frame before the input cannot satisfy it")
+	_, accepted = readyTerminalFrame(strings.TrimSuffix(ready, "\x1b[?2026l"), 0, label)
+	require.False(t, accepted, "a partially written frame is not ready")
 }
 
 func (d resultsDriver) send(keys, needle string) string {
